@@ -1321,13 +1321,18 @@ def gerar_grafico_python(metricas_por_canal: list[dict] | None = None) -> dict[s
         handles=handles_modo, 
         title="Níveis de Energia", 
         loc="center left", 
-        bbox_to_anchor=(1.0, 0.5), 
+        bbox_to_anchor=(0.93, 0.5), 
         frameon=False, 
         prop={"family": "serif", "size": 9}
     )
     
-    fig.subplots_adjust(right=0.85, top=0.90)
-
+    fig.subplots_adjust(top=0.90, 
+        bottom=0.12, 
+        left=0.08, 
+        right=0.92,  
+        hspace=0.45,
+        wspace=0.35  
+    )
     fig.savefig(output_png_box, dpi=300, bbox_inches="tight", facecolor="#FFFFFF", edgecolor="none")
     plt.close(fig)
 
@@ -1424,15 +1429,12 @@ def gerar_grafico_python(metricas_por_canal: list[dict] | None = None) -> dict[s
     ]
     fig.subplots_adjust(top=0.86, bottom=0.07, left=0.07, right=0.98, wspace=0.07, hspace=0.07)
     fig.legend(
-        handles=handles,
-        loc="upper center",
-        bbox_to_anchor=(0.5, 0.93),
-        ncol=3,
-        frameon=False,
-        title="Modo de sinal",
-        fontsize=10,
-        title_fontsize=11,
-        prop={"family": "serif"},
+        handles=handles_modo, 
+        title="Modo de sinal:", 
+        loc="center left", 
+        bbox_to_anchor=(1, 0.5), 
+        frameon=False, 
+        prop={"family": "serif", "size": 9}
     )
     fig.suptitle(
         "Matriz de Dispersão e Correlação entre Features",
@@ -1440,7 +1442,7 @@ def gerar_grafico_python(metricas_por_canal: list[dict] | None = None) -> dict[s
         fontweight="bold",
         color="#0F172A",
         family="serif",
-        y=0.985,
+        y=0.885,
     )
     fig.savefig(output_png_pairs, dpi=300, bbox_inches="tight", pad_inches=0.28, facecolor="#FFFFFF", edgecolor="none")
     plt.close(fig)
@@ -1547,7 +1549,7 @@ def gerar_grafico_python(metricas_por_canal: list[dict] | None = None) -> dict[s
         handles=handles_modo,
         title="Modos",
         loc="upper left",
-        bbox_to_anchor=(1.01, 1.0),
+        bbox_to_anchor=(1.1, 1.0),
         frameon=False,
         prop={"family": "serif", "size": 9},
         fontsize=10,
@@ -1558,7 +1560,7 @@ def gerar_grafico_python(metricas_por_canal: list[dict] | None = None) -> dict[s
         handles=handles_vetores,
         title="Vetores das Features",
         loc="lower left",
-        bbox_to_anchor=(1.01, 0.0),
+        bbox_to_anchor=(1.1, 0.0),
         frameon=False,
         prop={"family": "serif", "size": 9},
         fontsize=9,
