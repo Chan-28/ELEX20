@@ -37,8 +37,8 @@ python teste_lsl_integracao.py
 
 # TROUBLESHOOTING
 
-## Se der erro "pylsl not found"
-pip install pylsl
+## Se der erro "x not found"
+pip install x
 
 ## Se R não funcionar
 # A aplicação usa automaticamente fallback em matplotlib
@@ -47,24 +47,24 @@ pip install pylsl
 ## Se houver erro de "Nenhum stream LSL encontrado"
 1. Verifique se simulador_lsl_emg.py está rodando
 2. Verifique se não há firewall bloqueando localhost
-3. Tente aumentar o wait_time no resolve_streams (vide Grafico.py linha ~380)
 
 
 # ESTRUTURA DE PASTAS
 
 ELEX20/
-├── Grafico.py                    # Aplicação principal
+├── captar_Dados.py               # Captador de dados pelo Bluetooth
+├── enviar_CSV_Dados.py           # Envio de dados por CSV
+├── Grafico.py                    # Plotar gráficos
 ├── simulador_lsl_emg.py          # Simulador de streams LSL
 ├── teste_lsl_integracao.py       # Script de teste
 ├── requirements.txt              # Dependências Python
-├── README_ANALISE_LSL.md         # Documentação completa
+├── README.md                     # Documentação 
 ├── output/                       # Saída de gráficos
 │   ├── grafico_boxplot_facet_py.png
 │   ├── grafico_matriz_dispersao_py.png
 │   ├── grafico_radar_py.png
 │   ├── metricas_canais.csv
 │   └── grafico_python.html
-└── pyqtgraph/                    # Biblioteca pyqtgraph local (opcional)
 
 
 # FLUXO DE DADOS
@@ -73,7 +73,7 @@ Simulador LSL
     ↓ (EMG Stream + EMG_Processado Stream)
 Aplicação Grafico.py
     ↓ (Botão "RECARREGAR DE LSL")
-Captura de dados (5 segundos)
+Captura de dados 
     ↓
 Cálculo de métricas (RMS, Freq. Mediana, ZCR, Waveform Length)
     ↓
