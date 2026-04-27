@@ -1,7 +1,8 @@
 @echo off
 setlocal
+set "ROOT=%~dp0..\"
 
-powershell -ExecutionPolicy Bypass -File "%~dp0scripts\baixar_wheels.ps1"
+powershell -ExecutionPolicy Bypass -File "%ROOT%scripts\baixar_wheels.ps1"
 if errorlevel 1 (
   echo [ERRO] Falha ao baixar wheels offline.
   pause

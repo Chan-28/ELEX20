@@ -23,9 +23,11 @@ def iniciar_simulador_lsl(duracao=30, sfreq=250, canais=4, intervalo=0.1):
     """Inicia o simulador LSL em thread separada."""
     logger.info(f"Iniciando simulador LSL por {duracao}s...")
     
+    project_root = Path(__file__).resolve().parent.parent
+    simulator_path = str(project_root / "src" / "simulador_lsl_emg.py")
     cmd = [
         sys.executable,
-        "simulador_lsl_emg.py",
+        simulator_path,
         "--duracao", str(duracao),
         "--sfreq", str(sfreq),
         "--canais", str(canais),
