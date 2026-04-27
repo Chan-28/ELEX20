@@ -1,0 +1,8 @@
+filtering               Filter data before feeding som algorithm for
+                        gene expression data
+normalize               normalize data before feeding som algorithm
+plot.som                Visualizing a SOM
+qerror                  quantization accuracy
+som                     Function to train a Self-Organizing Map
+summary.som             summarize a som object
+yeast                   yeast cell cycle

@@ -1,7 +1,17 @@
 @echo off
 setlocal
 set "PROJECT_ROOT=%~dp0.."
-set "RSCRIPT=%PROJECT_ROOT%\R-Portable\App\R-Portable\bin\x64\Rscript.exe"
+set "RSCRIPT="
+
+if exist "%PROJECT_ROOT%\R-Portable\R-4.5.1\bin\Rscript.exe" (
+  set "RSCRIPT=%PROJECT_ROOT%\R-Portable\R-4.5.1\bin\Rscript.exe"
+)
+
+if "%RSCRIPT%"=="" (
+  if exist "%PROJECT_ROOT%\R-Portable\App\R-Portable\bin\x64\Rscript.exe" (
+    set "RSCRIPT=%PROJECT_ROOT%\R-Portable\App\R-Portable\bin\x64\Rscript.exe"
+  )
+)
 
 if not exist "%RSCRIPT%" (
   echo [ERRO] Rscript nao encontrado em: %RSCRIPT%
@@ -16,5 +26,6 @@ if errorlevel 1 (
   exit /b 1
 )
 
+> "%PROJECT_ROOT%\.deps_r_ok" echo %DATE% %TIME%
 echo Pacotes R locais prontos.
 endlocal

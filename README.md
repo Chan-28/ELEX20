@@ -1,89 +1,104 @@
 # ELEX20 - Analise Neurofisiologica Portatil (Windows)
 
-Projeto para analise de sinais EMG em tempo real com LSL, visualizacao no MNE Browser e graficos estatisticos com R (ggplot2).
+Projeto para analise de sinais EMG em tempo real com LSL, visualizacao no MNE Browser (mne-qt-browser) e graficos estatisticos com R.
 
-## Objetivo de Portabilidade
+## Estrutura da pasta atual
 
-Este repositorio foi preparado para rodar em Windows usando recursos locais dentro da pasta do projeto:
+- `python-embed/`: Python local do projeto
+- `R-Portable/`: R local do projeto
+- `scripts/`: scripts de instalacao
+- `Grafico.py`: app principal
+- `simulador_lsl_emg.py`: stream LSL EMG de teste
+- `Preparar_Ambiente_Portatil.bat`: instala tudo (Python + R)
+- `Executar_Simulador.bat`: inicia simulador LSL
+- `Executar_Projeto.bat`: inicia Grafico.py com validacoes
 
-- Python embutido em `python-embed/`
-- R portatil em `R-Portable/`
-- Scripts de preparo de ambiente em `scripts/`
-- Atalhos `.bat` para facilitar execucao
+## Instalacao de dependencias (Python e R)
 
-## Estrutura Principal
+### Metodo recomendado (automatico)
 
-- `Grafico.py`: aplicacao principal
-- `simulador_lsl_emg.py`: simulador de stream LSL
-- `Preparar_Ambiente_Portatil.bat`: instala dependencias Python e R localmente
-- `Executar_Simulador.bat`: inicia o simulador
-- `Executar_Projeto.bat`: inicia a aplicacao
-- `Atualizar_Wheels_Offline.bat`: baixa pacotes Python para instalacao offline
+1. Abra PowerShell na pasta do projeto.
+2. Execute:
 
-## Primeiro Uso (Windows)
+```powershell
+.\Preparar_Ambiente_Portatil.bat
+```
 
-1. Execute `Preparar_Ambiente_Portatil.bat`
-2. Abra `Executar_Simulador.bat`
-3. Abra `Executar_Projeto.bat`
+Esse comando chama:
 
-## Fluxo Offline (para distribuir em outro PC)
+- `scripts\instalar_python_local.ps1` (instala Python packages no `python-embed`)
+- `scripts\instalar_r_local.bat` (instala pacotes R em `R-Portable\library`)
 
-No computador que tem internet:
+Arquivos de confirmacao criados quando conclui:
 
-1. Execute `Atualizar_Wheels_Offline.bat`
-2. Execute `Preparar_Ambiente_Portatil.bat`
-3. Compacte toda a pasta `ELEX20` em `.zip`
+- `.deps_python_ok`
+- `.deps_r_ok`
 
-No computador destino (sem internet):
+### Metodo manual (se precisar)
 
-1. Extraia a pasta `ELEX20`
-2. Execute `Preparar_Ambiente_Portatil.bat`
-3. Rode `Executar_Simulador.bat` e `Executar_Projeto.bat`
+Instalar so Python:
 
-## O Que Ja Foi Automatizado
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\instalar_python_local.ps1
+```
 
-- Instalacao de dependencias Python no `python-embed`
-- Instalacao de pacotes R em biblioteca local `R-Portable/library`
-- Configuracao automatica de `R_HOME`, `PATH` e `R_LIBS_USER` no codigo
-- Validacao de dependencias nos atalhos de execucao
+Instalar so R:
 
-## O Que Ainda Exige Acao do Usuario
+```powershell
+.\scripts\instalar_r_local.bat
+```
 
-1. Internet ao menos uma vez para baixar dependencias (Python e R), caso a pasta ainda nao tenha sido preparada.
-2. Permitir execucao de script PowerShell quando o Windows bloquear (ExecutionPolicy).
-3. Garantir que antivirus/firewall nao bloqueiem processos locais do Python/LSL.
-4. Algumas combinacoes de versao (ex.: Python muito novo) podem nao ter wheel para todas as bibliotecas. Nesse caso, o instalador tenta modo sem `rpy2` e a analise R pode ficar indisponivel.
+## Como rodar o Grafico.py sem problemas
 
-### Recomendacao de compatibilidade
+Ordem correta de execucao:
 
-- Se o objetivo for 100% de recursos R em qualquer PC, prefira distribuir a pasta ja preparada apos executar `Preparar_Ambiente_Portatil.bat` na maquina de origem.
-- Se ainda houver incompatibilidade de wheel, use uma distribuicao Python embutida 3.11 ou 3.12 para maior compatibilidade com ecossistema cientifico/R.
+1. Execute `Preparar_Ambiente_Portatil.bat` (somente no primeiro uso, ou quando mudar dependencia).
+2. Em um terminal, execute `Executar_Simulador.bat`.
+3. Em outro terminal, execute `Executar_Projeto.bat`.
 
-## Solucao de Problemas
+Fluxo equivalente direto com Python local:
 
-### Aplicacao abre com linha reta nos sinais
+```powershell
+.\python-embed\python.exe .\simulador_lsl_emg.py
+.\python-embed\python.exe .\Grafico.py
+```
 
-- Verifique se o simulador esta rodando antes da aplicacao.
-- Confirme se o stream `EMG` foi encontrado na barra de status da janela.
-- Se necessario, reinicie ambos os `.bat`.
+## VS Code (corrigir erros de import no editor)
 
-### Erro de dependencia Python
+Se o VS Code mostrar erros como `reportMissingImports` para `mne`, `numpy`, `PyQt6` etc, selecione o interpretador:
 
-- Execute novamente `Preparar_Ambiente_Portatil.bat`.
+- `python-embed\python.exe`
 
-### Erro de pacote R (ggplot2/GGally etc.)
+Obs.: este workspace ja esta configurado em `.vscode/settings.json` para usar esse interpretador por padrao.
 
-- Execute `scripts\instalar_r_local.bat`.
+## Checklist rapido de validacao
 
-### "Nenhum stream LSL encontrado"
+1. `python-embed\python.exe` existe.
+2. `.deps_python_ok` e `.deps_r_ok` existem.
+3. Simulador LSL esta aberto antes do `Grafico.py`.
+4. A barra de status do app nao mostra "Nenhum stream LSL 'EMG' encontrado" por muito tempo.
+
+## Solucao de problemas
+
+### Falha na instalacao R
+
+- Confira se existe uma destas estruturas:
+	- `R-Portable\R-4.5.1\bin\Rscript.exe`
+	- `R-Portable\App\R-Portable\bin\x64\Rscript.exe`
+
+### Falha na instalacao Python
+
+- Rode novamente `Preparar_Ambiente_Portatil.bat`.
+- Se necessario, rode so Python: `scripts\instalar_python_local.ps1`.
+
+### Nenhum stream LSL
 
 - Inicie primeiro `Executar_Simulador.bat`.
-- Verifique se outra aplicacao nao ocupou o stream com mesmo nome.
+- Feche outras apps que possam estar consumindo o stream `EMG`.
 
-## Observacoes Tecnicas
+### MNE Browser sem controles visiveis
 
-- O MNE Browser usa no maximo 4 canais por requisito de usabilidade.
-- Os graficos de tempo real usam janela deslizante com suavizacao temporal leve.
-- A analise estatistica prioriza R + ggplot2 e utiliza fallback Python quando necessario.
+- Atualize para a versao mais recente deste projeto (foi removido override agressivo de estilo no browser).
+- Feche e abra novamente pelo botao "INSPECAO DE CANAIS".
 
 
