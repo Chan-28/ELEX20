@@ -124,7 +124,7 @@ def main():
     logger.info("\nPróximos passos:")
     logger.info("1. Execute 'python simulador_lsl_emg.py' em um terminal")
     logger.info("2. Execute 'python Grafico.py' em outro terminal")
-    logger.info("3. Clique no botão '⬇️ RECARREGAR DE LSL' para capturar dados")
+    logger.info("3. Clique no botão '⬇️ Atualizar dados' para capturar dados")
     logger.info("\n" + "="*70)
 
     # Aguardar simulador terminar
