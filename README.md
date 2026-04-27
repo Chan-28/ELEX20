@@ -1,152 +1,89 @@
-# Análise Neurofisiológica com Suporte a LSL
+# ELEX20 - Analise Neurofisiologica Portatil (Windows)
 
-## Overview
-Sistema de análise em tempo real de sinais EMG com captura de dados via LSL (Lab Streaming Layer) e geração de gráficos estatísticos usando R (ggplot2) ou fallback em Python (matplotlib).
+Projeto para analise de sinais EMG em tempo real com LSL, visualizacao no MNE Browser e graficos estatisticos com R (ggplot2).
 
-## Requisitos
+## Objetivo de Portabilidade
 
-### Dependências Python
-```bash
-pip install PyQt6 PyQt6-WebEngine pyqtgraph mne numpy scipy pandas seaborn matplotlib pylsl
-```
+Este repositorio foi preparado para rodar em Windows usando recursos locais dentro da pasta do projeto:
 
-### Dependências R (opcional, para melhor qualidade gráfica)
-```R
-install.packages(c("ggplot2", "tidyr", "dplyr", "GGally", "scales"))
-```
+- Python embutido em `python-embed/`
+- R portatil em `R-Portable/`
+- Scripts de preparo de ambiente em `scripts/`
+- Atalhos `.bat` para facilitar execucao
 
-## Uso
+## Estrutura Principal
 
-### 1. Iniciar o Simulador LSL (Terminal 1)
+- `Grafico.py`: aplicacao principal
+- `simulador_lsl_emg.py`: simulador de stream LSL
+- `Preparar_Ambiente_Portatil.bat`: instala dependencias Python e R localmente
+- `Executar_Simulador.bat`: inicia o simulador
+- `Executar_Projeto.bat`: inicia a aplicacao
+- `Atualizar_Wheels_Offline.bat`: baixa pacotes Python para instalacao offline
 
-Transmissão por 30 segundos:
-```bash
-python simulador_lsl_emg.py --duracao 30 --sfreq 250 --canais 4 --intervalo 0.1
-```
+## Primeiro Uso (Windows)
 
-Transmissão contínua:
-```bash
-python simulador_lsl_emg.py --sfreq 250 --canais 4 --intervalo 0.1
-```
+1. Execute `Preparar_Ambiente_Portatil.bat`
+2. Abra `Executar_Simulador.bat`
+3. Abra `Executar_Projeto.bat`
 
-**Opções:**
-- `--duracao`: Duração em segundos (padrão: contínuo)
-- `--sfreq`: Frequência de amostragem em Hz (padrão: 250)
-- `--canais`: Número de canais EMG (padrão: 4)
-- `--intervalo`: Intervalo entre buffers em segundos (padrão: 0.1)
+## Fluxo Offline (para distribuir em outro PC)
 
-### 2. Executar a Aplicação Principal (Terminal 2)
+No computador que tem internet:
 
-```bash
-python Grafico.py
-```
+1. Execute `Atualizar_Wheels_Offline.bat`
+2. Execute `Preparar_Ambiente_Portatil.bat`
+3. Compacte toda a pasta `ELEX20` em `.zip`
 
-### 3. Usar o Botão "⬇️ RECARREGAR DE LSL"
+No computador destino (sem internet):
 
-Clique no botão na sidebar para:
-1. Procurar streams LSL disponíveis ("EMG" e "EMG_Processado")
-2. Capturar 5 segundos de dados
-3. Processar e gerar gráficos automaticamente
+1. Extraia a pasta `ELEX20`
+2. Execute `Preparar_Ambiente_Portatil.bat`
+3. Rode `Executar_Simulador.bat` e `Executar_Projeto.bat`
 
-## Funcionalidades
+## O Que Ja Foi Automatizado
 
-### Gráficos Disponíveis
+- Instalacao de dependencias Python no `python-embed`
+- Instalacao de pacotes R em biblioteca local `R-Portable/library`
+- Configuracao automatica de `R_HOME`, `PATH` e `R_LIBS_USER` no codigo
+- Validacao de dependencias nos atalhos de execucao
 
-1. **Sinal Bruto (EEG)** - Visualização pyqtgraph do sinal original
-2. **Sinal Filtrado (Passa-Banda 1-40Hz)** - Sinal após filtragem
-3. **Análise Espectral e Estatística** - 3 gráficos (R + ggplot2 ou matplotlib):
-   - **Boxplot Facetado**: Distribuição de features por modo de energia
-   - **Matriz de Dispersão**: Correlação entre features
-   - **Radar Chart**: Perfil normalizado das features
+## O Que Ainda Exige Acao do Usuario
 
-### Modos de Operação
+1. Internet ao menos uma vez para baixar dependencias (Python e R), caso a pasta ainda nao tenha sido preparada.
+2. Permitir execucao de script PowerShell quando o Windows bloquear (ExecutionPolicy).
+3. Garantir que antivirus/firewall nao bloqueiem processos locais do Python/LSL.
+4. Algumas combinacoes de versao (ex.: Python muito novo) podem nao ter wheel para todas as bibliotecas. Nesse caso, o instalador tenta modo sem `rpy2` e a analise R pode ficar indisponivel.
 
-- **Modo Tabela**: Visualiza métricas em tabela (RMS, Freq. Mediana, ZCR, Waveform Length)
-- **Modo Gráfico**: Visualiza análise estatística gerada por R/Python
+### Recomendacao de compatibilidade
 
-### Botões na Sidebar
+- Se o objetivo for 100% de recursos R em qualquer PC, prefira distribuir a pasta ja preparada apos executar `Preparar_Ambiente_Portatil.bat` na maquina de origem.
+- Se ainda houver incompatibilidade de wheel, use uma distribuicao Python embutida 3.11 ou 3.12 para maior compatibilidade com ecossistema cientifico/R.
 
-- **📊 DASHBOARD PRINCIPAL**: Em desenvolvimento
-- **🔍 INSPEÇÃO DE CANAIS**: Em desenvolvimento
-- **💾 EXPORTAR RELATÓRIO**: Em desenvolvimento
-- **🧮 ALTERNAR VISUALIZAÇÃO**: Alterna entre tabela e gráficos
-- **🔄 RESETAR ZOOM**: Reset do zoom nos gráficos de sinal
-- **⬇️ RECARREGAR DE LSL**: Captura dados de LSL e regenera gráficos
+## Solucao de Problemas
 
-## Streams LSL
+### Aplicacao abre com linha reta nos sinais
 
-### Stream "EMG" (Bruto)
-- **Nome**: EMG
-- **Tipo**: EMG
-- **Formato**: float32
-- **Frequência**: 250 Hz (configurável)
-- **Canais**: 4 (configurável)
+- Verifique se o simulador esta rodando antes da aplicacao.
+- Confirme se o stream `EMG` foi encontrado na barra de status da janela.
+- Se necessario, reinicie ambos os `.bat`.
 
-### Stream "EMG_Processado" (Filtrado)
-- **Nome**: EMG_Processado
-- **Tipo**: EMG
-- **Formato**: float32
-- **Frequência**: 250 Hz (mesmo do bruto)
-- **Canais**: 4 (mesmo do bruto)
-- **Processamento**: Filtro passa-banda 20-150 Hz
+### Erro de dependencia Python
 
-## Métricas Calculadas por Canal
+- Execute novamente `Preparar_Ambiente_Portatil.bat`.
 
-1. **RMS** (Root Mean Square): Amplitude do sinal
-2. **Freq. Mediana**: Frequência central da distribuição de potência
-3. **ZCR** (Zero Crossing Rate): Taxa de cruzamento por zero
-4. **Waveform Length**: Comprimento cumulativo da forma de onda
+### Erro de pacote R (ggplot2/GGally etc.)
 
-## Classificação de Modo
-
-Baseada em percentis do RMS:
-- **Baixa energia**: Q1 (0-33%)
-- **Média energia**: Q2 (33-66%)
-- **Alta energia**: Q3+ (66-100%)
-
-## Troubleshooting
-
-### "pylsl não instalado"
-```bash
-pip install pylsl
-```
+- Execute `scripts\instalar_r_local.bat`.
 
 ### "Nenhum stream LSL encontrado"
-1. Verifique se o simulador está rodando
-2. Certifique-se de que pylsl está instalado em ambos os terminais
-3. Verifique se não há firewall bloqueando comunicação local
 
-### "R_HOME não configurado"
-1. Instale R (https://cran.r-project.org/)
-2. Configure variável de ambiente `R_HOME` apontando para a pasta raiz do R
-3. Instale rpy2: `pip install rpy2`
+- Inicie primeiro `Executar_Simulador.bat`.
+- Verifique se outra aplicacao nao ocupou o stream com mesmo nome.
 
-Se R não estiver disponível, o programa usa automaticamente fallback em matplotlib.
+## Observacoes Tecnicas
 
-## Arquitetura
+- O MNE Browser usa no maximo 4 canais por requisito de usabilidade.
+- Os graficos de tempo real usam janela deslizante com suavizacao temporal leve.
+- A analise estatistica prioriza R + ggplot2 e utiliza fallback Python quando necessario.
 
-```
-Grafico.py                  # Aplicação Principal (PyQt6)
-├── JanelaNeuro              # Interface principal
-├── calcular_parametros_sinal() # Cálculo de métricas
-├── gerar_grafico_r()        # Geração de gráficos R
-├── gerar_grafico_python()   # Fallback matplotlib
-└── recarregar_de_lsl()      # Captura de LSL
 
-simulador_lsl_emg.py        # Simulador de Streams LSL
-├── SimuladorEMG             # Classe geradora
-├── gerar_emg_sintetico()   # Síntese de sinal
-├── filtrar_emg()            # Filtragem
-└── enviar_stream()          # Broadcasting LSL
-```
-
-## Notas Importantes
-
-- Os dados capturados são armazenados em `output/metricas_canais.csv`
-- Os gráficos PNG são salvos em `output/` com formato de alta resolução (300 DPI)
-- O web_view exibe HTML com as imagens dos gráficos
-- A captura de LSL aguarda por 3 segundos antes de timeout
-- Dados são capturados continuamente por 5 segundos quando "RECARREGAR" é clicado
-
-## Versão
-v1.2 Beta | 2026

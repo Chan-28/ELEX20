@@ -35,29 +35,31 @@ def adicionar_no_path_se_necessario(novo_caminho: Path):
 
 
 def configurar_r_environment() -> bool:
-    """Configura R_HOME de forma portátil sem hardcode obrigatório no código."""
-    r_home_env = os.environ.get("R_HOME") or os.environ.get("NEURO_R_HOME")
-    candidatos = [
-        Path(r_home_env) if r_home_env else None,
-        Path(r"C:\Program Files\R\R-4.5.2"),
-        Path(r"C:\Program Files\R\R-4.4.0"),
-        Path(r"C:\Program Files\R\R-4.3.3"),
-    ]
+    base_path = Path(__file__).parent.absolute()
+    r_local = base_path / "R-Portable" / "R-4.5.1" 
+    
+    if r_local.exists():
+        # Define a casa do R
+        os.environ["R_HOME"] = str(r_local)
+        
+        # PRIORIDADE MÁXIMA: Coloca o R 4.5.1 no início do PATH
+        bin_path = str(r_local / "bin" / "x64")
+        os.environ["PATH"] = bin_path + os.pathsep + os.environ.get("PATH", "")
+        
+        # Garante que o R use a pasta de bibliotecas local que você criou
+        r_lib_local = base_path / "R-Portable" / "library"
+        r_lib_local.mkdir(parents=True, exist_ok=True)
+        os.environ["R_LIBS_USER"] = str(r_lib_local)
+        
+        # Limpa variáveis de ambiente que podem apontar para versões antigas no seu PC
+        for env_var in ["R_USER", "R_LIBS"]:
+            if env_var in os.environ:
+                del os.environ[env_var]
+                
+        LOGGER.info(f"R 4.5.1 Local Configurado: {r_local}")
+        return True
 
-    for candidato in candidatos:
-        if not candidato:
-            continue
-        if candidato.exists():
-            os.environ["R_HOME"] = str(candidato)
-            bin_dir = candidato / "bin" / "x64"
-            if bin_dir.exists():
-                adicionar_no_path_se_necessario(bin_dir)
-            LOGGER.info("R_HOME configurado para: %s", candidato)
-            return True
-
-    LOGGER.warning(
-        "R_HOME nao encontrado. A analise R sera desativada nesta execucao."
-    )
+    LOGGER.warning(f"R-Portable não encontrado em {r_local}")
     return False
 
 
@@ -122,6 +124,19 @@ def calcular_parametros_sinal(raw, n_segmentos=20) -> tuple[list[dict], dict]:
 # UI STYLE SHEET (Inspirado no estilo limpo do HTML5 UP)
 ESTILO_PREMIUM = """
     QMainWindow { background-color: #f4f4f4; }
+    QDialog, QMessageBox {
+        background-color: #ffffff;
+        color: #1f2937;
+    }
+    QToolTip {
+        background-color: #ffffff;
+        color: #111827;
+        border: 1px solid #d1d5db;
+    }
+    QMenu, QMenuBar, QStatusBar, QScrollArea, QFrame {
+        background-color: #ffffff;
+        color: #1f2937;
+    }
     
     /* Painel Lateral Estilo 'Sidebar' */
     QWidget#Sidebar { 
@@ -131,10 +146,12 @@ ESTILO_PREMIUM = """
     
     QLabel { font-family: 'Helvetica Neue', Helvetica, Arial; color: #333; }
     QLabel#Logo { 
+        background-color: #000000;
         color: #ffffff; 
         font-size: 22px; 
         font-weight: 300; 
         letter-spacing: 2px;
+        border-radius: 6px;
         padding: 20px;
     }
     
@@ -304,8 +321,11 @@ class JanelaNeuro(QtWidgets.QMainWindow):
     def __init__(self, raw_bruto, raw_filt):
         super().__init__()
         self.setWindowTitle("Análise Neurofisiológica")
+        self.setWindowFlag(QtCore.Qt.WindowType.WindowSystemMenuHint, True)
+        self.setWindowFlag(QtCore.Qt.WindowType.WindowMinMaxButtonsHint, True)
+        self.setWindowFlag(QtCore.Qt.WindowType.WindowCloseButtonHint, True)
+        self.setWindowState(self.windowState() | QtCore.Qt.WindowState.WindowMaximized)
         self.setStyleSheet(ESTILO_PREMIUM)
-        self.showMaximized()
 
         central = QtWidgets.QWidget()
         self.setCentralWidget(central)
@@ -328,9 +348,9 @@ class JanelaNeuro(QtWidgets.QMainWindow):
         btn3 = QtWidgets.QPushButton("💾 EXPORTAR RELATÓRIO")
         btn_toggle_metricas = QtWidgets.QPushButton("🧮 ALTERNAR VISUALIZAÇÃO")
         btn_reset = QtWidgets.QPushButton("🔄 RESETAR ZOOM")
-        btn_reload_from_lsl = QtWidgets.QPushButton("⬇️ RECARREGAR DE LSL")
+        btn_reload_from_lsl = QtWidgets.QPushButton("⬇️ Atualizar dados")
         btn1.clicked.connect(lambda: self.mostrar_em_desenvolvimento("Dashboard principal"))
-        btn2.clicked.connect(lambda: self.mostrar_em_desenvolvimento("Inspeção de canais"))
+        btn2.clicked.connect(self.abrir_mne_browser)
         btn3.clicked.connect(lambda: self.mostrar_em_desenvolvimento("Exportar relatório"))
         btn_toggle_metricas.clicked.connect(self.alternar_visualizacao_analise)
         btn_reset.clicked.connect(self.reset_views)
@@ -356,6 +376,18 @@ class JanelaNeuro(QtWidgets.QMainWindow):
         layout_grid.setContentsMargins(30, 30, 30, 30)
         layout_grid.setSpacing(20)
 
+        # Estado interno precisa existir antes de chamar carregar_r().
+        self._tmp_dir_r_atual = None
+        self._ultimo_bruto = None
+        self._ultimo_filt = None
+        self._graficos_ja_plotados = False
+        self.window_seconds = 1.0
+        self.mne_browser = None
+        self._mne_browser_aberto = False
+        self._mne_browser_refresh_pending = False
+        self._mne_browser_last_refresh = 0.0
+        self._mne_browser_refresh_interval = 0.8
+        
         # Boxes de Sinais (com referências aos layouts para atualização posterior)
         box_bruto = QtWidgets.QGroupBox("Sinal Bruto")
         self.layout_bruto = QtWidgets.QVBoxLayout(box_bruto)
@@ -377,12 +409,6 @@ class JanelaNeuro(QtWidgets.QMainWindow):
         self.lbl_modo_analise.setStyleSheet("font-weight: normal; color: #34495e;")
         layout_r.addWidget(self.lbl_modo_analise)
 
-        # Estado interno precisa existir antes de chamar carregar_r().
-        self._tmp_dir_r_atual = None
-        self._ultimo_bruto = None
-        self._ultimo_filt = None
-        self._graficos_ja_plotados = False
-        self.window_seconds = 0.2
 
         self.metricas_por_canal, self.metricas_medias = calcular_parametros_sinal(raw_filt)
 
@@ -417,10 +443,10 @@ class JanelaNeuro(QtWidgets.QMainWindow):
         self.plot_items_bruto = []
         self.plot_items_filt = []
         self.raw_browser = raw_filt.copy()
-        self.mne_browser = None
+        self._plot_buffer_bruto = None
+        self._plot_buffer_filt = None
 
-        # Abre o MNE browser depois da janela principal iniciar.
-        QtCore.QTimer.singleShot(400, self.abrir_mne_browser)
+        # Mantido apenas para inspeção manual via botão.
 
     def criar_pyqtgraph(self, raw, cor_sinal):
         pw = pg.PlotWidget()
@@ -445,9 +471,12 @@ class JanelaNeuro(QtWidgets.QMainWindow):
         
         # Remove bordas padrão para visual mais limpo
         pw.hideAxis('left')
+        pw.enableAutoRange(axis=pg.ViewBox.YAxis, enable=True)
         
         # Armazena referência aos items para atualização posterior
         setattr(pw, '_plot_items', plot_items)
+        window_samples = max(1, int(self.window_seconds * 250.0))
+        setattr(pw, '_plot_display', np.asarray(data[:min(2, data.shape[0]), -window_samples:], dtype=float).copy())
         return pw
     
     def atualizar_plot_dados(self, plot_widget, dados_novos: np.ndarray) -> None:
@@ -461,21 +490,45 @@ class JanelaNeuro(QtWidgets.QMainWindow):
             plot_items = getattr(plot_widget, '_plot_items', None)
             if plot_items is None or len(plot_items) == 0:
                 return
-            
-            # Mostra apenas a janela mais recente para ampliar a visualizacao
-            n_samples = dados_novos.shape[1]
+
             sfreq = 250.0
             window_samples = max(1, int(self.window_seconds * sfreq))
-            start_idx = max(0, n_samples - window_samples)
-            dados_window = dados_novos[:, start_idx:]
-            times = np.arange(dados_window.shape[1]) / sfreq
+
+            n_canais_plot = min(len(plot_items), dados_novos.shape[0])
+            if n_canais_plot <= 0:
+                return
+
+            dados_window = np.asarray(dados_novos[:n_canais_plot, -window_samples:], dtype=float)
+            if dados_window.shape[1] == 0:
+                return
+
+            display_anterior = getattr(plot_widget, '_plot_display', None)
+            if (
+                display_anterior is not None
+                and isinstance(display_anterior, np.ndarray)
+                and display_anterior.shape == dados_window.shape
+            ):
+                # Smoothing temporal leve para reduzir tremulação sem perder dinâmica.
+                alpha = 0.72
+                dados_display = (alpha * dados_window) + ((1.0 - alpha) * display_anterior)
+            else:
+                dados_display = dados_window.copy()
+
+            setattr(plot_widget, '_plot_display', dados_display)
+            times = np.linspace(-self.window_seconds, 0.0, dados_display.shape[1], endpoint=False)
             
             # Atualiza cada plot item com os novos dados
             for idx, (plot_item, _) in enumerate(plot_items):
-                if idx < dados_window.shape[0]:
-                    plot_item.setData(times, dados_window[idx, :], connect="finite")
+                if idx < dados_display.shape[0]:
+                    plot_item.setData(times, dados_display[idx, :], connect="finite")
 
-            plot_widget.setXRange(0.0, self.window_seconds, padding=0.0)
+            plot_widget.setXRange(-self.window_seconds, 0.0, padding=0.0)
+            y_min = float(np.nanmin(dados_display)) if dados_display.size else -1.0
+            y_max = float(np.nanmax(dados_display)) if dados_display.size else 1.0
+            if not np.isfinite(y_min) or not np.isfinite(y_max) or abs(y_max - y_min) < 1e-12:
+                y_min, y_max = -1.0, 1.0
+            margem = max((y_max - y_min) * 0.15, 1e-6)
+            plot_widget.setYRange(y_min - margem, y_max + margem, padding=0.0)
                     
         except Exception as e:
             LOGGER.debug(f"Erro ao atualizar dados do plot: {e}")
@@ -550,6 +603,7 @@ class JanelaNeuro(QtWidgets.QMainWindow):
         layout.addWidget(self.lbl_status_graficos)
 
         scroll = QtWidgets.QScrollArea()
+        self.scroll_graficos = scroll
         scroll.setWidgetResizable(True)
         # Evita barra de rolagem horizontal indesejada
         scroll.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
@@ -567,8 +621,8 @@ class JanelaNeuro(QtWidgets.QMainWindow):
         for lbl in (self.lbl_r_box, self.lbl_r_pairs, self.lbl_r_radar):
             lbl.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
             # Permite que o label expanda horizontalmente dentro do layout
-            lbl.setSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Preferred)
-            lbl.setMinimumHeight(200)
+            lbl.setSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Fixed)
+            lbl.setFixedHeight(620)
             lbl.setStyleSheet("background: #ffffff; border: 1px solid #dcdde1; padding: 20px;")
             lbl.setText("Atualize para plotar os gráficos")
             # Evita zoom/estiramento do pixmap a cada atualização
@@ -586,24 +640,28 @@ class JanelaNeuro(QtWidgets.QMainWindow):
             label.setText("Falha ao carregar imagem")
             return
 
-        # Se o label ainda não tem tamanho definido (a janela pode estar em construção), adiamos
-        largura_label = max(1, label.width())
-        if largura_label < 20:
+        # Calcula largura a partir do container de scroll para evitar crescimento cumulativo.
+        largura_base = 0
+        if hasattr(self, "scroll_graficos") and self.scroll_graficos is not None:
+            largura_base = max(largura_base, self.scroll_graficos.contentsRect().width())
+        if largura_base <= 0:
+            parent = label.parentWidget()
+            largura_base = max(1, parent.width()) if parent else 0
+        if largura_base < 20:
             # aguarda o layout ser aplicado e tenta novamente
             QtCore.QTimer.singleShot(80, lambda: self._mostrar_pixmap_em_label(label, caminho))
             return
 
         # Escalona sem distorcer e sem zoom cumulativo
-        alvo_largura = max(100, largura_label - 24)
+        alvo_largura = max(100, largura_base - 36)
+        altura_maxima = 560
         scaled = pix.scaled(
             alvo_largura,
-            5000,
+            altura_maxima,
             QtCore.Qt.AspectRatioMode.KeepAspectRatio,
             QtCore.Qt.TransformationMode.SmoothTransformation,
         )
         label.setPixmap(scaled)
-        # Ajusta altura para exibir a imagem completa (sem corte)
-        label.setMinimumHeight(max(200, scaled.height() + 12))
         label.setText("")
 
     def _limpar_tmp_r_anterior(self) -> None:
@@ -613,16 +671,23 @@ class JanelaNeuro(QtWidgets.QMainWindow):
         self._tmp_dir_r_atual = None
 
     def abrir_mne_browser(self) -> None:
+        if self.mne_browser is not None:
+            try:
+                self._mne_browser_aberto = True
+                if hasattr(self.mne_browser, "show"):
+                    self.mne_browser.show()
+                if hasattr(self.mne_browser, "raise_"):
+                    self.mne_browser.raise_()
+                if hasattr(self.mne_browser, "activateWindow"):
+                    self.mne_browser.activateWindow()
+                self._renderizar_mne_browser(force=True)
+                return
+            except Exception:
+                self.mne_browser = None
+
         try:
-            mne.viz.set_browser_backend("qt")
-            self.mne_browser = mne.viz.plot_raw(
-                self.raw_browser,
-                title="MNE Inspector - Tempo Real",
-                block=False,
-                n_channels=min(4, len(self.raw_browser.ch_names)),
-                show_options=True,
-            )
-            LOGGER.info("MNE Qt Browser aberto.")
+            self._mne_browser_aberto = True
+            self._renderizar_mne_browser(force=True)
         except Exception as e:
             LOGGER.warning(f"Nao foi possivel abrir MNE Browser: {e}")
 
@@ -635,14 +700,82 @@ class JanelaNeuro(QtWidgets.QMainWindow):
             n_amostras = min(self.raw_browser._data.shape[1], dados_filt.shape[1])
             self.raw_browser._data[:, :] = 0.0
             self.raw_browser._data[:n_canais, -n_amostras:] = dados_filt[:n_canais, -n_amostras:]
-
-            if self.mne_browser is not None:
-                if hasattr(self.mne_browser, "_redraw"):
-                    self.mne_browser._redraw(update_data=True)
-                elif hasattr(self.mne_browser, "_update_data"):
-                    self.mne_browser._update_data()
         except Exception as e:
             LOGGER.debug(f"Falha ao atualizar MNE Browser: {e}")
+
+    def _processar_refresh_mne_browser(self) -> None:
+        self._mne_browser_refresh_pending = False
+        return
+
+    def _renderizar_mne_browser(self, force: bool = False) -> None:
+        browser = self.mne_browser
+        if browser is None and not force:
+            return
+        if not force:
+            if not self._mne_browser_aberto:
+                return
+            if browser is None:
+                return
+            if hasattr(browser, "isVisible") and not browser.isVisible():
+                return
+
+        agora = time.time()
+        if not force and (agora - self._mne_browser_last_refresh) < self._mne_browser_refresh_interval:
+            return
+
+        dados = self._ultimo_filt if self._ultimo_filt is not None else self.raw_browser.get_data()
+        dados = np.asarray(dados, dtype=float)
+        if dados.ndim == 1:
+            dados = dados.reshape(1, -1)
+        if dados.size == 0:
+            return
+
+        n_canais_browser = min(4, max(1, dados.shape[0]))
+        dados = dados[:n_canais_browser, :]
+
+        sfreq = float(self.raw_browser.info.get("sfreq", 250.0))
+        ch_names = list(self.raw_browser.ch_names[: dados.shape[0]])
+        if len(ch_names) < dados.shape[0]:
+            ch_names += [f"EMG_{i+1}" for i in range(len(ch_names), dados.shape[0])]
+        info = mne.create_info(ch_names=ch_names, sfreq=sfreq, ch_types="emg")
+        raw_live = mne.io.RawArray(dados, info, verbose="ERROR")
+
+        try:
+            old_browser = browser
+            browser = mne.viz.plot_raw(
+                raw_live,
+                title="MNE Inspector - Tempo Real",
+                block=False,
+                n_channels=n_canais_browser,
+                duration=min(2.0, max(raw_live.times[-1] if raw_live.n_times > 1 else 1.0, 0.5)),
+                show_options=False,
+                bgcolor="white",
+            )
+            self.mne_browser = browser
+            if old_browser is not None:
+                try:
+                    old_browser.close()
+                except Exception:
+                    pass
+            if hasattr(browser, "show"):
+                browser.show()
+            if hasattr(browser, "raise_"):
+                browser.raise_()
+            if hasattr(browser, "activateWindow"):
+                browser.activateWindow()
+            try:
+                if hasattr(browser, "setStyleSheet"):
+                    browser.setStyleSheet(
+                        "QWidget { background-color: white; color: black; }"
+                        "QLabel, QToolButton, QPushButton, QComboBox, QSpinBox, QCheckBox, QRadioButton {"
+                        " color: black; background-color: white; }"
+                    )
+            except Exception:
+                pass
+            self._mne_browser_last_refresh = agora
+            self._mne_browser_aberto = True
+        except Exception as e:
+            LOGGER.debug(f"Falha ao renderizar MNE Browser: {e}")
 
 
     def carregar_r(self):
@@ -672,18 +805,6 @@ class JanelaNeuro(QtWidgets.QMainWindow):
     def criar_widget_metricas(self):
         container = QtWidgets.QWidget()
         layout = QtWidgets.QVBoxLayout(container)
-
-        resumo = QtWidgets.QLabel(
-            (
-                "Métricas médias (todos os canais) | "
-                f"RMS: {self.metricas_medias['rms']:.6f} | "
-                f"Média da Frequência Mediana: {self.metricas_medias['freq_mediana']:.3f} Hz | "
-                f"ZCR: {self.metricas_medias['zcr']:.6f} | "
-                f"Waveform Length: {self.metricas_medias['waveform_length']:.6f}"
-            )
-        )
-        resumo.setWordWrap(True)
-        layout.addWidget(resumo)
 
         tabela = QtWidgets.QTableWidget()
         tabela.setColumnCount(5)
@@ -751,6 +872,7 @@ class JanelaNeuro(QtWidgets.QMainWindow):
                 self.mne_browser.close()
             except Exception:
                 pass
+        self._mne_browser_aberto = False
         
         if a0 is not None:
             a0.accept()
@@ -1015,13 +1137,23 @@ def gerar_grafico_r(metricas_por_canal: list[dict] | None = None) -> dict[str, P
         output_r_png_pairs = str(temp_png_pairs).replace("\\", "/")
         output_r_png_radar = str(temp_png_radar).replace("\\", "/")
 
-        robjects.r(f'''
+        robjects.globalenv["output_r_csv"] = output_r_csv
+        robjects.globalenv["output_r_png_box"] = output_r_png_box
+        robjects.globalenv["output_r_png_pairs"] = output_r_png_pairs
+        robjects.globalenv["output_r_png_radar"] = output_r_png_radar
+
+        script_r_base = f"""
+            output_r_csv <- "{output_r_csv}"
+            output_r_png_box <- "{output_r_png_box}"
+            output_r_png_pairs <- "{output_r_png_pairs}"
+            output_r_png_radar <- "{output_r_png_radar}"
+
             library(ggplot2)
             library(tidyr)
             library(dplyr)
             library(scales)
 
-            df <- read.csv("{output_r_csv}", stringsAsFactors = FALSE)
+            df <- read.csv(output_r_csv, stringsAsFactors = FALSE)
             df$modo <- factor(df$modo, levels = c("Baixa energia", "Media energia", "Alta energia"))
 
             nomes_features <- c(
@@ -1031,7 +1163,6 @@ def gerar_grafico_r(metricas_por_canal: list[dict] | None = None) -> dict[str, P
                 waveform_length = "Waveform Length"
             )
 
-            # 1) Boxplot combinado por feature (facets) + jitter + média
             long_df <- df %>%
                 pivot_longer(
                     cols = c(rms, freq_mediana, zcr, waveform_length),
@@ -1050,135 +1181,139 @@ def gerar_grafico_r(metricas_por_canal: list[dict] | None = None) -> dict[str, P
                 labs(
                     x = "Modo inferido a partir do RMS",
                     y = "Valor da feature"
-                ) + 
+                ) +
                 theme_minimal(base_size = 12) +
                 theme(
                     legend.position = "bottom",
-                    legend.box.spacing = unit(0.5, "cm"),
-                    legend.margin = margin(t = 10, b = 5, l = 5, r = 5),
-                    plot.margin = margin(b = 60, t = 20, l = 20, r = 20),
+                    legend.box.spacing = grid::unit(0.5, "cm"),
+                    legend.margin = ggplot2::margin(t = 10, b = 5, l = 5, r = 5),
+                    plot.margin = ggplot2::margin(b = 60, t = 20, l = 20, r = 20),
                     panel.grid.minor = element_blank(),
-                    axis.title.x = element_text(margin = margin(t = 20)),
-                    axis.title.y = element_text(margin = margin(r = 20))
+                    axis.title.x = element_text(margin = ggplot2::margin(t = 20)),
+                    axis.title.y = element_text(margin = ggplot2::margin(r = 20))
                 )
 
-            ggsave("{output_r_png_box}", plot = p_box, width = 12, height = 9, dpi = 120)
+            ggsave(output_r_png_box, plot = p_box, width = 12, height = 9, dpi = 120)
+        """
 
-            # 2) Matriz de dispersão com correlação
-            pair_df <- df %>% select(rms, freq_mediana, zcr, waveform_length)
-            colnames(pair_df) <- unname(nomes_features[colnames(pair_df)])
+        script_r_pairs = """
+            pair_df <- df %>% select(modo, rms, freq_mediana, zcr, waveform_length)
+    
+            cols_to_rename <- c("rms", "freq_mediana", "zcr", "waveform_length")
+            colnames(pair_df)[colnames(pair_df) %in% cols_to_rename] <- unname(nomes_features[cols_to_rename])
 
-            # Jitter robusto para evitar alinhamentos verticais/horizontais em sinais quase constantes
             pair_df_jittered <- pair_df %>%
-                mutate(across(everything(), ~ {{
+                mutate(across(where(is.numeric), ~ {
                     rng <- diff(range(.x, na.rm = TRUE))
                     amt <- if (!is.finite(rng) || rng == 0) 0.002 else max(rng * 0.03, 0.001)
                     jitter(.x, amount = amt)
-                }}))
+                }))
 
-            if (requireNamespace("GGally", quietly = TRUE)) {{
-                p_pairs <- suppressWarnings(GGally::ggpairs(
-                    pair_df_jittered, # <--- Agora com dados garantidos
-                    upper = list(continuous = GGally::wrap("cor", size = 4, color = "#2c3e50")),
-                    lower = list(continuous = GGally::wrap("points", alpha = 0.35, size = 0.9, color = "#2c7fb8")),
-                    diag = list(continuous = GGally::wrap("densityDiag", alpha = 0.6, fill = "#74a9cf"))
-                )) +
-                theme_minimal(base_size = 11) +
-                theme(panel.grid = element_blank())
+            if (!requireNamespace("GGally", quietly = TRUE)) {
+                stop("Pacote GGally nao encontrado. Instale com: install.packages('GGally')")
+            }
 
-                ggsave("{output_r_png_pairs}", plot = p_pairs, width = 12, height = 10, dpi = 120)
-            }} else {{
-                panel_cor <- function(x, y, digits = 2, cex.cor = 1.1, ...) {{
-                    old_usr <- par("usr")
-                    on.exit(par(usr = old_usr))
-                    par(usr = c(0, 1, 0, 1))
-                    sx <- sd(x, na.rm = TRUE)
-                    sy <- sd(y, na.rm = TRUE)
-                    if (is.na(sx) || is.na(sy) || sx == 0 || sy == 0) {{
-                        r <- 0
-                    }} else {{
-                        r <- suppressWarnings(cor(x, y, use = "pairwise.complete.obs"))
-                        if (!is.finite(r)) r <- 0
-                    }}
-                    txt <- formatC(r, format = "f", digits = digits)
-                    text(0.5, 0.5, txt, cex = cex.cor, col = "#2c3e50")
-                }}
-
-                png(filename = "{output_r_png_pairs}", width = 1300, height = 1100, res = 120)
-                pairs(
-                    pair_df,
-                    pch = 19,
-                    col = rgb(0.18, 0.48, 0.72, 0.55),
-                    upper.panel = panel_cor
-                )
-                dev.off()
-            }}
-
-            # 3) Biplot PCA: pontos por modo + vetores das features
-            matriz_features <- df %>%
-                select(rms, freq_mediana, zcr, waveform_length) %>%
-                mutate(across(everything(), ~ as.numeric(scale(.x))))
-
-            matriz_features[!is.finite(as.matrix(matriz_features))] <- 0
-
-            pca <- prcomp(matriz_features, center = FALSE, scale. = FALSE)
-            scores <- as.data.frame(pca$x[, 1:2])
-            scores$modo <- df$modo
-
-            loadings <- as.data.frame(pca$rotation[, 1:2])
-            loadings$feature <- c("RMS", "Freq. Mediana", "Zero Crossing Rate", "Waveform Length")
-
-            names(scores)[1:2] <- c("PC1", "PC2")
-            names(loadings)[1:2] <- c("PC1", "PC2")
-
-            var_exp <- (pca$sdev^2) / sum(pca$sdev^2)
-            pct1 <- round(var_exp[1] * 100, 1)
-            pct2 <- round(var_exp[2] * 100, 1)
-
-            escala_setas <- max(
-                max(abs(scores$PC1), na.rm = TRUE),
-                max(abs(scores$PC2), na.rm = TRUE)
-            ) * 0.72 / max(
-                max(abs(loadings$PC1), na.rm = TRUE),
-                max(abs(loadings$PC2), na.rm = TRUE),
-                1e-9
+            p_pairs <- GGally::ggpairs(
+                pair_df_jittered,
+                columns = 2:5,
+                mapping = aes(color = modo, fill = modo),
+                upper = list(continuous = GGally::wrap("cor", size = 4, family = "serif", stars = FALSE)),
+                lower = list(continuous = GGally::wrap("points", alpha = 0.4, size = 1.0)),
+                diag = list(continuous = GGally::wrap("densityDiag", alpha = 0.5))
+            ) +
+            scale_color_manual(values = c("Baixa energia" = "#1f78b4", "Media energia" = "#33a02c", "Alta energia" = "#e31a1c")) +
+            scale_fill_manual(values = c("Baixa energia" = "#1f78b4", "Media energia" = "#33a02c", "Alta energia" = "#e31a1c")) +
+            labs(color = "Modo", fill = "Modo") +
+            theme_minimal(base_size = 11) +
+            theme(
+                panel.grid = element_blank(),
+                panel.border = element_rect(color = "#CBD5E1", fill = NA, linewidth = 0.7),
+                strip.background = element_rect(fill = "#F8FAFC", color = "#CBD5E1", linewidth = 0.6),
+                strip.text = element_text(face = "bold", size = 10, color = "#1F2937"),
+                panel.spacing = grid::unit(0.18, "lines"),
+                text = element_text(family = "serif"),
+                legend.position = "bottom",
+                legend.title = element_text(face = "bold"),
+                legend.key = element_rect(fill = "white", color = NA)
             )
 
-            loadings <- loadings %>%
-                mutate(
-                    x_end = PC1 * escala_setas,
-                    y_end = PC2 * escala_setas
-                )
+            ggsave(output_r_png_pairs, plot = p_pairs, width = 13, height = 11, dpi = 130)
+        """
 
-            p_biplot <- ggplot(scores, aes(x = PC1, y = PC2, color = modo)) +
+        script_r_biplot = """
+            matriz_features <- df %>% dplyr::select(rms, freq_mediana, zcr, waveform_length)
+            matriz_scaled <- as.data.frame(lapply(matriz_features, function(x) as.numeric(scale(x))))
+            matriz_scaled[is.na(matriz_scaled)] <- 0
+
+            pca <- prcomp(matriz_scaled, center = FALSE, scale. = FALSE)
+            scores <- as.data.frame(pca$x[, 1:2, drop = FALSE])
+            scores$modo <- df$modo
+            names(scores)[1:2] <- c("PC1", "PC2")
+
+            loadings <- as.data.frame(pca$rotation[, 1:2, drop = FALSE])
+            names(loadings)[1:2] <- c("PC1", "PC2")
+            loadings$feature <- c("RMS", "Freq. Mediana", "Zero Crossing Rate", "Waveform Length")
+
+            var_exp <- (pca$sdev^2) / sum(pca$sdev^2)
+            p_1 <- round(var_exp[1] * 100, 1)
+            p_2 <- round(var_exp[2] * 100, 1)
+
+            max_scores <- max(abs(c(scores$PC1, scores$PC2)), na.rm = TRUE)
+            max_loadings <- max(abs(c(loadings$PC1, loadings$PC2)), na.rm = TRUE)
+            escala_setas <- max_scores * 0.72 / max(max_loadings, 1e-9)
+            if (!is.finite(escala_setas) || escala_setas == 0) {
+                escala_setas <- 1
+            }
+
+            loadings$x_end <- loadings$PC1 * escala_setas
+            loadings$y_end <- loadings$PC2 * escala_setas
+
+            cores_paleta <- c(
+                "Baixa energia" = "#1f78b4",
+                "Media energia" = "#33a02c",
+                "Alta energia" = "#e31a1c",
+                "RMS" = "#8E44AD",
+                "Freq. Mediana" = "#2980B9",
+                "Zero Crossing Rate" = "#E67E22",
+                "Waveform Length" = "#16A085"
+            )
+
+            p_biplot <- ggplot() +
                 geom_hline(yintercept = 0, linewidth = 0.4, color = "gray80") +
                 geom_vline(xintercept = 0, linewidth = 0.4, color = "gray80") +
-                geom_point(size = 2.6, alpha = 0.85) +
+                geom_point(
+                    data = scores,
+                    aes(x = PC1, y = PC2, color = modo),
+                    size = 2.6,
+                    alpha = 0.85
+                ) +
                 geom_segment(
                     data = loadings,
-                    aes(x = 0, y = 0, xend = x_end, yend = y_end),
-                    inherit.aes = FALSE,
-                    color = "#111827",
-                    linewidth = 0.9,
-                    arrow = arrow(length = unit(0.22, "cm"))
+                    aes(x = 0, y = 0, xend = x_end, yend = y_end, color = feature),
+                    linewidth = 1.0,
+                    arrow = grid::arrow(length = grid::unit(0.20, "cm"))
                 ) +
-                scale_color_manual(values = c("Baixa energia" = "#1f78b4", "Media energia" = "#33a02c", "Alta energia" = "#e31a1c")) +
+                scale_color_manual(values = cores_paleta) +
                 labs(
-                    x = paste0("PC1 (", pct1, "% da variância)"),
-                    y = paste0("PC2 (", pct2, "% da variância)")
-                    # Título removido conforme solicitado
+                    x = paste0("PC1 (", p_1, " % da variancia)"),
+                    y = paste0("PC2 (", p_2, " % da variancia)"),
+                    color = "Legenda"
                 ) +
                 coord_equal() +
                 theme_minimal(base_size = 12) +
                 theme(
-                    legend.position = "bottom",
+                    text = element_text(family = "serif"),
+                    legend.position = "right",
                     panel.grid.minor = element_blank(),
-                    plot.margin = margin(18, 18, 18, 18),
-                    plot.title = element_blank() # Garante a remoção de qualquer resquício de título
+                    plot.title = element_blank()
                 )
 
-            ggsave("{output_r_png_radar}", plot = p_biplot, width = 10, height = 8, dpi = 130)
-        ''')
+            ggsave(output_r_png_radar, plot = p_biplot, width = 10, height = 8, dpi = 130)
+        """
+
+        robjects.r(script_r_base)
+        robjects.r(script_r_pairs)
+        robjects.r(script_r_biplot)
 
         LOGGER.info("Gráficos R gerados em PNG temporário.")
         return {
@@ -1611,7 +1746,7 @@ if __name__ == "__main__":
         raw_filt = raw.copy()
 
         win = JanelaNeuro(raw, raw_filt)
-        win.show()
+        win.showMaximized()
         sys.exit(app.exec())
         
     except Exception as e:
