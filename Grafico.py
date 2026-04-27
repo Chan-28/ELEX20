@@ -763,15 +763,6 @@ class JanelaNeuro(QtWidgets.QMainWindow):
                 browser.raise_()
             if hasattr(browser, "activateWindow"):
                 browser.activateWindow()
-            try:
-                if hasattr(browser, "setStyleSheet"):
-                    browser.setStyleSheet(
-                        "QWidget { background-color: white; color: black; }"
-                        "QLabel, QToolButton, QPushButton, QComboBox, QSpinBox, QCheckBox, QRadioButton {"
-                        " color: black; background-color: white; }"
-                    )
-            except Exception:
-                pass
             self._mne_browser_last_refresh = agora
             self._mne_browser_aberto = True
         except Exception as e:
