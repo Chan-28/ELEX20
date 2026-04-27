@@ -6,22 +6,35 @@ Projeto para analise de sinais EMG em tempo real com LSL, visualizacao no MNE Br
 
 - `python-embed/`: Python local do projeto
 - `R-Portable/`: R local do projeto
-- `scripts/`: scripts de instalacao
-- `Grafico.py`: app principal
-- `simulador_lsl_emg.py`: stream LSL EMG de teste
-- `Preparar_Ambiente_Portatil.bat`: instala tudo (Python + R)
-- `Executar_Simulador.bat`: inicia simulador LSL
-- `Executar_Projeto.bat`: inicia Grafico.py com validacoes
+- `scripts/`: scripts de instalacao e helpers
+- `bin/`: scripts e lançadores (Executar_Projeto.bat, Executar_Simulador.bat, Preparar_Ambiente_Portatil.bat, Atualizar_Wheels_Offline.bat, etc.)
+- `src/`: código principal do aplicativo (`Grafico.py`, `simulador_lsl_emg.py`)
+- `tools/`: utilitários e helpers (`captar_Dados.py`, `filtrar_Dados.py`, `enviar_CSV_Dados.py`)
+- `tests/`: testes e integração (`teste_lsl_integracao.py`)
+- `third_party/`: (opcional) wheels e recursos offline
+- `output/`: diretório onde os gráficos e arquivos gerados são salvos
+- `README.md`, `requirements.txt` e outros arquivos de suporte na raiz
+
+Nota sobre reorganização
+------------------------
+Arquivos foram reorganizados para melhorar manutenção:
+
+- `bin/` contém os lançadores e scripts que o usuário executa.
+- `src/` contém o código fonte do aplicativo que roda em tempo real.
+- `tools/` contém utilitários auxiliares e scripts pequenos.
+- `tests/` contém scripts de teste e integração.
+
+Se você usava comandos antigos que esperavam arquivos na raiz, passe a usar os `.bat` em `bin\` ou mova arquivos de volta para a raiz conforme necessário.
 
 ## Instalacao de dependencias (Python e R)
 
 ### Metodo recomendado (automatico)
 
 1. Abra PowerShell na pasta do projeto.
-2. Execute:
+2. Execute o preparador do ambiente:
 
 ```powershell
-.\Preparar_Ambiente_Portatil.bat
+.\bin\Preparar_Ambiente_Portatil.bat
 ```
 
 Esse comando chama:
@@ -48,19 +61,27 @@ Instalar so R:
 .\scripts\instalar_r_local.bat
 ```
 
-## Como rodar o Grafico.py sem problemas
+## Como rodar o Grafico.py
 
 Ordem correta de execucao:
 
-1. Execute `Preparar_Ambiente_Portatil.bat` (somente no primeiro uso, ou quando mudar dependencia).
-2. Em um terminal, execute `Executar_Simulador.bat`.
-3. Em outro terminal, execute `Executar_Projeto.bat`.
-
+1. Execute `bin\Preparar_Ambiente_Portatil.bat` (somente no primeiro uso, ou quando mudar dependencia) no terminal: 
+```powershell
+.\bin\Preparar_Ambiente_Portatil.bat
+```
+2. Em um terminal, execute `bin\Executar_Simulador.bat`:
+```powershell
+.\bin\Executar_Simulador.bat
+```
+3. Em outro terminal, execute `bin\Executar_Projeto.bat`:
+```powershell
+.\bin\Executar_Projeto.bat
+```
 Fluxo equivalente direto com Python local:
 
 ```powershell
-.\python-embed\python.exe .\simulador_lsl_emg.py
-.\python-embed\python.exe .\Grafico.py
+.\python-embed\python.exe .\src\simulador_lsl_emg.py
+.\python-embed\python.exe .\src\Grafico.py
 ```
 
 ## VS Code (corrigir erros de import no editor)
@@ -82,9 +103,8 @@ Obs.: este workspace ja esta configurado em `.vscode/settings.json` para usar es
 
 ### Falha na instalacao R
 
-- Confira se existe uma destas estruturas:
+- Confira se existe essa estrutura:
 	- `R-Portable\R-4.5.1\bin\Rscript.exe`
-	- `R-Portable\App\R-Portable\bin\x64\Rscript.exe`
 
 ### Falha na instalacao Python
 

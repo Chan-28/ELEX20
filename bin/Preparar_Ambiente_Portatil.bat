@@ -1,7 +1,7 @@
 @echo off
 setlocal
 
-set "ROOT=%~dp0"
+set "ROOT=%~dp0..\"
 
 echo ============================================
 echo  Preparando ambiente portatil do ELEX20
