@@ -96,9 +96,5 @@ Obs.: este workspace ja esta configurado em `.vscode/settings.json` para usar es
 - Inicie primeiro `Executar_Simulador.bat`.
 - Feche outras apps que possam estar consumindo o stream `EMG`.
 
-### MNE Browser sem controles visiveis
-
-- Atualize para a versao mais recente deste projeto (foi removido override agressivo de estilo no browser).
-- Feche e abra novamente pelo botao "INSPECAO DE CANAIS".
 
 
