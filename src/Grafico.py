@@ -35,16 +35,31 @@ def adicionar_no_path_se_necessario(novo_caminho: Path):
 
 
 def configurar_r_environment() -> bool:
-    base_path = Path(__file__).parent.absolute()
-    r_local = base_path / "R-Portable" / "R-4.5.1" 
+    base_path = Path(__file__).resolve().parent.parent
+    r_local = base_path / "R-Portable" / "R-4.5.1"
+
+    if not r_local.exists():
+        base_path = Path(__file__).resolve().parent
+        r_local = base_path / "R-Portable" / "R-4.5.1"
     
     if r_local.exists():
         # Define a casa do R
         os.environ["R_HOME"] = str(r_local)
         
         # PRIORIDADE MÁXIMA: Coloca o R 4.5.1 no início do PATH
-        bin_path = str(r_local / "bin" / "x64")
-        os.environ["PATH"] = bin_path + os.pathsep + os.environ.get("PATH", "")
+        bin_root = r_local / "bin"
+        bin_x64 = bin_root / "x64"
+        caminho_bin = [str(p) for p in (bin_root, bin_x64) if p.exists()]
+        if caminho_bin:
+            os.environ["PATH"] = os.pathsep.join(caminho_bin + [os.environ.get("PATH", "")])
+
+        if os.name == "nt":
+            for dll_dir in (bin_root, bin_x64):
+                if dll_dir.exists():
+                    try:
+                        os.add_dll_directory(str(dll_dir))
+                    except (AttributeError, FileNotFoundError):
+                        pass
         
         # Garante que o R use a pasta de bibliotecas local que você criou
         r_lib_local = base_path / "R-Portable" / "library"
@@ -1122,7 +1137,9 @@ def gerar_grafico_r(metricas_por_canal: list[dict] | None = None) -> dict[str, P
         from rpy2.robjects import packages as rpackages
 
         # Garante que o R enxergue a biblioteca local do projeto.
-        r_lib_local = (Path(__file__).resolve().parent / "R-Portable" / "library").resolve()
+        r_lib_local = (Path(__file__).resolve().parent.parent / "R-Portable" / "library").resolve()
+        if not r_lib_local.exists():
+            r_lib_local = (Path(__file__).resolve().parent / "R-Portable" / "library").resolve()
         r_lib_local.mkdir(parents=True, exist_ok=True)
         r_lib_local_r = str(r_lib_local).replace("\\", "/")
         robjects.r(f'.libPaths(unique(c("{r_lib_local_r}", .libPaths())))')
