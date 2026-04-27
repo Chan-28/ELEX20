@@ -680,7 +680,7 @@ class JanelaNeuro(QtWidgets.QMainWindow):
                     self.mne_browser.raise_()
                 if hasattr(self.mne_browser, "activateWindow"):
                     self.mne_browser.activateWindow()
-                self._renderizar_mne_browser(force=True)
+                self._processar_refresh_mne_browser()
                 return
             except Exception:
                 self.mne_browser = None
@@ -700,70 +700,72 @@ class JanelaNeuro(QtWidgets.QMainWindow):
             n_amostras = min(self.raw_browser._data.shape[1], dados_filt.shape[1])
             self.raw_browser._data[:, :] = 0.0
             self.raw_browser._data[:n_canais, -n_amostras:] = dados_filt[:n_canais, -n_amostras:]
+
+            if not self._mne_browser_aberto or self.mne_browser is None:
+                return
+
+            agora = time.time()
+            delta = agora - self._mne_browser_last_refresh
+            if delta >= self._mne_browser_refresh_interval:
+                self._processar_refresh_mne_browser()
+            elif not self._mne_browser_refresh_pending:
+                self._mne_browser_refresh_pending = True
+                espera_ms = max(40, int((self._mne_browser_refresh_interval - delta) * 1000))
+                QtCore.QTimer.singleShot(espera_ms, self._processar_refresh_mne_browser)
         except Exception as e:
             LOGGER.debug(f"Falha ao atualizar MNE Browser: {e}")
 
     def _processar_refresh_mne_browser(self) -> None:
         self._mne_browser_refresh_pending = False
-        return
+        if not self._mne_browser_aberto or self.mne_browser is None:
+            return
+
+        try:
+            browser = self.mne_browser
+            if hasattr(browser, "_redraw"):
+                try:
+                    browser._redraw(update_data=True)
+                except TypeError:
+                    browser._redraw()
+            elif hasattr(browser, "redraw"):
+                browser.redraw()
+            elif hasattr(browser, "canvas") and hasattr(browser.canvas, "draw_idle"):
+                browser.canvas.draw_idle()
+
+            self._mne_browser_last_refresh = time.time()
+        except Exception as e:
+            LOGGER.debug(f"Falha ao atualizar UI do MNE Browser: {e}")
 
     def _renderizar_mne_browser(self, force: bool = False) -> None:
         browser = self.mne_browser
-        if browser is None and not force:
-            return
-        if not force:
-            if not self._mne_browser_aberto:
-                return
-            if browser is None:
-                return
-            if hasattr(browser, "isVisible") and not browser.isVisible():
-                return
-
-        agora = time.time()
-        if not force and (agora - self._mne_browser_last_refresh) < self._mne_browser_refresh_interval:
+        if browser is not None:
+            self._processar_refresh_mne_browser()
             return
 
-        dados = self._ultimo_filt if self._ultimo_filt is not None else self.raw_browser.get_data()
-        dados = np.asarray(dados, dtype=float)
-        if dados.ndim == 1:
-            dados = dados.reshape(1, -1)
-        if dados.size == 0:
+        if self.raw_browser is None:
             return
 
-        n_canais_browser = min(4, max(1, dados.shape[0]))
-        dados = dados[:n_canais_browser, :]
-
-        sfreq = float(self.raw_browser.info.get("sfreq", 250.0))
-        ch_names = list(self.raw_browser.ch_names[: dados.shape[0]])
-        if len(ch_names) < dados.shape[0]:
-            ch_names += [f"EMG_{i+1}" for i in range(len(ch_names), dados.shape[0])]
-        info = mne.create_info(ch_names=ch_names, sfreq=sfreq, ch_types="emg")
-        raw_live = mne.io.RawArray(dados, info, verbose="ERROR")
+        n_canais_browser = min(4, max(1, int(self.raw_browser.info.get("nchan", 1))))
+        duracao = min(2.0, max(self.raw_browser.times[-1] if self.raw_browser.n_times > 1 else 1.0, 0.5))
 
         try:
-            old_browser = browser
             browser = mne.viz.plot_raw(
-                raw_live,
+                self.raw_browser,
                 title="MNE Inspector - Tempo Real",
                 block=False,
                 n_channels=n_canais_browser,
-                duration=min(2.0, max(raw_live.times[-1] if raw_live.n_times > 1 else 1.0, 0.5)),
-                show_options=False,
+                duration=duracao,
+                show_options=True,
                 bgcolor="white",
             )
             self.mne_browser = browser
-            if old_browser is not None:
-                try:
-                    old_browser.close()
-                except Exception:
-                    pass
             if hasattr(browser, "show"):
                 browser.show()
             if hasattr(browser, "raise_"):
                 browser.raise_()
             if hasattr(browser, "activateWindow"):
                 browser.activateWindow()
-            self._mne_browser_last_refresh = agora
+            self._mne_browser_last_refresh = time.time()
             self._mne_browser_aberto = True
         except Exception as e:
             LOGGER.debug(f"Falha ao renderizar MNE Browser: {e}")
@@ -1113,8 +1115,18 @@ def gerar_grafico_r(metricas_por_canal: list[dict] | None = None) -> dict[str, P
     salvar_metricas_csv(metricas_por_canal, output_csv)
 
     try:
+        # Reforca as variaveis do R local antes de inicializar o rpy2.
+        configurar_r_environment()
+
         import rpy2.robjects as robjects
         from rpy2.robjects import packages as rpackages
+
+        # Garante que o R enxergue a biblioteca local do projeto.
+        r_lib_local = (Path(__file__).resolve().parent / "R-Portable" / "library").resolve()
+        r_lib_local.mkdir(parents=True, exist_ok=True)
+        r_lib_local_r = str(r_lib_local).replace("\\", "/")
+        robjects.r(f'.libPaths(unique(c("{r_lib_local_r}", .libPaths())))')
+
         rpackages.importr('base')
         rpackages.importr('utils')
         rpackages.importr('stats')
@@ -1316,8 +1328,14 @@ def gerar_grafico_r(metricas_por_canal: list[dict] | None = None) -> dict[str, P
         
     except ImportError as e:
         LOGGER.error("Dependencia Python ausente para R: %s", e)
+        shutil.rmtree(temp_dir, ignore_errors=True)
         return None  # Falha
     except Exception as e:
+        if e.__class__.__name__ == "PackageNotInstalledError":
+            LOGGER.error("Pacote R ausente no ambiente local: %s", e)
+            LOGGER.error("Execute scripts/instalar_r_local.bat para instalar os pacotes R do projeto.")
+            shutil.rmtree(temp_dir, ignore_errors=True)
+            return None
         LOGGER.exception("Erro ao gerar grafico no R: %s", e)
         shutil.rmtree(temp_dir, ignore_errors=True)
         return None  # Falha
@@ -1338,6 +1356,7 @@ def gerar_grafico_python(metricas_por_canal: list[dict] | None = None) -> dict[s
     try:
         import matplotlib.pyplot as plt
         from matplotlib.lines import Line2D
+        from matplotlib.markers import MarkerStyle
     except ImportError as e:
         LOGGER.error("Matplotlib nao disponivel para fallback Python: %s", e)
         return None
@@ -1381,7 +1400,7 @@ def gerar_grafico_python(metricas_por_canal: list[dict] | None = None) -> dict[s
     if not features: return 
 
     fig, axes = plt.subplots(2, 2, figsize=(13.2, 9.8), constrained_layout=False, dpi=150)
-    fig.patch.set_facecolor("#FFFFFF")
+    fig.set_facecolor("#FFFFFF")
     
     ax = None
     axes_list = axes.flatten() 
@@ -1422,7 +1441,7 @@ def gerar_grafico_python(metricas_por_canal: list[dict] | None = None) -> dict[s
                 s=28,
                 linewidths=0.8,
                 edgecolors="#111111",
-                marker=marcadores[modo],
+                marker=str(marcadores[modo]),
             )
             media = float(np.mean(valores))
             ax.scatter([pos], [media], marker="D", s=64, color="#1F2937", zorder=3, edgecolors="#000000", linewidth=0.8)
@@ -1438,7 +1457,7 @@ def gerar_grafico_python(metricas_por_canal: list[dict] | None = None) -> dict[s
                  fontsize=15, fontweight="bold", family="serif", y=0.98)
     
     handles_modo = [
-        Line2D([0], [0], marker=marcadores[m], color='w', markerfacecolor=cores[m], 
+        Line2D([0], [0], marker=str(marcadores[m]), color='w', markerfacecolor=cores[m], 
                markeredgecolor="#111111", markersize=8, label=m)
         for m in modos
     ]
@@ -1459,7 +1478,7 @@ def gerar_grafico_python(metricas_por_canal: list[dict] | None = None) -> dict[s
         hspace=0.45,
         wspace=0.35  
     )
-    fig.savefig(output_png_box, dpi=300, bbox_inches="tight", facecolor="#FFFFFF", edgecolor="none")
+    fig.savefig(str(output_png_box), dpi=300, bbox_inches="tight", facecolor="#FFFFFF", edgecolor="none")
     plt.close(fig)
 
     # 2) Matriz de dispersao e correlacao
@@ -1467,7 +1486,7 @@ def gerar_grafico_python(metricas_por_canal: list[dict] | None = None) -> dict[s
 
     n = len(features)
     fig, axes = plt.subplots(n, n, figsize=(12.8, 12.8), constrained_layout=False, dpi=150)
-    fig.patch.set_facecolor("#FFFFFF")
+    fig.set_facecolor("#FFFFFF")
 
     for i in range(n):
         for j in range(n):
@@ -1501,7 +1520,7 @@ def gerar_grafico_python(metricas_por_canal: list[dict] | None = None) -> dict[s
                             s=28,
                             alpha=0.85,
                             color=cores[modo],
-                            marker=marcadores[modo],
+                            marker=str(marcadores[modo]),
                             edgecolors="#111111",
                             linewidths=0.45,
                         )
@@ -1542,7 +1561,7 @@ def gerar_grafico_python(metricas_por_canal: list[dict] | None = None) -> dict[s
         Line2D(
             [0],
             [0],
-            marker=marcadores[m],
+            marker=str(marcadores[m]),
             linestyle="",
             color=cores[m],
             markerfacecolor=cores[m],
@@ -1570,7 +1589,7 @@ def gerar_grafico_python(metricas_por_canal: list[dict] | None = None) -> dict[s
         family="serif",
         y=0.885,
     )
-    fig.savefig(output_png_pairs, dpi=300, bbox_inches="tight", pad_inches=0.28, facecolor="#FFFFFF", edgecolor="none")
+    fig.savefig(str(output_png_pairs), dpi=300, bbox_inches="tight", pad_inches=0.28, facecolor="#FFFFFF", edgecolor="none")
     plt.close(fig)
 
     # 3) Biplot PCA: padroniza features, projeta em PC1/PC2, mostra pontos por modo e vetores das features
@@ -1601,7 +1620,7 @@ def gerar_grafico_python(metricas_por_canal: list[dict] | None = None) -> dict[s
     loadings_scaled = loadings * arrow_scale
 
     fig = plt.figure(figsize=(12.6, 8.8), constrained_layout=False, dpi=150)
-    fig.patch.set_facecolor("#FFFFFF")
+    fig.set_facecolor("#FFFFFF")
     ax = fig.add_subplot(111)
 
     cores_vetores = {
@@ -1624,7 +1643,7 @@ def gerar_grafico_python(metricas_por_canal: list[dict] | None = None) -> dict[s
             edgecolors="#111111",
             linewidths=0.6,
             label=modo,
-            marker=marcadores[modo],
+            marker=MarkerStyle(str(marcadores[modo])),
         )
 
     ax.axhline(0, color="#D1D5DB", linewidth=0.8)
@@ -1654,7 +1673,7 @@ def gerar_grafico_python(metricas_por_canal: list[dict] | None = None) -> dict[s
         Line2D(
             [0],
             [0],
-            marker=marcadores[m],
+            marker=str(marcadores[m]),
             linestyle="",
             markerfacecolor=cores[m],
             markeredgecolor="#111111",
@@ -1693,7 +1712,7 @@ def gerar_grafico_python(metricas_por_canal: list[dict] | None = None) -> dict[s
         title_fontsize=10,
     )
 
-    fig.savefig(output_png_radar, dpi=300, bbox_inches="tight", pad_inches=0.25, facecolor="#FFFFFF", edgecolor="none")
+    fig.savefig(str(output_png_radar), dpi=300, bbox_inches="tight", pad_inches=0.25, facecolor="#FFFFFF", edgecolor="none")
     plt.close(fig)
 
     LOGGER.info("Gráficos científicos salvos em output/")
