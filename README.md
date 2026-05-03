@@ -24,11 +24,10 @@ Arquivos foram reorganizados para melhorar manutenção:
 - `tools/` contém utilitários auxiliares e scripts pequenos.
 - `tests/` contém scripts de teste e integração.
 
-Se você usava comandos antigos que esperavam arquivos na raiz, passe a usar os `.bat` em `bin\` ou mova arquivos de volta para a raiz conforme necessário.
 
 ## Instalacao de dependencias (Python e R)
 
-### Metodo recomendado (automatico)
+### Metodo recomendado
 
 1. Abra PowerShell na pasta do projeto.
 2. Execute o preparador do ambiente:
@@ -92,12 +91,11 @@ Se o VS Code mostrar erros como `reportMissingImports` para `mne`, `numpy`, `PyQ
 
 Obs.: este workspace ja esta configurado em `.vscode/settings.json` para usar esse interpretador por padrao.
 
-## Checklist rapido de validacao
+## Validacao
 
 1. `python-embed\python.exe` existe.
 2. `.deps_python_ok` e `.deps_r_ok` existem.
 3. Simulador LSL esta aberto antes do `Grafico.py`.
-4. A barra de status do app nao mostra "Nenhum stream LSL 'EMG' encontrado" por muito tempo.
 
 ## Solucao de problemas
 
