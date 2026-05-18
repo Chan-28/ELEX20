@@ -3,20 +3,14 @@ setlocal
 
 set "ROOT=%~dp0..\"
 
-if not exist "%ROOT%python-embed\python.exe" (
-	echo [ERRO] python-embed nao encontrado.
-	pause
-	exit /b 1
-)
-
-"%ROOT%python-embed\python.exe" -c "import numpy, scipy, pylsl" >nul 2>nul
+python -c "import numpy, scipy, pylsl" >nul 2>nul
 if errorlevel 1 (
 	echo [ERRO] Dependencias Python ausentes.
-	echo Execute antes: %~dp0Preparar_Ambiente_Portatil.bat
+	echo Instale com: pip install -r requirements.txt
 	pause
 	exit /b 1
 )
 
-"%ROOT%python-embed\python.exe" "%ROOT%src\simulador_lsl_emg.py"
+python "%ROOT%src\simulador_lsl_emg.py"
 pause
 endlocal
