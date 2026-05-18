@@ -10,7 +10,7 @@ Projeto para análise de sinais EMG em tempo real com LSL, visualização no MNE
 
 ## Estrutura da pasta
 
-- `bin/`: scripts lançadores (`Executar_Projeto.bat`, `Executar_Simulador.bat`)
+- `bin/`: scripts lançadores (`Executar_Projeto.bat`, `Executar_Simulador.bat`, `Executar_Teste.bat`, `Preparar_Ambiente_Portatil.bat`)
 - `src/`: código principal do aplicativo (`Grafico.py`, `simulador_lsl_emg.py`)
 - `tools/`: utilitários e helpers (`captar_Dados.py`, `filtrar_Dados.py`, `enviar_CSV_Dados.py`)
 - `tests/`: testes e integração (`teste_lsl_integracao.py`)
