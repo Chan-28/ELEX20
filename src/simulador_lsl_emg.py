@@ -130,21 +130,21 @@ class SimuladorEMG:
         if low >= high:
             low, high = 0.01, 0.99
         
-        # Retorna tupla (b, a) do filtro
+        # Em buffers curtos, filtfilt quebra por causa do padlen.
+        # Usamos SOS para manter o filtro estável e caímos para sosfilt quando necessário.
         try:
-            result = signal.butter(order, [low, high], btype='band', output='ba')
-            if result is not None and isinstance(result, (list, tuple)) and len(result) == 2:
-                b, a = result[0], result[1]
-            else:
-                raise ValueError("Butter filter returned invalid type")
+            sos = signal.butter(order, [low, high], btype='band', output='sos')
         except (ValueError, TypeError) as e:
             logger.warning(f"Erro ao criar filtro butter: {e}. Usando sem filtro.")
-            b, a = np.array([1.0]), np.array([1.0])
+            return emg.astype(float, copy=True)
         
         emg_filt = np.zeros_like(emg, dtype=float)
         for ch in range(emg.shape[0]):
             try:
-                emg_filt[ch, :] = signal.filtfilt(b, a, emg[ch, :], padtype='even')
+                if emg.shape[1] > 27:
+                    emg_filt[ch, :] = signal.sosfiltfilt(sos, emg[ch, :])
+                else:
+                    emg_filt[ch, :] = signal.sosfilt(sos, emg[ch, :])
             except Exception as e:
                 logger.warning(f"Erro ao filtrar canal {ch}: {e}. Copiando sinal original.")
                 emg_filt[ch, :] = emg[ch, :]

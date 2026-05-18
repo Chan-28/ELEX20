@@ -5,6 +5,7 @@ import csv
 import time
 import tempfile
 import shutil
+import subprocess
 from pathlib import Path
 import math
 import mne
@@ -1064,6 +1065,52 @@ def salvar_metricas_csv(metricas_por_canal: list[dict], csv_path: Path) -> bool:
         return False
 
 
+def _configurar_r_sistema() -> Path | None:
+    """Configura o ambiente do R para o processo atual antes de chamar Rscript."""
+    candidatos: list[Path] = []
+
+    r_home_env = os.environ.get("R_HOME")
+    if r_home_env:
+        candidatos.append(Path(r_home_env))
+
+    for nome in ("Rscript", "R"):
+        encontrado = shutil.which(nome)
+        if encontrado:
+            candidatos.append(Path(encontrado).resolve().parent.parent)
+
+    for raiz in (Path("C:/Program Files/R"), Path("C:/Program Files (x86)/R")):
+        if raiz.exists():
+            candidatos.extend(sorted([p for p in raiz.glob("R-*") if p.is_dir()], reverse=True))
+
+    for r_home in candidatos:
+        bin_root = r_home / "bin"
+        bin_x64 = bin_root / "x64"
+        rscript = bin_root / "Rscript.exe"
+        rexec = bin_root / "R.exe"
+
+        if not r_home.exists() or not (rscript.exists() or rexec.exists()):
+            continue
+
+        os.environ["R_HOME"] = str(r_home)
+        path_atual = os.environ.get("PATH", "")
+        entradas = [str(p) for p in (bin_x64, bin_root) if p.exists()]
+        if entradas:
+            os.environ["PATH"] = os.pathsep.join(entradas + [path_atual])
+
+        if os.name == "nt":
+            for dll_dir in (bin_x64, bin_root):
+                if dll_dir.exists():
+                    try:
+                        os.add_dll_directory(str(dll_dir))
+                    except (AttributeError, FileNotFoundError):
+                        pass
+
+        LOGGER.info("R configurado a partir de: %s", r_home)
+        return r_home
+
+    return None
+
+
 def gerar_grafico_r(metricas_por_canal: list[dict] | None = None) -> dict[str, Path] | None:
     """Gera gráficos estatísticos usando R e ggplot2 para exibição nativa em Qt.
     
@@ -1089,200 +1136,184 @@ def gerar_grafico_r(metricas_por_canal: list[dict] | None = None) -> dict[str, P
 
     salvar_metricas_csv(metricas_por_canal, output_csv)
 
+    # Se o R não estiver disponível no sistema, cai diretamente no fallback Python.
+    rscript = _configurar_r_sistema()
+    if rscript is None:
+        LOGGER.warning("R não encontrado ou não configurável neste processo. Usando fallback Python.")
+        shutil.rmtree(temp_dir, ignore_errors=True)
+        return None
+
     try:
-        import rpy2.robjects as robjects
-        from rpy2.robjects import packages as rpackages
+        script_r = f'''
+        options(warn = 1)
+        args <- commandArgs(trailingOnly = TRUE)
+        output_r_csv <- args[[1]]
+        output_r_png_box <- args[[2]]
+        output_r_png_pairs <- args[[3]]
+        output_r_png_radar <- args[[4]]
 
-        rpackages.importr('base')
-        rpackages.importr('utils')
-        rpackages.importr('stats')
-        rpackages.importr('ggplot2')
-        rpackages.importr('tidyr')
-        rpackages.importr('dplyr')
-        rpackages.importr('scales')
-
-        output_r_csv = str(output_csv).replace("\\", "/")
-        output_r_png_box = str(temp_png_box).replace("\\", "/")
-        output_r_png_pairs = str(temp_png_pairs).replace("\\", "/")
-        output_r_png_radar = str(temp_png_radar).replace("\\", "/")
-
-        robjects.globalenv["output_r_csv"] = output_r_csv
-        robjects.globalenv["output_r_png_box"] = output_r_png_box
-        robjects.globalenv["output_r_png_pairs"] = output_r_png_pairs
-        robjects.globalenv["output_r_png_radar"] = output_r_png_radar
-
-        script_r_base = f"""
-            output_r_csv <- "{output_r_csv}"
-            output_r_png_box <- "{output_r_png_box}"
-            output_r_png_pairs <- "{output_r_png_pairs}"
-            output_r_png_radar <- "{output_r_png_radar}"
-
+        suppressPackageStartupMessages({{
             library(ggplot2)
             library(tidyr)
             library(dplyr)
             library(scales)
+        }})
 
-            df <- read.csv(output_r_csv, stringsAsFactors = FALSE)
-            df$modo <- factor(df$modo, levels = c("Baixa energia", "Media energia", "Alta energia"))
+        df <- read.csv(output_r_csv, stringsAsFactors = FALSE)
+        df$modo <- factor(df$modo, levels = c("Baixa energia", "Media energia", "Alta energia"))
 
-            nomes_features <- c(
-                rms = "RMS",
-                freq_mediana = "Freq. Mediana",
-                zcr = "Zero Crossing Rate",
-                waveform_length = "Waveform Length"
-            )
+        nomes_features <- c(
+            rms = "RMS",
+            freq_mediana = "Freq. Mediana",
+            zcr = "Zero Crossing Rate",
+            waveform_length = "Waveform Length"
+        )
 
-            long_df <- df %>%
-                pivot_longer(
-                    cols = c(rms, freq_mediana, zcr, waveform_length),
-                    names_to = "feature",
-                    values_to = "valor"
-                ) %>%
-                mutate(feature = factor(feature, levels = names(nomes_features), labels = unname(nomes_features)))
+        long_df <- df %>%
+            pivot_longer(
+                cols = c(rms, freq_mediana, zcr, waveform_length),
+                names_to = "feature",
+                values_to = "valor"
+            ) %>%
+            mutate(feature = factor(feature, levels = names(nomes_features), labels = unname(nomes_features)))
 
-            p_box <- ggplot(long_df, aes(x = modo, y = valor, color = modo, fill = modo)) +
-                geom_boxplot(outlier.shape = NA, alpha = 0.25, width = 0.58, linewidth = 0.5) +
-                geom_jitter(width = 0.11, alpha = 0.75, size = 1.8) +
-                stat_summary(fun = mean, geom = "point", shape = 23, size = 3, fill = "white", color = "black") +
-                facet_wrap(~feature, scales = "free_y", ncol = 2) +
-                scale_color_manual(values = c("Baixa energia" = "#1f78b4", "Media energia" = "#33a02c", "Alta energia" = "#e31a1c")) +
-                scale_fill_manual(values = c("Baixa energia" = "#a6cee3", "Media energia" = "#b2df8a", "Alta energia" = "#fb9a99")) +
-                labs(
-                    x = "Modo inferido a partir do RMS",
-                    y = "Valor da feature"
-                ) +
-                theme_minimal(base_size = 12) +
-                theme(
-                    legend.position = "bottom",
-                    legend.box.spacing = grid::unit(0.5, "cm"),
-                    legend.margin = ggplot2::margin(t = 10, b = 5, l = 5, r = 5),
-                    plot.margin = ggplot2::margin(b = 60, t = 20, l = 20, r = 20),
-                    panel.grid.minor = element_blank(),
-                    axis.title.x = element_text(margin = ggplot2::margin(t = 20)),
-                    axis.title.y = element_text(margin = ggplot2::margin(r = 20))
-                )
-
-            ggsave(output_r_png_box, plot = p_box, width = 12, height = 9, dpi = 120)
-        """
-
-        script_r_pairs = """
-            pair_df <- df %>% select(modo, rms, freq_mediana, zcr, waveform_length)
-    
-            cols_to_rename <- c("rms", "freq_mediana", "zcr", "waveform_length")
-            colnames(pair_df)[colnames(pair_df) %in% cols_to_rename] <- unname(nomes_features[cols_to_rename])
-
-            pair_df_jittered <- pair_df %>%
-                mutate(across(where(is.numeric), ~ {
-                    rng <- diff(range(.x, na.rm = TRUE))
-                    amt <- if (!is.finite(rng) || rng == 0) 0.002 else max(rng * 0.03, 0.001)
-                    jitter(.x, amount = amt)
-                }))
-
-            if (!requireNamespace("GGally", quietly = TRUE)) {
-                stop("Pacote GGally nao encontrado. Instale com: install.packages('GGally')")
-            }
-
-            p_pairs <- GGally::ggpairs(
-                pair_df_jittered,
-                columns = 2:5,
-                mapping = aes(color = modo, fill = modo),
-                upper = list(continuous = GGally::wrap("cor", size = 4, family = "serif", stars = FALSE)),
-                lower = list(continuous = GGally::wrap("points", alpha = 0.4, size = 1.0)),
-                diag = list(continuous = GGally::wrap("densityDiag", alpha = 0.5))
-            ) +
+        p_box <- ggplot(long_df, aes(x = modo, y = valor, color = modo, fill = modo)) +
+            geom_boxplot(outlier.shape = NA, alpha = 0.25, width = 0.58, linewidth = 0.5) +
+            geom_jitter(width = 0.11, alpha = 0.75, size = 1.8) +
+            stat_summary(fun = mean, geom = "point", shape = 23, size = 3, fill = "white", color = "black") +
+            facet_wrap(~feature, scales = "free_y", ncol = 2) +
             scale_color_manual(values = c("Baixa energia" = "#1f78b4", "Media energia" = "#33a02c", "Alta energia" = "#e31a1c")) +
-            scale_fill_manual(values = c("Baixa energia" = "#1f78b4", "Media energia" = "#33a02c", "Alta energia" = "#e31a1c")) +
-            labs(color = "Modo", fill = "Modo") +
-            theme_minimal(base_size = 11) +
+            scale_fill_manual(values = c("Baixa energia" = "#a6cee3", "Media energia" = "#b2df8a", "Alta energia" = "#fb9a99")) +
+            labs(x = "Modo inferido a partir do RMS", y = "Valor da feature") +
+            theme_minimal(base_size = 12) +
             theme(
-                panel.grid = element_blank(),
-                panel.border = element_rect(color = "#CBD5E1", fill = NA, linewidth = 0.7),
-                strip.background = element_rect(fill = "#F8FAFC", color = "#CBD5E1", linewidth = 0.6),
-                strip.text = element_text(face = "bold", size = 10, color = "#1F2937"),
-                panel.spacing = grid::unit(0.18, "lines"),
-                text = element_text(family = "serif"),
                 legend.position = "bottom",
-                legend.title = element_text(face = "bold"),
-                legend.key = element_rect(fill = "white", color = NA)
+                legend.box.spacing = grid::unit(0.5, "cm"),
+                legend.margin = ggplot2::margin(t = 10, b = 5, l = 5, r = 5),
+                plot.margin = ggplot2::margin(b = 60, t = 20, l = 20, r = 20),
+                panel.grid.minor = element_blank(),
+                axis.title.x = element_text(margin = ggplot2::margin(t = 20)),
+                axis.title.y = element_text(margin = ggplot2::margin(r = 20))
             )
 
-            ggsave(output_r_png_pairs, plot = p_pairs, width = 13, height = 11, dpi = 130)
-        """
+        ggsave(output_r_png_box, plot = p_box, width = 12, height = 9, dpi = 120)
 
-        script_r_biplot = """
-            matriz_features <- df %>% dplyr::select(rms, freq_mediana, zcr, waveform_length)
-            matriz_scaled <- as.data.frame(lapply(matriz_features, function(x) as.numeric(scale(x))))
-            matriz_scaled[is.na(matriz_scaled)] <- 0
+        pair_df <- df %>% select(modo, rms, freq_mediana, zcr, waveform_length)
+        cols_to_rename <- c("rms", "freq_mediana", "zcr", "waveform_length")
+        colnames(pair_df)[colnames(pair_df) %in% cols_to_rename] <- unname(nomes_features[cols_to_rename])
 
-            pca <- prcomp(matriz_scaled, center = FALSE, scale. = FALSE)
-            scores <- as.data.frame(pca$x[, 1:2, drop = FALSE])
-            scores$modo <- df$modo
-            names(scores)[1:2] <- c("PC1", "PC2")
+        pair_df_jittered <- pair_df %>%
+            mutate(across(where(is.numeric), ~ {{
+                rng <- diff(range(.x, na.rm = TRUE))
+                amt <- if (!is.finite(rng) || rng == 0) 0.002 else max(rng * 0.03, 0.001)
+                jitter(.x, amount = amt)
+            }}))
 
-            loadings <- as.data.frame(pca$rotation[, 1:2, drop = FALSE])
-            names(loadings)[1:2] <- c("PC1", "PC2")
-            loadings$feature <- c("RMS", "Freq. Mediana", "Zero Crossing Rate", "Waveform Length")
+        if (!requireNamespace("GGally", quietly = TRUE)) {{
+            stop("Pacote GGally nao encontrado. Instale com: install.packages('GGally')")
+        }}
 
-            var_exp <- (pca$sdev^2) / sum(pca$sdev^2)
-            p_1 <- round(var_exp[1] * 100, 1)
-            p_2 <- round(var_exp[2] * 100, 1)
+        p_pairs <- GGally::ggpairs(
+            pair_df_jittered,
+            columns = 2:5,
+            mapping = aes(color = modo, fill = modo),
+            upper = list(continuous = GGally::wrap("cor", size = 4, family = "serif", stars = FALSE)),
+            lower = list(continuous = GGally::wrap("points", alpha = 0.4, size = 1.0)),
+            diag = list(continuous = GGally::wrap("densityDiag", alpha = 0.5))
+        ) +
+        scale_color_manual(values = c("Baixa energia" = "#1f78b4", "Media energia" = "#33a02c", "Alta energia" = "#e31a1c")) +
+        scale_fill_manual(values = c("Baixa energia" = "#1f78b4", "Media energia" = "#33a02c", "Alta energia" = "#e31a1c")) +
+        labs(color = "Modo", fill = "Modo") +
+        theme_minimal(base_size = 11) +
+        theme(
+            panel.grid = element_blank(),
+            panel.border = element_rect(color = "#CBD5E1", fill = NA, linewidth = 0.7),
+            strip.background = element_rect(fill = "#F8FAFC", color = "#CBD5E1", linewidth = 0.6),
+            strip.text = element_text(face = "bold", size = 10, color = "#1F2937"),
+            panel.spacing = grid::unit(0.18, "lines"),
+            text = element_text(family = "serif"),
+            legend.position = "bottom",
+            legend.title = element_text(face = "bold"),
+            legend.key = element_rect(fill = "white", color = NA)
+        )
 
-            max_scores <- max(abs(c(scores$PC1, scores$PC2)), na.rm = TRUE)
-            max_loadings <- max(abs(c(loadings$PC1, loadings$PC2)), na.rm = TRUE)
-            escala_setas <- max_scores * 0.72 / max(max_loadings, 1e-9)
-            if (!is.finite(escala_setas) || escala_setas == 0) {
-                escala_setas <- 1
-            }
+        ggsave(output_r_png_pairs, plot = p_pairs, width = 13, height = 11, dpi = 130)
 
-            loadings$x_end <- loadings$PC1 * escala_setas
-            loadings$y_end <- loadings$PC2 * escala_setas
+        matriz_features <- df %>% dplyr::select(rms, freq_mediana, zcr, waveform_length)
+        matriz_scaled <- as.data.frame(lapply(matriz_features, function(x) as.numeric(scale(x))))
+        matriz_scaled[is.na(matriz_scaled)] <- 0
 
-            cores_paleta <- c(
-                "Baixa energia" = "#1f78b4",
-                "Media energia" = "#33a02c",
-                "Alta energia" = "#e31a1c",
-                "RMS" = "#8E44AD",
-                "Freq. Mediana" = "#2980B9",
-                "Zero Crossing Rate" = "#E67E22",
-                "Waveform Length" = "#16A085"
-            )
+        pca <- prcomp(matriz_scaled, center = FALSE, scale. = FALSE)
+        scores <- as.data.frame(pca$x[, 1:2, drop = FALSE])
+        scores$modo <- df$modo
+        names(scores)[1:2] <- c("PC1", "PC2")
 
-            p_biplot <- ggplot() +
-                geom_hline(yintercept = 0, linewidth = 0.4, color = "gray80") +
-                geom_vline(xintercept = 0, linewidth = 0.4, color = "gray80") +
-                geom_point(
-                    data = scores,
-                    aes(x = PC1, y = PC2, color = modo),
-                    size = 2.6,
-                    alpha = 0.85
-                ) +
-                geom_segment(
-                    data = loadings,
-                    aes(x = 0, y = 0, xend = x_end, yend = y_end, color = feature),
-                    linewidth = 1.0,
-                    arrow = grid::arrow(length = grid::unit(0.20, "cm"))
-                ) +
-                scale_color_manual(values = cores_paleta) +
-                labs(
-                    x = paste0("PC1 (", p_1, " % da variancia)"),
-                    y = paste0("PC2 (", p_2, " % da variancia)"),
-                    color = "Legenda"
-                ) +
-                coord_equal() +
-                theme_minimal(base_size = 12) +
-                theme(
-                    text = element_text(family = "serif"),
-                    legend.position = "right",
-                    panel.grid.minor = element_blank(),
-                    plot.title = element_blank()
-                )
+        loadings <- as.data.frame(pca$rotation[, 1:2, drop = FALSE])
+        names(loadings)[1:2] <- c("PC1", "PC2")
+        loadings$feature <- c("RMS", "Freq. Mediana", "Zero Crossing Rate", "Waveform Length")
 
-            ggsave(output_r_png_radar, plot = p_biplot, width = 10, height = 8, dpi = 130)
-        """
+        var_exp <- (pca$sdev^2) / sum(pca$sdev^2)
+        p_1 <- round(var_exp[1] * 100, 1)
+        p_2 <- round(var_exp[2] * 100, 1)
 
-        robjects.r(script_r_base)
-        robjects.r(script_r_pairs)
-        robjects.r(script_r_biplot)
+        max_scores <- max(abs(c(scores$PC1, scores$PC2)), na.rm = TRUE)
+        max_loadings <- max(abs(c(loadings$PC1, loadings$PC2)), na.rm = TRUE)
+        escala_setas <- max_scores * 0.72 / max(max_loadings, 1e-9)
+        if (!is.finite(escala_setas) || escala_setas == 0) {{
+            escala_setas <- 1
+        }}
+
+        loadings$x_end <- loadings$PC1 * escala_setas
+        loadings$y_end <- loadings$PC2 * escala_setas
+
+        cores_paleta <- c(
+            "Baixa energia" = "#1f78b4",
+            "Media energia" = "#33a02c",
+            "Alta energia" = "#e31a1c",
+            "RMS" = "#8E44AD",
+            "Freq. Mediana" = "#2980B9",
+            "Zero Crossing Rate" = "#E67E22",
+            "Waveform Length" = "#16A085"
+        )
+
+        p_biplot <- ggplot() +
+            geom_hline(yintercept = 0, linewidth = 0.4, color = "gray80") +
+            geom_vline(xintercept = 0, linewidth = 0.4, color = "gray80") +
+            geom_point(data = scores, aes(x = PC1, y = PC2, color = modo), size = 2.6, alpha = 0.85) +
+            geom_segment(data = loadings, aes(x = 0, y = 0, xend = x_end, yend = y_end, color = feature), linewidth = 1.0, arrow = grid::arrow(length = grid::unit(0.20, "cm"))) +
+            scale_color_manual(values = cores_paleta) +
+            labs(x = paste0("PC1 (", p_1, " % da variancia)"), y = paste0("PC2 (", p_2, " % da variancia)"), color = "Legenda") +
+            coord_equal() +
+            theme_minimal(base_size = 12) +
+            theme(text = element_text(family = "serif"), legend.position = "right", panel.grid.minor = element_blank(), plot.title = element_blank())
+
+        ggsave(output_r_png_radar, plot = p_biplot, width = 10, height = 8, dpi = 130)
+        '''
+
+        script_path = temp_dir / "gerar_graficos.R"
+        script_path.write_text(script_r, encoding="utf-8")
+
+        comando = [
+            str(rscript / "bin" / "Rscript.exe"),
+            "--vanilla",
+            str(script_path),
+            str(output_csv),
+            str(temp_png_box),
+            str(temp_png_pairs),
+            str(temp_png_radar),
+        ]
+        resultado = subprocess.run(
+            comando,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=60,
+        )
+        if resultado.returncode != 0:
+            LOGGER.warning("Falha no Rscript; usando fallback Python. Saida: %s", resultado.stderr.strip())
+            shutil.rmtree(temp_dir, ignore_errors=True)
+            return None
 
         LOGGER.info("Gráficos R gerados em PNG temporário.")
         return {
@@ -1292,17 +1323,12 @@ def gerar_grafico_r(metricas_por_canal: list[dict] | None = None) -> dict[str, P
             "tmp_dir": temp_dir,
         }
         
-    except ImportError as e:
-        LOGGER.error("Dependencia Python ausente para R: %s", e)
+    except subprocess.TimeoutExpired:
+        LOGGER.warning("Rscript excedeu o tempo limite; usando fallback Python.")
         shutil.rmtree(temp_dir, ignore_errors=True)
-        return None  # Falha
+        return None
     except Exception as e:
-        if e.__class__.__name__ == "PackageNotInstalledError":
-            LOGGER.error("Pacote R ausente no ambiente local: %s", e)
-            LOGGER.error("Execute scripts/instalar_r_local.bat para instalar os pacotes R do projeto.")
-            shutil.rmtree(temp_dir, ignore_errors=True)
-            return None
-        LOGGER.exception("Erro ao gerar grafico no R: %s", e)
+        LOGGER.warning("Falha no caminho R; usando fallback Python. Detalhe: %s", e)
         shutil.rmtree(temp_dir, ignore_errors=True)
         return None  # Falha
 

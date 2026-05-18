@@ -72,7 +72,7 @@ Se estiver usando VS Code, configure o interpretador Python no workspace:
 ## Checklist rápido de validação
 
 1. `python --version` e `R --version` funcionam no terminal
-2. `pip list` mostra pacotes instalados (PyQt6, pyqtgraph, mne, numpy, pylsl, rpy2)
+2. `pip list` mostra pacotes instalados (PyQt6, pyqtgraph, mne, numpy, pylsl)
 3. Simulador LSL está aberto antes do `Grafico.py`
 4. A barra de status do app não mostra "Nenhum stream LSL 'EMG' encontrado" por muito tempo
 
