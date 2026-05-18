@@ -55,13 +55,13 @@ struct {
 class MyServerCallbacks: public BLEServerCallbacks {
   void onConnect(BLEServer* pServer) {
     deviceConnected = true;
-    Serial.println("✓ Cliente BLE conectado");
-    Serial.println(f"  Dispositivos conectados: {pServer->getConnectedCount()}");
+    Serial.printf("✓ Cliente BLE conectado\n");
+    Serial.printf("  Dispositivos conectados: %d\n", pServer->getConnectedCount());
   }
 
   void onDisconnect(BLEServer* pServer) {
     deviceConnected = false;
-    Serial.println("⚠ Cliente BLE desconectado");
+    Serial.printf("⚠ Cliente BLE desconectado\n");
     // Reinicia advertising
     BLEDevice::startAdvertising();
   }
@@ -73,28 +73,28 @@ void setup() {
   Serial.begin(115200);
   delay(1000);
 
-  Serial.println("\n\n╔════════════════════════════════════════╗");
-  Serial.println("║   ESP32 EMG — BLE + ADS1115          ║");
-  Serial.println("║      (Bleak + LSL compatible)        ║");
-  Serial.println("╚════════════════════════════════════════╝\n");
+  Serial.printf("\n\n╔════════════════════════════════════════╗");
+  Serial.printf("║   ESP32 EMG — BLE + ADS1115          ║");
+  Serial.printf("║      (Bleak + LSL compatible)        ║");
+  Serial.printf("╚════════════════════════════════════════╝\n");
 
   // ─ I2C & ADS1115 ─
   Wire.begin(21, 22);
   Wire.setClock(400000);
 
   if (!ads.begin(0x48)) {
-    Serial.println("❌ ERRO: ADS1115 não encontrado!");
+    Serial.printf("❌ ERRO: ADS1115 não encontrado!\n");
     while (1) delay(500);
   }
 
   ads.setGain(GAIN_ONE);
   ads.setDataRate(RATE_ADS1115_860SPS);
-  Serial.println("✓ ADS1115 inicializado");
+  Serial.printf("✓ ADS1115 inicializado\n");
 
   // ─ BLE Device ─
   BLEDevice::init(BLE_DEVICE_NAME);
-  Serial.print("✓ BLE Device inicializado: ");
-  Serial.println(BLE_DEVICE_NAME);
+  Serial.printf("✓ BLE Device inicializado: %s\n", BLE_DEVICE_NAME);
+  Serial.printf(BLE_DEVICE_NAME);
 
   // ─ BLE Server ─
   pServer = BLEDevice::createServer();
@@ -125,15 +125,15 @@ void setup() {
   pAdvertising->setMinPreferred(0x12);
   BLEDevice::startAdvertising();
 
-  Serial.println("✓ BLE Advertising iniciado");
-  Serial.println("  Aguardando conexão de cliente...\n");
+  Serial.printf("✓ BLE Advertising iniciado\n");
+  Serial.printf("  Aguardando conexão de cliente...\n");
 
   // ─ Calibração ─
-  Serial.println("⏳ Calibrando (2s)... mantenha eletrodo ESTÁVEL");
+  Serial.printf("⏳ Calibrando (2s)... mantenha eletrodo ESTÁVEL\n");
   performCalibration();
-  Serial.println("✓ Calibração completa\n");
+  Serial.printf("✓ Calibração completa\n");
 
-  Serial.println("▶ Pronto para transmitir dados!");
+  Serial.printf("▶ Pronto para transmitir dados!\n");
 }
 
 // ── LOOP PRINCIPAL ───────────────────────────────────────────
@@ -188,7 +188,7 @@ void loop() {
       Serial.print(samplingState.samples_sent);
       Serial.print(" amostras | Último: ");
       Serial.print(voltage, 4);
-      Serial.println(" V");
+      Serial.printf(" V\n");
     }
   }
 }
@@ -212,9 +212,9 @@ void performCalibration() {
   samplingState.offset = calibSum / samples;
   samplingState.isCalibrated = true;
 
-  Serial.print("  Offset calibrado: ");
+  Serial.printf("  Offset calibrado: %f V\n", samplingState.offset);
   Serial.print(samplingState.offset, 4);
-  Serial.println(" V");
+  Serial.printf(" V");
 }
 
 // Função auxiliar para converter float para bytes
@@ -228,11 +228,11 @@ void floatToBytes(float value, uint8_t* bytes) {
 
 // Opcional: Debug de conexão
 void printBLEStats() {
-  Serial.println("\n╔═══════════════════════════════╗");
-  Serial.println("║   Estatísticas BLE            ║");
-  Serial.print("║ Conectado: ");
-  Serial.println(deviceConnected ? "Sim" : "Não");
-  Serial.print("║ Amostras enviadas: ");
-  Serial.println(samplingState.samples_sent);
-  Serial.println("╚═══════════════════════════════╝");
+  Serial.printf("\n╔═══════════════════════════════╗");
+  Serial.printf("║   Estatísticas BLE            ║");
+  Serial.printf("║ Conectado: ");
+  Serial.printf(deviceConnected ? "Sim" : "Não");
+  Serial.printf("║ Amostras enviadas: ");
+  Serial.printf("%lu", samplingState.samples_sent);
+  Serial.printf("╚═══════════════════════════════╝\n");
 }
