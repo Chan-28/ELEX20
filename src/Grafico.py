@@ -25,57 +25,8 @@ def configurar_logging():
     )
 
 
-def adicionar_no_path_se_necessario(novo_caminho: Path):
-    caminho_str = str(novo_caminho)
-    path_atual = os.environ.get("PATH", "")
-    separador = os.pathsep
-    entradas = path_atual.split(separador) if path_atual else []
-    if caminho_str not in entradas:
-        os.environ["PATH"] = caminho_str + separador + path_atual
-
-
-def configurar_r_environment() -> bool:
-    base_path = Path(__file__).resolve().parent.parent
-    r_local = base_path / "R-Portable" / "R-4.5.1"
-
-    if not r_local.exists():
-        base_path = Path(__file__).resolve().parent
-        r_local = base_path / "R-Portable" / "R-4.5.1"
-    
-    if r_local.exists():
-        # Define a casa do R
-        os.environ["R_HOME"] = str(r_local)
-        
-        # PRIORIDADE MÁXIMA: Coloca o R 4.5.1 no início do PATH
-        bin_root = r_local / "bin"
-        bin_x64 = bin_root / "x64"
-        caminho_bin = [str(p) for p in (bin_root, bin_x64) if p.exists()]
-        if caminho_bin:
-            os.environ["PATH"] = os.pathsep.join(caminho_bin + [os.environ.get("PATH", "")])
-
-        if os.name == "nt":
-            for dll_dir in (bin_root, bin_x64):
-                if dll_dir.exists():
-                    try:
-                        os.add_dll_directory(str(dll_dir))
-                    except (AttributeError, FileNotFoundError):
-                        pass
-        
-        # Garante que o R use a pasta de bibliotecas local que você criou
-        r_lib_local = base_path / "R-Portable" / "library"
-        r_lib_local.mkdir(parents=True, exist_ok=True)
-        os.environ["R_LIBS_USER"] = str(r_lib_local)
-        
-        # Limpa variáveis de ambiente que podem apontar para versões antigas no seu PC
-        for env_var in ["R_USER", "R_LIBS"]:
-            if env_var in os.environ:
-                del os.environ[env_var]
-                
-        LOGGER.info(f"R 4.5.1 Local Configurado: {r_local}")
-        return True
-
-    LOGGER.warning(f"R-Portable não encontrado em {r_local}")
-    return False
+# Nota: Python e R devem estar instalados globalmente no sistema.
+# Este código assume que ambos estão disponíveis no PATH do usuário.
 
 
 def caminho_saida_dir() -> Path:
@@ -1130,19 +1081,8 @@ def gerar_grafico_r(metricas_por_canal: list[dict] | None = None) -> dict[str, P
     salvar_metricas_csv(metricas_por_canal, output_csv)
 
     try:
-        # Reforca as variaveis do R local antes de inicializar o rpy2.
-        configurar_r_environment()
-
         import rpy2.robjects as robjects
         from rpy2.robjects import packages as rpackages
-
-        # Garante que o R enxergue a biblioteca local do projeto.
-        r_lib_local = (Path(__file__).resolve().parent.parent / "R-Portable" / "library").resolve()
-        if not r_lib_local.exists():
-            r_lib_local = (Path(__file__).resolve().parent / "R-Portable" / "library").resolve()
-        r_lib_local.mkdir(parents=True, exist_ok=True)
-        r_lib_local_r = str(r_lib_local).replace("\\", "/")
-        robjects.r(f'.libPaths(unique(c("{r_lib_local_r}", .libPaths())))')
 
         rpackages.importr('base')
         rpackages.importr('utils')
@@ -1761,7 +1701,6 @@ def criar_raw_vazio(n_canais: int = 4, duracao: float = 2.0, sfreq: float = 250.
 
 if __name__ == "__main__":
     configurar_logging()
-    configurar_r_environment()
 
     app = QtWidgets.QApplication(sys.argv)
     app.setStyle("Fusion")
