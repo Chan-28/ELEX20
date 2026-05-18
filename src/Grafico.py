@@ -13,6 +13,7 @@ from PyQt6 import QtWidgets, QtCore
 from PyQt6.QtGui import QPixmap
 from PyQt6.QtCore import QThread, pyqtSignal
 import pyqtgraph as pg
+from typing import Any, cast
 
 LOGGER = logging.getLogger("janela_neuro")
 
@@ -688,15 +689,23 @@ class JanelaNeuro(QtWidgets.QMainWindow):
 
         try:
             browser = self.mne_browser
+            # Use cast to Any to avoid static type checker errors
+            browser_any = cast(Any, browser)
             if hasattr(browser, "_redraw"):
                 try:
                     browser._redraw(update_data=True)
                 except TypeError:
                     browser._redraw()
             elif hasattr(browser, "redraw"):
-                browser.redraw()
-            elif hasattr(browser, "canvas") and hasattr(browser.canvas, "draw_idle"):
-                browser.canvas.draw_idle()
+                backend = getattr(browser_any, "backend", None)
+                if backend is not None and hasattr(backend, "update_plot"):
+                    backend.update_plot()
+            else:
+                canvas = getattr(browser_any, "canvas", None)
+                if canvas is not None:
+                    draw = getattr(canvas, "draw_idle", None)
+                    if callable(draw):
+                        draw()
 
             self._mne_browser_last_refresh = time.time()
         except Exception as e:

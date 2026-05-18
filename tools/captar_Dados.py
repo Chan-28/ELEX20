@@ -165,8 +165,7 @@ async def _example():
             loop.add_signal_handler(sig, stop_event.set)
 
     engine = EMGEngine()
-
-    """     
+   
     lsl_info = StreamInfo(
         name="EMG",
         type="EMG",
@@ -178,23 +177,16 @@ async def _example():
     lsl_outlet = StreamOutlet(lsl_info, chunk_size=1)
     print("LSL pronto: stream 'EMG' (1 canal).") 
 
-    """
 
     # Impressão (Marco 1)
+    """
     def my_processor(value: float) -> None:
         print(f"EMG: {value:.4f}")
-
-    # Envio para LSL (Marco 1-2)
     """
+    # Envio para LSL (Marco 2)
     def lsl_publisher(value: float) -> None:
         lsl_outlet.push_sample([value])
-    """
-    engine.subscribe(my_processor)
-
-    """ 
     engine.subscribe(lsl_publisher)
-
-    """
 
     # Exemplos de parada:
     # - Ctrl+C (SIGINT) em sistemas suportados
