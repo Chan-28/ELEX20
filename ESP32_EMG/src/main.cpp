@@ -12,6 +12,7 @@
  * ✓ Taxa: ~500 Hz
  */
 
+#include <Arduino.h>
 #include <Wire.h>
 #include <Adafruit_ADS1X15.h>
 #include <BLEDevice.h>
