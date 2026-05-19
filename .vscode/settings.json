@@ -1,6 +1,6 @@
 {
     "python-envs.defaultEnvManager": "ms-python.python:system",
-    "python.defaultInterpreterPath": "${workspaceFolder}/python-embed/python.exe",
+    "python.defaultInterpreterPath": "",
     "python.analysis.extraPaths": [
         "${workspaceFolder}/python-embed/Lib/site-packages"
     ]

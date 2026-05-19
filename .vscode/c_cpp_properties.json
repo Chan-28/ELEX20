@@ -1,23 +1,28 @@
 {
     "configurations": [
         {
-            "name": "Win32",
+            "name": "PlatformIO",
             "includePath": [
-                "${workspaceFolder}/**",
-                "${vcpkgRoot}/x64-mingw-dynamic/include",
-                "${vcpkgRoot}/x64-windows/include",
-                "${vcpkgRoot}/x86-windows/include"
+                "${workspaceFolder}/ESP32_EMG/include",
+                "${workspaceFolder}/ESP32_EMG/src",
+                "${workspaceFolder}/ESP32_EMG/lib/Adafruit_ADS1X15/src",
+                "${env:USERPROFILE}/.platformio/packages/framework-arduinoespressif32/cores/esp32",
+                "${env:USERPROFILE}/.platformio/packages/framework-arduinoespressif32/variants/esp32",
+                "${env:USERPROFILE}/.platformio/packages/framework-arduinoespressif32/libraries/BLE/src",
+                "${env:USERPROFILE}/.platformio/packages/framework-arduinoespressif32/libraries/ESP32/src",
+                "${env:USERPROFILE}/.platformio/packages/framework-arduinoespressif32/libraries/Wire/src"
             ],
             "defines": [
-                "_DEBUG",
-                "UNICODE",
-                "_UNICODE"
+                "ARDUINO_ARCH_ESP32",
+                "ESP32",
+                "F_CPU=240000000L",
+                "ARDUINO=10812",
+                "ARDUINO_VARIANT=\"esp32\""
             ],
-            "windowsSdkVersion": "10.0.26100.0",
-            "compilerPath": "cl.exe",
-            "cStandard": "c17",
-            "cppStandard": "c++17",
-            "intelliSenseMode": "windows-msvc-x64"
+            "compilerPath": "${env:USERPROFILE}/.platformio/packages/toolchain-xtensa-esp32/bin/xtensa-esp32-elf-g++.exe",
+            "cStandard": "gnu99",
+            "cppStandard": "gnu++11",
+            "intelliSenseMode": "windows-gcc-x64"
         }
     ],
     "version": 4
