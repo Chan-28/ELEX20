@@ -1,365 +1,243 @@
-from pylsl import StreamInlet, StreamOutlet, StreamInfo, resolve_streams, cf_float32
+import asyncio
+import argparse
+import struct
 import time
-import numpy as np
 from collections import deque
 from typing import Optional, List, Tuple
 
+import numpy as np
+import scipy.signal as signal
+from bleak import BleakScanner, BleakClient
+from pylsl import StreamInfo, StreamOutlet, StreamInlet, resolve_streams, cf_float32
 
-class EMGAggregator:
+
+class EMGBLEToLSLProcessor:
     def __init__(
         self,
-        input_stream_name: str = "EMG",
-        output_stream_name: str = "EMG_Processado",
-        processing_mode: str = "raw",  # "raw", "rms", "normalized"
-        rms_window_ms: float = 50.0,   # Janela RMS em milissegundos
-        connection_timeout: float = 30.0,
+        device_name: str = "ESP32-EMG",
+        char_uuid: str = "bef8d6c9-9c21-4c9e-b632-bd763f7a92bf",
+        raw_stream_name: str = "EMG",
+        processed_stream_name: str = "EMG_Processado",
+        sample_rate: float = 500.0,
+        processing_mode: str = "rms",
+        rms_window_ms: float = 50.0,
+        buffer_size: int = 500,
+        use_bandpass: bool = True,
+        use_notch: bool = True,
+        use_envelope: bool = True,
     ):
-        """
-        Agregador de dados EMG com processamento RMS.
-        
-        Args:
-            input_stream_name: Nome do stream LSL de entrada
-            output_stream_name: Nome do stream LSL de saída
-            processing_mode: Tipo de processamento
-                - "raw": Repassa dados sem modificação
-                - "rms": Calcula RMS em janela deslizante
-                - "normalized": RMS + normalização para [0, 1]
-            rms_window_ms: Tamanho da janela RMS em milissegundos (padrão: 50ms)
-            connection_timeout: Tempo máximo para encontrar stream
-        """
-        self.input_stream_name = input_stream_name
-        self.output_stream_name = output_stream_name
-        self.connection_timeout = connection_timeout
+        self.device_name = device_name
+        self.char_uuid = char_uuid
+        self.raw_stream_name = raw_stream_name
+        self.processed_stream_name = processed_stream_name
+        self.sample_rate = sample_rate
         self.processing_mode = processing_mode
         self.rms_window_ms = rms_window_ms
-        
-        # Streams LSL
-        self.inlet: Optional[StreamInlet] = None
-        self.outlet: Optional[StreamOutlet] = None
-        
-        # Metadados
-        self.channel_count: int = 0
-        self.sample_rate: float = 0.0
-        self.rms_window_samples: int = 0
-        
-        # Buffer circular para RMS (uma deque por canal)
-        self.rms_buffers: List[deque] = []
-        
-        # Buffer para estatísticas de normalização (últimos 5 segundos)
+        self.buffer_size = buffer_size
+        self.use_bandpass = use_bandpass
+        self.use_notch = use_notch
+        self.use_envelope = use_envelope
+
+        self.raw_outlet = self._create_lsl_outlet(raw_stream_name, 1, sample_rate, "emg-esp32-ble-raw-001")
+        self.processed_outlet: Optional[StreamOutlet] = None
+
+        self.channel_count = 1
+        self.rms_window_samples = max(1, int((self.rms_window_ms / 1000.0) * self.sample_rate))
+        self.rms_buffers = [deque(maxlen=self.rms_window_samples)]
+
         self.normalization_buffer: Optional[deque] = None
-        
-        # Contadores
+        if self.processing_mode == "normalized":
+            self.normalization_buffer = deque(maxlen=int(self.sample_rate * 5.0))
+
+        self.signal_window = deque(maxlen=self.buffer_size)
+
+        self.sos_bandpass = None
+        self.b_notch = None
+        self.a_notch = None
+        self.sos_envelope = None
+        self.bp_state = None
+        self.notch_state = None
+        self.env_state = None
+        self._init_filters()
+
         self.total_samples = 0
         self.error_count = 0
-        
-    def connect_input(self) -> None:
-        """Conecta ao stream de entrada."""
-        print(f"🔍 Procurando stream '{self.input_stream_name}'...")
-        print(f"   Timeout: {self.connection_timeout}s")
-        
-        start_time = time.time()
-        
-        while time.time() - start_time < self.connection_timeout:
-            streams = self._resolve_target_streams()
-            
-            if streams:
-                self.inlet = StreamInlet(streams[0], max_buflen=360)
-                self._initialize_input_metadata()
-                self._initialize_processing_buffers()
-                
-                print(f"Conectado ao stream de entrada")
-                print(f"Canais: {self.channel_count}")
-                print(f"Taxa: {self.sample_rate} Hz")
-                print(f"Janela RMS: {self.rms_window_ms}ms ({self.rms_window_samples} amostras)")
-                return
-            
-            print(f"   Aguardando... ({int(time.time() - start_time)}s)", end='\r')
-            time.sleep(0.5)
-        
-        raise RuntimeError(
-            f"Stream '{self.input_stream_name}' não encontrado!\n"
-            f"Execute o EMGEngine primeiro."
-        )
 
-    def _resolve_target_streams(self):
-        """Busca streams disponíveis e filtra pelo nome configurado."""
-        streams = resolve_streams(2.0)
-        return [s for s in streams if s.name() == self.input_stream_name]
-
-    def _initialize_input_metadata(self) -> None:
-        """Lê metadados do stream de entrada já conectado."""
-        if self.inlet is None:
-            raise RuntimeError("Stream de entrada não inicializado")
-
-        self.channel_count = self.inlet.channel_count
-        self.sample_rate = self.inlet.info().nominal_srate()
-        self.rms_window_samples = int((self.rms_window_ms / 1000.0) * self.sample_rate)
-
-    def _initialize_processing_buffers(self) -> None:
-        """Prepara buffers de RMS e normalização conforme o modo."""
-        self.rms_buffers = [
-            deque(maxlen=self.rms_window_samples)
-            for _ in range(self.channel_count)
-        ]
-
-        self.normalization_buffer = None
-        if self.processing_mode == "normalized":
-            norm_buffer_size = int(self.sample_rate * 5.0)
-            self.normalization_buffer = deque(maxlen=norm_buffer_size)
-        
-    def create_output(self) -> None:
-        """Cria stream de saída."""
-        if self.inlet is None:
-            raise RuntimeError("Stream de entrada não inicializado")
-        
+    def _create_lsl_outlet(self, name: str, channel_count: int, srate: float, source_id: str) -> StreamOutlet:
         info = StreamInfo(
-            name=self.output_stream_name,
+            name=name,
             type="EMG",
-            channel_count=self.channel_count,
-            nominal_srate=self.sample_rate,
+            channel_count=channel_count,
+            nominal_srate=srate,
             channel_format=cf_float32,
-            source_id=f"aggregator-rms-{int(time.time())}",
+            source_id=source_id,
         )
-        
-        # Metadados sobre processamento
-        desc = info.desc()
-        desc.append_child_value("processing_mode", self.processing_mode)
-        desc.append_child_value("rms_window_ms", str(self.rms_window_ms))
-        desc.append_child_value("source_stream", self.input_stream_name)
-        
-        self.outlet = StreamOutlet(info, chunk_size=32)
-        
-        print(f"Stream de saída '{self.output_stream_name}' criado")
-        print(f"Modo de processamento: {self.processing_mode.upper()}\n")
-        
+        return StreamOutlet(info, chunk_size=32)
+
+    def _init_filters(self):
+        if self.use_bandpass:
+            self.sos_bandpass = signal.butter(
+                4, [20.0, 450.0], btype="bandpass", fs=self.sample_rate, output="sos"
+            )
+            # Usa a função nativa do SciPy para obter as condições iniciais
+            self.bp_state = signal.sosfilt_zi(self.sos_bandpass)
+
+        if self.use_notch:
+            self.b_notch, self.a_notch = signal.iirnotch(
+                60.0, 30.0, fs=self.sample_rate
+            )
+            self.notch_state = signal.lfilter_zi(self.b_notch, self.a_notch)
+
+        if self.use_envelope:
+            self.sos_envelope = signal.butter(
+                2, 5.0, btype="lowpass", fs=self.sample_rate, output="sos"
+            )
+            # O SciPy garante que sos_envelope é um ndarray, sem necessidade de checagens extras
+            self.env_state = signal.sosfilt_zi(self.sos_envelope)
+
+    async def run(self):
+        print(f"Procurando dispositivo BLE '{self.device_name}'...")
+        device = await BleakScanner.find_device_by_filter(
+            lambda d, ad: d.name == self.device_name,
+            timeout=10.0,
+        )
+        if device is None:
+            raise RuntimeError(f"Dispositivo '{self.device_name}' não encontrado")
+
+        print(f"Dispositivo encontrado: {device.address}")
+        print("Criando stream LSL processado...")
+
+        self.processed_outlet = self._create_lsl_outlet(
+            self.processed_stream_name, 1, self.sample_rate, "emg-esp32-ble-processed-001"
+        )
+
+        async def keep_alive():
+            while True:
+                await asyncio.sleep(1)
+
+        def on_notify(sender, data: bytearray):
+            try:
+                if len(data) != 8:
+                    return
+
+                timestamp_ms, voltage = struct.unpack("<If", data)
+                raw_value = float(voltage)
+
+                self.raw_outlet.push_sample([raw_value], timestamp=time.time())
+
+                processed_value = self._process_sample([raw_value])[0]
+                # processed_outlet may be Optional; guard against None to satisfy static analyzers
+                if self.processed_outlet is not None:
+                    self.processed_outlet.push_sample([processed_value], timestamp=time.time())
+
+                self.total_samples += 1
+                if self.total_samples % 500 == 0:
+                    print(
+                        f"Amostras: {self.total_samples} | "
+                        f"Bruto: {raw_value:.4f} | "
+                        f"Processado: {processed_value:.4f}"
+                    )
+
+            except Exception as e:
+                self.error_count += 1
+                if self.error_count % 50 == 1:
+                    print(f"Erro no callback BLE: {e}")
+
+        async with BleakClient(device) as client:
+            print(f"Conectado ao BLE. Assinando UUID {self.char_uuid}...")
+            await client.start_notify(self.char_uuid, on_notify)
+            print("Notificações ativas. Ctrl+C para parar.")
+            await keep_alive()
+
+    def _preprocess_sample(self, sample_value: float) -> float:
+        self.signal_window.append(sample_value)
+        hist = np.asarray(self.signal_window, dtype=float)
+
+        if len(hist) < 4:
+            return float(sample_value)
+
+        if self.use_bandpass and self.sos_bandpass is not None:
+            y, self.bp_state = signal.sosfilt(self.sos_bandpass, hist, zi=self.bp_state)
+            hist = np.asarray(y, dtype=float)
+
+        if self.use_notch and self.b_notch is not None and self.a_notch is not None:
+            y, self.notch_state = signal.lfilter(self.b_notch, self.a_notch, hist, zi=self.notch_state)
+            hist = np.asarray(y, dtype=float)
+
+        if self.use_envelope and self.sos_envelope is not None:
+            rect = np.abs(hist)
+            y, self.env_state = signal.sosfilt(self.sos_envelope, rect, zi=self.env_state)
+            hist = np.asarray(y, dtype=float)
+
+        return float(hist[-1])
+
     def calculate_rms(self, channel_idx: int) -> float:
-        """
-        Calcula RMS (Root Mean Square) para um canal específico.
-        
-        RMS = sqrt(mean(x^2))
-        
-        Em EMG, RMS representa a "energia" ou "amplitude" do sinal muscular.
-        Valores mais altos = contração muscular mais forte.
-        
-        Args:
-            channel_idx: Índice do canal (0, 1, ...)
-            
-        Returns:
-            Valor RMS
-        """
         buffer = self.rms_buffers[channel_idx]
-        
         if len(buffer) == 0:
             return 0.0
-        
-        # Converte para array NumPy
-        data = np.array(buffer)
-        
-        # RMS = raiz quadrada da média dos quadrados
-        rms = np.sqrt(np.mean(data ** 2))
-        
-        return float(rms)
-    
-    def process_sample(self, sample: List[float]) -> List[float]:
-        """
-        Processa amostra conforme modo selecionado.
-        
-        Args:
-            sample: Lista de valores brutos (um por canal)
-            
-        Returns:
-            Lista processada
-        """
-        # 1. Adiciona valores aos buffers RMS
-        for i, value in enumerate(sample):
-            self.rms_buffers[i].append(value)
-        
-        # 2. Processa conforme modo
+        data = np.array(buffer, dtype=float)
+        return float(np.sqrt(np.mean(data ** 2)))
+
+    def _process_sample(self, sample: List[float]) -> List[float]:
+        preprocessed = self._preprocess_sample(sample[0])
+        self.rms_buffers[0].append(preprocessed)
+
         if self.processing_mode == "raw":
-            # Modo RAW: retorna dados originais sem modificação
-            return sample
+            return [preprocessed]
 
         if self.processing_mode == "rms":
-            # Modo RMS: calcula RMS para cada canal
-            return self._compute_rms_values()
+            return [self.calculate_rms(0)]
 
         if self.processing_mode == "normalized":
-            # Modo NORMALIZADO: RMS + normalização para [0, 1]
-            return self._normalize_rms_values(self._compute_rms_values())
+            rms_value = self.calculate_rms(0)
+            if self.normalization_buffer is not None:
+                self.normalization_buffer.append([rms_value])
+            if not self.normalization_buffer or len(self.normalization_buffer) < 100:
+                return [rms_value]
+            arr = np.array(list(self.normalization_buffer))
+            min_v = float(np.min(arr))
+            max_v = float(np.max(arr))
+            rng = max_v - min_v if (max_v - min_v) != 0 else 1.0
+            return [float((rms_value - min_v) / rng)]
 
-        raise ValueError(f"Modo de processamento inválido: {self.processing_mode}")
+        raise ValueError(f"Modo inválido: {self.processing_mode}")
 
-    def _compute_rms_values(self) -> List[float]:
-        """Calcula o RMS atual para todos os canais."""
-        return [self.calculate_rms(i) for i in range(self.channel_count)]
 
-    def _normalize_rms_values(self, rms_values: List[float]) -> List[float]:
-        """Normaliza valores RMS para [0, 1] usando janela histórica."""
-        if self.normalization_buffer is not None:
-            self.normalization_buffer.append(rms_values.copy())
-
-        # Enquanto não há dados suficientes, retorna RMS puro
-        if not self.normalization_buffer or len(self.normalization_buffer) < 100:
-            return rms_values
-
-        buffer_array = np.array(list(self.normalization_buffer))
-
-        # Calcula min/max por canal
-        min_vals = np.min(buffer_array, axis=0)
-        max_vals = np.max(buffer_array, axis=0)
-
-        # Normaliza para [0, 1]
-        rms_array = np.array(rms_values)
-        range_vals = max_vals - min_vals
-        range_vals[range_vals == 0] = 1.0  # Evita divisão por zero
-
-        normalized = (rms_array - min_vals) / range_vals
-        return normalized.tolist()
-    
-    def get_statistics(self) -> dict:
-        """Retorna estatísticas em tempo real."""
-        stats = {
-            'total_samples': self.total_samples,
-            'error_count': self.error_count,
-            'processing_mode': self.processing_mode,
-        }
-
-        self._append_mode_statistics(stats)
-        
-        return stats
-
-    def _append_mode_statistics(self, stats: dict) -> None:
-        """Acrescenta estatísticas específicas do modo de processamento."""
-        if self.processing_mode == "rms":
-            stats['current_rms'] = self._compute_rms_values()
-            return
-
-        if self.processing_mode != "normalized" or not self.normalization_buffer:
-            return
-
-        if len(self.normalization_buffer) == 0:
-            return
-
-        buffer_array = np.array(list(self.normalization_buffer))
-        stats['rms_mean'] = np.mean(buffer_array, axis=0).tolist()
-        stats['rms_std'] = np.std(buffer_array, axis=0).tolist()
-    
-    def run(self) -> None:
-        """Loop principal."""
-        self.connect_input()
-        self.create_output()
-        
-        if self.inlet is None or self.outlet is None:
-            raise RuntimeError("Erro na inicialização")
-        
-        print("Agregador em execução (Ctrl+C para parar)...")
-        print("Aguardando dados...\n")
-        
-        start_time = time.time()
-        last_stats_time = start_time
-        reconnect_attempts = 0
-        
-        try:
-            while True:
-                sample, timestamp = self.inlet.pull_sample(timeout=1.0)
-                
-                if sample is None or timestamp is None:
-                    should_stop, reconnect_attempts = self._handle_missing_data(reconnect_attempts)
-                    if should_stop:
-                        break
-                    continue
-                
-                reconnect_attempts = 0
-                self._process_and_publish(sample, timestamp)
-                
-                # Estatísticas a cada 5 segundos
-                current_time = time.time()
-                if current_time - last_stats_time >= 5.0:
-                    self._print_statistics(start_time, current_time)
-                    last_stats_time = current_time
-                    
-        except KeyboardInterrupt:
-            elapsed = time.time() - start_time
-            print(f"\n✅ Encerrando...")
-            print(f"   Total: {self.total_samples} amostras em {elapsed:.1f}s")
-            print(f"   Taxa média: {self.total_samples / elapsed:.1f} Hz")
-
-    def _handle_missing_data(self, reconnect_attempts: int) -> Tuple[bool, int]:
-        """Controla política de reconexão quando não há amostra disponível."""
-        if reconnect_attempts < 3:
-            print(f"⚠️ Sem dados... (tentativa {reconnect_attempts + 1}/3)")
-            return False, reconnect_attempts + 1
-
-        print("Conexão perdida. Encerrando...")
-        return True, reconnect_attempts
-
-    def _process_and_publish(self, sample: List[float], timestamp: float) -> None:
-        """Processa a amostra e publica no stream de saída."""
-        if self.outlet is None:
-            raise RuntimeError("Stream de saída não inicializado")
-
-        try:
-            processed_sample = self.process_sample(sample)
-            self.outlet.push_sample(processed_sample, timestamp=timestamp)
-            self.total_samples += 1
-        except Exception as e:
-            self.error_count += 1
-            if self.error_count % 100 == 1:
-                print(f"Erro ao processar: {e}")
-
-    def _print_statistics(self, start_time: float, current_time: float) -> None:
-        """Exibe estatísticas periódicas de execução."""
-        elapsed = current_time - start_time
-        rate = self.total_samples / elapsed if elapsed > 0 else 0.0
-        stats = self.get_statistics()
-
-        print(f"\nEstatísticas")
-        print(f"Amostras: {self.total_samples}")
-        print(f"Taxa: {rate:.1f} Hz")
-        print(f"Modo: {self.processing_mode.upper()}")
-
-        if 'current_rms' in stats:
-            print(f"RMS atual: {[f'{v:.2f}' for v in stats['current_rms']]}")
-
-        if 'rms_mean' in stats:
-            print(f"RMS médio: {[f'{v:.2f}' for v in stats['rms_mean']]}")
-
-        if self.error_count > 0:
-            print(f"Erros: {self.error_count}")
-
-        print()
+def parse_args():
+    parser = argparse.ArgumentParser(description="Recebe EMG via BLE, publica em LSL e aplica pré-processamento + RMS.")
+    parser.add_argument("--device-name", default="ESP32-EMG")
+    parser.add_argument("--char-uuid", default="bef8d6c9-9c21-4c9e-b632-bd763f7a92bf")
+    parser.add_argument("--sample-rate", type=float, default=500.0)
+    parser.add_argument("--mode", choices=["raw", "rms", "normalized"], default="rms")
+    parser.add_argument("--rms-window-ms", type=float, default=50.0)
+    parser.add_argument("--buffer-size", type=int, default=500)
+    parser.add_argument("--no-bandpass", action="store_true")
+    parser.add_argument("--no-notch", action="store_true")
+    parser.add_argument("--no-envelope", action="store_true")
+    return parser.parse_args()
 
 
 def main():
-    """Ponto de entrada principal."""
-    
-    # ========================================
-    # CONFIGURAÇÃO: Escolha o modo aqui!
-    # ========================================
-    
-    aggregator = EMGAggregator(
-        input_stream_name="EMG",
-        output_stream_name="EMG_Processado",
-        
-        # ESCOLHA UM MODO:
-        processing_mode="rms",       # "raw", "rms", ou "normalized"
-        
-        # Tamanho da janela RMS (quanto maior, mais suave o sinal)
-        rms_window_ms=50.0,          # 50ms é padrão para EMG
-        
-        connection_timeout=30.0,
+    args = parse_args()
+    app = EMGBLEToLSLProcessor(
+        device_name=args.device_name,
+        char_uuid=args.char_uuid,
+        sample_rate=args.sample_rate,
+        processing_mode=args.mode,
+        rms_window_ms=args.rms_window_ms,
+        buffer_size=args.buffer_size,
+        use_bandpass=not args.no_bandpass,
+        use_notch=not args.no_notch,
+        use_envelope=not args.no_envelope,
     )
-    
     try:
-        aggregator.run()
+        asyncio.run(app.run())
+    except KeyboardInterrupt:
+        print("\nConexão encerrada.")
     except Exception as e:
         print(f"\nErro crítico: {e}")
-        import traceback
-        traceback.print_exc()
-        return 1
-    
-    return 0
+        raise
 
 
 if __name__ == "__main__":
-    exit(main())
+    main()

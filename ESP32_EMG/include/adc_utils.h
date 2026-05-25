@@ -1,14 +1,18 @@
 #ifndef ADC_UTILS_H
 #define ADC_UTILS_H
 
-#include <stdint.h>
-#include <Adafruit_ADS1X15.h>
+#include <cstddef>
+#include <cstdint>
 #include "config.h"
 #include "structs.h"
 
 // ═══════════════════════════════════════════════════════════
 // ADC UTILITIES
 // ═══════════════════════════════════════════════════════════
+
+// Forward declaration to avoid pulling in Adafruit header (and its
+// transitive dependency on FreeRTOS) in files that include this header.
+class Adafruit_ADS1115;
 
 /**
  * @brief Inicializa o ADS1115
