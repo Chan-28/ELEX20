@@ -93,10 +93,21 @@ Na pasta `bin/` existem atalhos prontos:
 .\bin\Executar_Teste.bat
 ```
 
-Ordem recomendada para uso normal:
+O script `Executar_Projeto.bat` agora sobe a cadeia completa do projeto em janelas separadas:
 
-1. Inicie o simulador LSL.
-2. Em outro terminal, inicie o gráfico principal.
+1. `tools/captar_Dados_serial.py` captura os dados da porta serial/COM e publica o stream `EMG`.
+2. `tools/filtrar_Dados.py` lê `EMG`, processa e publica `EMG_Processado`.
+3. `src/Grafico.py` consome `EMG` e `EMG_Processado` e plota os dois sinais em gráficos distintos.
+
+Se quiser testar com dados simulados, continue usando `Executar_Simulador.bat` e depois abra o gráfico.
+
+Para validar o fluxo real do ESP32 antes de abrir a interface, você pode rodar:
+
+```bash
+python .\tests\verificar_pipeline_serial.py --port COM3
+```
+
+Esse teste confirma se a porta serial abre e se os streams LSL `EMG` e `EMG_Processado` aparecem com os nomes esperados.
 
 ### Via Python direto
 

@@ -208,6 +208,9 @@ class LSLRealtimeWorker(QThread):
                 if stream_name == "EMG" and emg_inlet is None:
                     emg_inlet = pylsl.StreamInlet(stream_info, max_buflen=360)
                     self.n_canais = stream_info.channel_count()
+                    nominal = float(stream_info.nominal_srate())
+                    if nominal > 0:
+                        self.sfreq = nominal
                     self.status_atualizado.emit(f"Conectado ao stream EMG ({self.n_canais} canais)")
                 elif stream_name == "EMG_Processado" and emg_proc_inlet is None:
                     emg_proc_inlet = pylsl.StreamInlet(stream_info, max_buflen=360)
@@ -218,6 +221,11 @@ class LSLRealtimeWorker(QThread):
         
         if emg_inlet is None:
             self.erro_captura.emit("Nenhum stream LSL 'EMG' encontrado.")
+            self._running = False
+            return
+
+        if emg_proc_inlet is None:
+            self.erro_captura.emit("Nenhum stream LSL 'EMG_Processado' encontrado.")
             self._running = False
             return
         
@@ -241,16 +249,10 @@ class LSLRealtimeWorker(QThread):
                     # Adiciona ao buffer
                     buffer_bruto[:, write_idx] = np.asarray(sample, dtype=float)
                     
-                    # Se temos dados processados, puxa também
-                    if emg_proc_inlet is not None:
-                        sample_proc, _ = emg_proc_inlet.pull_sample(timeout=0.01)
-                        if sample_proc is not None:
-                            buffer_filt[:, write_idx] = np.asarray(sample_proc, dtype=float)
-                        else:
-                            # Filtro simples local como fallback
-                            buffer_filt[:, write_idx] = np.asarray(sample, dtype=float) * 0.9
-                    else:
-                        buffer_filt[:, write_idx] = np.asarray(sample, dtype=float)
+                    # Lê o sinal já processado pelo filtro LSL.
+                    sample_proc, _ = emg_proc_inlet.pull_sample(timeout=0.01)
+                    if sample_proc is not None:
+                        buffer_filt[:, write_idx] = np.asarray(sample_proc, dtype=float)
                     
                     write_idx = (write_idx + 1) % self.buffer_size
                     
@@ -352,22 +354,152 @@ class JanelaNeuro(QtWidgets.QMainWindow):
         self.window_seconds = 1.0
         self.mne_browser = None
         self._mne_browser_aberto = False
+        # Evita reaberturas em loop do MNE Browser
+        self._mne_browser_reopen_pending = False
+        # Normalizar sinais para visualização no MNE Browser
+        self.mne_normalize = True
+        # Ganho visual aplicado ao sinal antes de renderizar no MNE Browser
+        self.mne_gain = 1.0
         self._mne_browser_refresh_pending = False
         self._mne_browser_last_refresh = 0.0
         self._mne_browser_refresh_interval = 0.8
-        
-        # Boxes de Sinais (com referências aos layouts para atualização posterior)
-        box_bruto = QtWidgets.QGroupBox("Sinal Bruto")
-        self.layout_bruto = QtWidgets.QVBoxLayout(box_bruto)
-        box_bruto.setSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Expanding)
-        self.plot_bruto = self.criar_pyqtgraph(raw_bruto, "#2ecc71") # Verde Esmeralda
-        self.layout_bruto.addWidget(self.plot_bruto)
 
-        box_filt = QtWidgets.QGroupBox("Sinal Filtrado")
-        self.layout_filt = QtWidgets.QVBoxLayout(box_filt)
-        box_filt.setSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Expanding)
-        self.plot_filt = self.criar_pyqtgraph(raw_filt, "#e74c3c") # Alizarin Red
-        self.layout_filt.addWidget(self.plot_filt)
+        gain_box = QtWidgets.QFrame()
+        gain_box.setObjectName("MneGainBox")
+        gain_layout = QtWidgets.QVBoxLayout(gain_box)
+        gain_layout.setContentsMargins(12, 8, 12, 8)
+        gain_layout.setSpacing(6)
+
+        gain_box.setStyleSheet(
+            """
+            QFrame#MneGainBox {
+                background-color: rgba(255, 255, 255, 0.08);
+                border: 1px solid rgba(255, 255, 255, 0.18);
+                border-radius: 10px;
+            }
+            QFrame#MneGainBox QLabel {
+                color: #ecf0f1;
+            }
+            QFrame#MneGainBox QSlider::groove:horizontal {
+                height: 6px;
+                background: rgba(255, 255, 255, 0.18);
+                border-radius: 3px;
+            }
+            QFrame#MneGainBox QSlider::sub-page:horizontal {
+                background: #3498db;
+                border-radius: 3px;
+            }
+            QFrame#MneGainBox QSlider::handle:horizontal {
+                background: #ecf0f1;
+                width: 14px;
+                margin: -5px 0;
+                border-radius: 7px;
+                border: 1px solid rgba(0, 0, 0, 0.2);
+            }
+            """
+        )
+
+        lbl_gain_title = QtWidgets.QLabel("Ganho do MNE Browser")
+        lbl_gain_title.setStyleSheet("color: #000000; font-weight: bold; margin-left: 15px;")
+
+        gain_row = QtWidgets.QHBoxLayout()
+        gain_row.setContentsMargins(0, 0, 0, 0)
+        lbl_gain_min = QtWidgets.QLabel("0.05x")
+        lbl_gain_min.setStyleSheet("color: #000000; font-size: 11px;")
+        self.slider_mne_gain = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal)
+        self.slider_mne_gain.setRange(1, 200)
+        self.slider_mne_gain.setValue(20)
+        self.slider_mne_gain.setSingleStep(1)
+        self.slider_mne_gain.setPageStep(5)
+        self.lbl_mne_gain_val = QtWidgets.QLabel("1.00x")
+        self.lbl_mne_gain_val.setStyleSheet("color: #000000; font-size: 11px; min-width: 44px; font-weight: bold;")
+        lbl_gain_max = QtWidgets.QLabel("10.0x")
+        lbl_gain_max.setStyleSheet("color: #000000; font-size: 11px;")
+
+        gain_row.addWidget(lbl_gain_min)
+        gain_row.addWidget(self.slider_mne_gain)
+        gain_row.addWidget(self.lbl_mne_gain_val)
+        gain_row.addWidget(lbl_gain_max)
+
+        gain_layout.addWidget(lbl_gain_title)
+        gain_layout.addLayout(gain_row)
+        layout_side.addWidget(gain_box)
+
+        try:
+            self.slider_mne_gain.valueChanged.connect(getattr(self, 'on_mne_gain_changed', lambda: None))
+        except Exception:
+            pass
+        
+        # Caixa única para sinal (permite alternar entre Bruto e Processado)
+        box_signal = QtWidgets.QGroupBox("EMG (Bruto / Processado)")
+        self.layout_signal = QtWidgets.QVBoxLayout(box_signal)
+        box_signal.setSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Expanding)
+
+        # Controle para escolher qual sinal exibir
+        signal_ctrl = QtWidgets.QWidget()
+        signal_ctrl_layout = QtWidgets.QHBoxLayout(signal_ctrl)
+        signal_ctrl_layout.setContentsMargins(6, 6, 6, 6)
+        lbl_signal = QtWidgets.QLabel("Mostrar:")
+        self.signal_source_combo = QtWidgets.QComboBox()
+        self.signal_source_combo.addItems(["EMG Processado", "EMG Bruto"])
+        self.signal_source_combo.setCurrentIndex(0)
+        signal_ctrl_layout.addWidget(lbl_signal)
+        signal_ctrl_layout.addWidget(self.signal_source_combo)
+        signal_ctrl_layout.addStretch()
+
+        # Cria o plot único (inicializa com o sinal processado por padrão)
+        default_raw = raw_filt if raw_filt is not None else raw_bruto
+        self.plot_signal = self.criar_pyqtgraph(default_raw, "#2ecc71")
+        self.layout_signal.addWidget(signal_ctrl)
+        self.layout_signal.addWidget(self.plot_signal)
+
+        # Conecta mudança do combo para atualizar o plot imediatamente
+        try:
+            self.signal_source_combo.currentIndexChanged.connect(getattr(self, 'on_signal_controls_changed', lambda: None))
+        except Exception:
+            pass
+
+        box_fft = QtWidgets.QGroupBox("FFT (Amplitude x Frequência)")
+        self.layout_fft = QtWidgets.QVBoxLayout(box_fft)
+        box_fft.setSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Expanding)
+        # Controles da FFT: escolha de fonte e limite de frequência
+        self.plot_fft = self.criar_plot_fft()
+
+        fft_ctrl_widget = QtWidgets.QWidget()
+        fft_ctrl_layout = QtWidgets.QHBoxLayout(fft_ctrl_widget)
+        fft_ctrl_layout.setContentsMargins(6, 6, 6, 6)
+
+        lbl_source = QtWidgets.QLabel("Fonte FFT:")
+        self.fft_source_combo = QtWidgets.QComboBox()
+        # Ordem: preferir Processado por padrão
+        self.fft_source_combo.addItems(["EMG Processado", "EMG Bruto"])
+        self.fft_source_combo.setCurrentIndex(0)
+
+        lbl_max = QtWidgets.QLabel("Freq. máx. (Hz):")
+        self.fft_max_spin = QtWidgets.QSpinBox()
+        self.fft_max_spin.setRange(1, 2000)
+        self.fft_max_spin.setValue(120)
+        self.fft_max_spin.setSingleStep(1)
+
+        fft_ctrl_layout.addWidget(lbl_source)
+        fft_ctrl_layout.addWidget(self.fft_source_combo)
+        fft_ctrl_layout.addStretch()
+        fft_ctrl_layout.addWidget(lbl_max)
+        fft_ctrl_layout.addWidget(self.fft_max_spin)
+
+        # Adiciona controles acima do gráfico
+        self.layout_fft.addWidget(fft_ctrl_widget)
+        self.layout_fft.addWidget(self.plot_fft)
+
+        # Conecta sinais de controle para atualização imediata
+        try:
+            # Use getattr to avoid static analyzer complaining if the method
+            # is not yet resolved in some analysis contexts.
+            self.fft_source_combo.currentIndexChanged.connect(getattr(self, 'on_fft_controls_changed', lambda: None))
+            self.fft_max_spin.valueChanged.connect(getattr(self, 'on_fft_controls_changed', lambda: None))
+        except Exception:
+            # Em situações de inicialização precoce, ignorar falhas aqui
+            pass
 
         # Box do R
         box_r = QtWidgets.QGroupBox("Análise Estatística")
@@ -388,8 +520,9 @@ class JanelaNeuro(QtWidgets.QMainWindow):
         layout_r.addWidget(self.painel_analise)
 
         # Organizando no Grid
-        layout_grid.addWidget(box_bruto, 0, 0)
-        layout_grid.addWidget(box_filt, 1, 0)
+        # Organiza: sinal único e FFT em sequência na coluna 0
+        layout_grid.addWidget(box_signal, 0, 0)
+        layout_grid.addWidget(box_fft, 1, 0)
         layout_grid.addWidget(box_r, 0, 1, 2, 1) # Ocupa duas linhas na coluna 1
 
         # Dá mais largura à coluna de análise (R) para evitar cortes/scroll horizontal
@@ -407,9 +540,8 @@ class JanelaNeuro(QtWidgets.QMainWindow):
         self.lsl_worker.erro_captura.connect(self.on_erro_lsl)
         self.lsl_worker.start()
         
-        # Armazena referência aos plots items para atualização suave
-        self.plot_items_bruto = []
-        self.plot_items_filt = []
+        # Armazena referência ao plot único para atualização suave
+        self.plot_items_signal = []
         self.raw_browser = raw_filt.copy()
         self._plot_buffer_bruto = None
         self._plot_buffer_filt = None
@@ -446,6 +578,59 @@ class JanelaNeuro(QtWidgets.QMainWindow):
         window_samples = max(1, int(self.window_seconds * 250.0))
         setattr(pw, '_plot_display', np.asarray(data[:min(2, data.shape[0]), -window_samples:], dtype=float).copy())
         return pw
+
+    def criar_plot_fft(self):
+        pw = pg.PlotWidget()
+        pw.setBackground('#ffffff')
+        pw.showGrid(x=True, y=True, alpha=0.1)
+        pw.setLabel('bottom', 'Frequência', units='Hz')
+        pw.setLabel('left', 'Amplitude')
+        pen = pg.mkPen(color="#f39c12", width=2)
+        self.fft_curve = pw.plot([], [], pen=pen)
+        return pw
+
+    def atualizar_plot_fft(self, dados_novos: np.ndarray) -> None:
+        try:
+            if dados_novos is None or dados_novos.size == 0:
+                return
+
+            sfreq = float(getattr(self.lsl_worker, "sfreq", 250.0))
+            if sfreq <= 0:
+                sfreq = 250.0
+
+            canal = np.asarray(dados_novos[0, :], dtype=float)
+            if canal.size < 8:
+                return
+
+            # Janela para suavizar leakage espectral.
+            janela = np.hanning(canal.size)
+            sinal = (canal - np.mean(canal)) * janela
+
+            fft_vals = np.fft.rfft(sinal)
+            freqs = np.fft.rfftfreq(sinal.size, d=1.0 / sfreq)
+            amp = np.abs(fft_vals)
+
+            # Aplica limite de frequência definido pelo usuário
+            try:
+                max_freq = int(getattr(self, 'fft_max_spin').value())
+            except Exception:
+                max_freq = 120
+
+            if np.isfinite(max_freq) and max_freq > 0:
+                mask = freqs <= float(max_freq)
+                if np.any(mask):
+                    freqs_plot = freqs[mask]
+                    amp_plot = amp[mask]
+                else:
+                    freqs_plot = freqs
+                    amp_plot = amp
+            else:
+                freqs_plot = freqs
+                amp_plot = amp
+
+            self.fft_curve.setData(freqs_plot, amp_plot)
+        except Exception as e:
+            LOGGER.debug(f"Erro ao atualizar FFT: {e}")
     
     def atualizar_plot_dados(self, plot_widget, dados_novos: np.ndarray) -> None:
         """Atualiza os dados dos plots existentes sem remover/recriar.
@@ -513,12 +698,82 @@ class JanelaNeuro(QtWidgets.QMainWindow):
             self._ultimo_bruto = dados_bruto
             self._ultimo_filt = dados_filt
 
-            # Atualiza os plots pyqtgraph em tempo real
-            self.atualizar_plot_dados(self.plot_bruto, dados_bruto)
-            self.atualizar_plot_dados(self.plot_filt, dados_filt)
+            # Escolhe qual buffer mostrar no plot unico (controle do usuário)
+            try:
+                sel = getattr(self, 'signal_source_combo', None)
+                if sel is not None and sel.currentText().startswith("EMG Bruto"):
+                    display_buf = dados_bruto
+                else:
+                    display_buf = dados_filt if dados_filt is not None else dados_bruto
+            except Exception:
+                display_buf = dados_filt if dados_filt is not None else dados_bruto
+
+            # Atualiza o plot unico com o buffer selecionado
+            try:
+                self.atualizar_plot_dados(self.plot_signal, display_buf)
+            except Exception:
+                pass
+
+            # Atualiza FFT usando a fonte selecionada pelo usuário para FFT
+            try:
+                combo = getattr(self, 'fft_source_combo', None)
+                if combo is not None and combo.currentText().startswith("EMG Bruto"):
+                    fft_buf = dados_bruto
+                else:
+                    fft_buf = dados_filt if dados_filt is not None else dados_bruto
+                self.atualizar_plot_fft(fft_buf)
+            except Exception:
+                self.atualizar_plot_fft(dados_filt if dados_filt is not None else dados_bruto)
+
             self.atualizar_mne_browser(dados_filt)
         except Exception as e:
             LOGGER.debug(f"Erro ao processar dados LSL: {e}")
+
+    def on_fft_controls_changed(self) -> None:
+        """Handler chamado quando os controles da FFT mudam (fonte ou limite de frequência)."""
+        try:
+            # Atualiza imediatamente a plotagem com o ultimo buffer conhecido
+            sel = getattr(self, 'fft_source_combo', None)
+            if sel is not None and sel.currentText().startswith("EMG Bruto"):
+                buf = self._ultimo_bruto
+            else:
+                buf = self._ultimo_filt if self._ultimo_filt is not None else self._ultimo_bruto
+
+            if buf is not None:
+                self.atualizar_plot_fft(buf)
+        except Exception as e:
+            LOGGER.debug(f"Erro ao aplicar controles FFT: {e}")
+
+    def on_signal_controls_changed(self) -> None:
+        """Handler chamado quando o controle de sinal muda (bruto/processado)."""
+        try:
+            sel = getattr(self, 'signal_source_combo', None)
+            if sel is not None and sel.currentText().startswith("EMG Bruto"):
+                buf = self._ultimo_bruto
+            else:
+                buf = self._ultimo_filt if self._ultimo_filt is not None else self._ultimo_bruto
+
+            if buf is not None:
+                try:
+                    self.atualizar_plot_dados(self.plot_signal, buf)
+                except Exception:
+                    pass
+        except Exception as e:
+            LOGGER.debug(f"Erro ao aplicar controle de sinal: {e}")
+
+    def on_mne_gain_changed(self, valor: int) -> None:
+        """Atualiza o ganho visual do MNE Browser a partir do slider."""
+        try:
+            ganho = max(0.05, float(valor) / 20.0)
+            self.mne_gain = ganho
+            if hasattr(self, 'lbl_mne_gain_val') and self.lbl_mne_gain_val is not None:
+                self.lbl_mne_gain_val.setText(f"{ganho:.2f}x")
+
+            ultimo_filt = getattr(self, '_ultimo_filt', None)
+            if isinstance(ultimo_filt, np.ndarray):
+                self.atualizar_mne_browser(ultimo_filt)
+        except Exception as e:
+            LOGGER.debug(f"Erro ao ajustar ganho do MNE Browser: {e}")
 
     def on_status_lsl_atualizado(self, mensagem: str) -> None:
         """Slot para atualizar a barra de status com mensagens do LSL worker."""
@@ -542,24 +797,20 @@ class JanelaNeuro(QtWidgets.QMainWindow):
             raw_filt: Dados filtrados em formato MNE Raw
         """
         try:
-            # Remove widgets antigos
-            if self.plot_bruto is not None:
-                self.layout_bruto.removeWidget(self.plot_bruto)
-                self.plot_bruto.deleteLater()
-            
-            if self.plot_filt is not None:
-                self.layout_filt.removeWidget(self.plot_filt)
-                self.plot_filt.deleteLater()
-            
-            # Cria novos widgets
-            self.plot_bruto = self.criar_pyqtgraph(raw_bruto, "#2ecc71")
-            self.plot_filt = self.criar_pyqtgraph(raw_filt, "#e74c3c")
-            
-            # Adiciona novos widgets aos layouts
-            self.layout_bruto.addWidget(self.plot_bruto)
-            self.layout_filt.addWidget(self.plot_filt)
-            
-            LOGGER.info("Gráficos pyqtgraph atualizados com sucesso")
+            # Remove widget antigo do plot unico
+            if getattr(self, 'plot_signal', None) is not None:
+                try:
+                    self.layout_signal.removeWidget(self.plot_signal)
+                    self.plot_signal.deleteLater()
+                except Exception:
+                    pass
+
+            # Decide qual raw usar para inicialização do widget
+            default_raw = raw_filt if raw_filt is not None else raw_bruto
+            self.plot_signal = self.criar_pyqtgraph(default_raw, "#2ecc71")
+            self.layout_signal.addWidget(self.plot_signal)
+
+            LOGGER.info("Gráfico pyqtgraph único atualizado com sucesso")
         except Exception as e:
             LOGGER.exception(f"Erro ao atualizar gráficos pyqtgraph: {e}")
 
@@ -660,26 +911,86 @@ class JanelaNeuro(QtWidgets.QMainWindow):
             LOGGER.warning(f"Nao foi possivel abrir MNE Browser: {e}")
 
     def atualizar_mne_browser(self, dados_filt: np.ndarray) -> None:
-        if self.raw_browser is None or dados_filt is None:
+        # Recria um Raw temporário a partir do último buffer filtrado e atualiza o browser
+        if dados_filt is None:
             return
 
         try:
-            n_canais = min(self.raw_browser._data.shape[0], dados_filt.shape[0])
-            n_amostras = min(self.raw_browser._data.shape[1], dados_filt.shape[1])
-            self.raw_browser._data[:, :] = 0.0
-            self.raw_browser._data[:n_canais, -n_amostras:] = dados_filt[:n_canais, -n_amostras:]
+            sfreq = float(getattr(self.lsl_worker, 'sfreq', 250.0))
+        except Exception:
+            sfreq = 250.0
 
-            if not self._mne_browser_aberto or self.mne_browser is None:
-                return
+        # Usa a janela inteira (os 5 segundos) para rolar a tela como num EKG/EMG.
+        try:
+            # Limita a janela para o buffer configurado (ex: buffer_size)
+            max_dur = 5.0
+            max_samples = min(int(max_dur * sfreq), dados_filt.shape[1])
+            n_canais = min(dados_filt.shape[0], getattr(self.raw_browser, '_data', np.zeros((4,1))).shape[0])
 
-            agora = time.time()
-            delta = agora - self._mne_browser_last_refresh
-            if delta >= self._mne_browser_refresh_interval:
-                self._processar_refresh_mne_browser()
-            elif not self._mne_browser_refresh_pending:
-                self._mne_browser_refresh_pending = True
-                espera_ms = max(40, int((self._mne_browser_refresh_interval - delta) * 1000))
-                QtCore.QTimer.singleShot(espera_ms, self._processar_refresh_mne_browser)
+            segmento = dados_filt[:n_canais, -max_samples:].copy()
+            # Evita valores NaN/Inf que quebram o renderer
+            segmento = np.nan_to_num(segmento, copy=False)
+
+            # Normaliza canais para visualização se solicitado
+            try:
+                if getattr(self, 'mne_normalize', True):
+                    absmax = np.max(np.abs(segmento), axis=1)
+                    absmax[~np.isfinite(absmax) | (absmax == 0.0)] = 1.0
+                    segmento = (segmento.T / absmax).T
+            except Exception:
+                # Se falhar a normalização, continua com os dados brutos
+                pass
+
+            try:
+                ganho = float(getattr(self, 'mne_gain', 1.0))
+                if np.isfinite(ganho) and ganho > 0.0:
+                    segmento = segmento * ganho
+            except Exception:
+                pass
+
+            # Reusa o mesmo Raw do browser para evitar recriação/loop de janelas
+            if self.raw_browser is None:
+                self.raw_browser = self._criar_raw_mne(segmento, sfreq, desc="EMG (LSL - realtime)")
+                if self.raw_browser is None:
+                    return
+            else:
+                alvo = getattr(self.raw_browser, "_data", None)
+                if isinstance(alvo, np.ndarray) and alvo.ndim == 2:
+                    alvo[:] = 0.0
+                    n_canais_raw = min(alvo.shape[0], segmento.shape[0])
+                    n_amostras_raw = min(alvo.shape[1], segmento.shape[1])
+                    alvo[:n_canais_raw, -n_amostras_raw:] = segmento[:n_canais_raw, -n_amostras_raw:]
+                else:
+                    self.raw_browser = self._criar_raw_mne(segmento, sfreq, desc="EMG (LSL - realtime)")
+                    if self.raw_browser is None:
+                        return
+
+            # Se o browser já estiver aberto, atualiza o mesmo objeto em tempo real
+            if self._mne_browser_aberto and self.mne_browser is not None:
+                try:
+                    browser = self.mne_browser
+                    browser_any = cast(Any, browser)
+                    browser_dict = getattr(browser_any, "__dict__", None)
+                    if isinstance(browser_dict, dict):
+                        browser_dict["_data"] = self.raw_browser._data
+                    if hasattr(browser, "_load_data"):
+                        browser._load_data()
+                    if hasattr(browser, "_redraw"):
+                        browser._redraw(update_data=True)
+                except Exception as e:
+                    LOGGER.debug(f"Falha ao atualizar MNE Browser existente: {e}")
+            elif not getattr(self, '_mne_browser_reopen_pending', False):
+                # Se ainda não aberto, abre uma única vez
+                self._mne_browser_reopen_pending = True
+
+                def _open_once():
+                    try:
+                        # Se já houver algo agendado, ignora; mas não chama aqui ainda
+                        pass
+                    finally:
+                        self._mne_browser_reopen_pending = False
+
+                QtCore.QTimer.singleShot(10, _open_once)
         except Exception as e:
             LOGGER.debug(f"Falha ao atualizar MNE Browser: {e}")
 
@@ -722,7 +1033,7 @@ class JanelaNeuro(QtWidgets.QMainWindow):
             return
 
         n_canais_browser = min(4, max(1, int(self.raw_browser.info.get("nchan", 1))))
-        duracao = min(2.0, max(self.raw_browser.times[-1] if self.raw_browser.n_times > 1 else 1.0, 0.5))
+        duracao = min(5.0, max(self.raw_browser.times[-1] if self.raw_browser.n_times > 1 else 1.0, 0.5))
 
         try:
             browser = mne.viz.plot_raw(
@@ -733,6 +1044,8 @@ class JanelaNeuro(QtWidgets.QMainWindow):
                 duration=duracao,
                 show_options=True,
                 bgcolor="white",
+                theme="light",
+                scalings={"emg": 1.0},
             )
             self.mne_browser = browser
             if hasattr(browser, "show"):
@@ -812,8 +1125,10 @@ class JanelaNeuro(QtWidgets.QMainWindow):
             self.lbl_modo_analise.setText("Modo atual: Tabela de parâmetros")
 
     def reset_views(self):
-        self.plot_bruto.autoRange()
-        self.plot_filt.autoRange()
+        try:
+            self.plot_signal.autoRange()
+        except Exception:
+            pass
 
     def mostrar_em_desenvolvimento(self, recurso: str):
         QtWidgets.QMessageBox.information(
