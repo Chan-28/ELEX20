@@ -1,5 +1,6 @@
 import sys
 import os
+os.environ["QT_API"] = "pyqt6"
 import logging
 import csv
 import time
@@ -15,7 +16,9 @@ from PyQt6.QtGui import QPixmap
 from PyQt6.QtCore import QThread, pyqtSignal
 import pyqtgraph as pg
 from typing import Any, cast
+from collections import deque
 
+mne.viz.set_browser_backend('qt')
 LOGGER = logging.getLogger("janela_neuro")
 
 
@@ -161,7 +164,7 @@ class LSLRealtimeWorker(QThread):
     status_atualizado = pyqtSignal(str)
     erro_captura = pyqtSignal(str)
     
-    def __init__(self, sfreq: float = 250.0, buffer_size: int = 2500, intervalo_atualizar: float = 0.1):
+    def __init__(self, sfreq: float = 250.0, buffer_size: int = 500, intervalo_atualizar: float = 0.1):
         """
         Args:
             sfreq: Frequência de amostragem (Hz)
@@ -174,12 +177,10 @@ class LSLRealtimeWorker(QThread):
         self.intervalo_atualizar = intervalo_atualizar
         self._running = False
         self._pause = False
-        self.n_canais = 4  # Padrão: 4 canais EMG
+        self.n_canais = 2  # Padrão: 2 canais EMG
         
     def run(self):
-        """Loop principal que captura dados continuamente."""
         import time as _time
-
         self._running = True
         last_update = _time.time()
         
@@ -190,85 +191,66 @@ class LSLRealtimeWorker(QThread):
             self._running = False
             return
         
-        # Inicializa streams
-        emg_streams = []
-        emg_proc_streams = []
         emg_inlet = None
         emg_proc_inlet = None
-        
-        # Busca por streams LSL
         timeout_busca = 5.0
         start_time = _time.time()
         
         while (_time.time() - start_time) < timeout_busca and self._running:
             available_streams = pylsl.resolve_streams(wait_time=0.5)
-            
             for stream_info in available_streams:
                 stream_name = stream_info.name()
                 if stream_name == "EMG" and emg_inlet is None:
                     emg_inlet = pylsl.StreamInlet(stream_info, max_buflen=360)
                     self.n_canais = stream_info.channel_count()
                     nominal = float(stream_info.nominal_srate())
-                    if nominal > 0:
+                    if nominal > 0: 
                         self.sfreq = nominal
                     self.status_atualizado.emit(f"Conectado ao stream EMG ({self.n_canais} canais)")
                 elif stream_name == "EMG_Processado" and emg_proc_inlet is None:
                     emg_proc_inlet = pylsl.StreamInlet(stream_info, max_buflen=360)
                     self.status_atualizado.emit("Conectado ao stream EMG_Processado")
-            
             if emg_inlet is not None and emg_proc_inlet is not None:
                 break
         
-        if emg_inlet is None:
-            self.erro_captura.emit("Nenhum stream LSL 'EMG' encontrado.")
+        if emg_inlet is None or emg_proc_inlet is None:
+            self.erro_captura.emit("Streams LSL necessários não encontrados.")
             self._running = False
             return
 
-        if emg_proc_inlet is None:
-            self.erro_captura.emit("Nenhum stream LSL 'EMG_Processado' encontrado.")
-            self._running = False
-            return
+        # ALTERAÇÃO AQUI: Calculamos o tamanho ideal baseado na frequência REAL do LSL
+        # Queremos armazenar exatamente 5 segundos de histórico para preencher o MNE Browser por completo
+        tamanho_historico = int(5.0 * self.sfreq)
         
-        # Buffers circulares para manter histórico
-        buffer_bruto = np.zeros((self.n_canais, self.buffer_size))
-        buffer_filt = np.zeros((self.n_canais, self.buffer_size))
-        write_idx = 0
+        # Usamos deques circulares para gerenciar o stream sem problemas de índices
+        fila_bruto = deque(maxlen=tamanho_historico)
+        fila_filt = deque(maxlen=tamanho_historico)
         
         self.status_atualizado.emit("Capturando dados em tempo real...")
         
-        # Loop de captura
         while self._running:
             try:
                 if self._pause:
                     _time.sleep(0.05)
                     continue
                 
-                # Puxa dados brutos
                 sample, timestamp = emg_inlet.pull_sample(timeout=0.1)
                 if sample is not None:
-                    # Adiciona ao buffer
-                    buffer_bruto[:, write_idx] = np.asarray(sample, dtype=float)
+                    fila_bruto.append(sample)
                     
-                    # Lê o sinal já processado pelo filtro LSL.
                     sample_proc, _ = emg_proc_inlet.pull_sample(timeout=0.01)
                     if sample_proc is not None:
-                        buffer_filt[:, write_idx] = np.asarray(sample_proc, dtype=float)
+                        fila_filt.append(sample_proc)
+                    else:
+                        fila_filt.append(sample) # Fallback caso o filtrado falhe
                     
-                    write_idx = (write_idx + 1) % self.buffer_size
-                    
-                    # Emite sinal a cada intervalo_atualizar segundos
                     if (_time.time() - last_update) >= self.intervalo_atualizar:
-                        # Reorganiza buffer em ordem cronológica
-                        bruto_sorted = np.concatenate([
-                            buffer_bruto[:, write_idx:],
-                            buffer_bruto[:, :write_idx]
-                        ], axis=1)
+                        # Convertemos a fila atual diretamente em matrizes para os gráficos
+                        bruto_sorted = np.array(fila_bruto, dtype=float).T
+                        filt_sorted = np.array(fila_filt, dtype=float).T
                         
-                        filt_sorted = np.concatenate([
-                            buffer_filt[:, write_idx:],
-                            buffer_filt[:, :write_idx]
-                        ], axis=1)
-                        
+                        # Se a fila ainda estiver no início (poucas amostras), o sinal se moverá
+                        # livremente desde o início da tela sem gerar linhas retas fantasmas
                         self.dados_atualizados.emit(bruto_sorted, filt_sorted)
                         last_update = _time.time()
                 
@@ -321,7 +303,7 @@ class JanelaNeuro(QtWidgets.QMainWindow):
         btn_reload_from_lsl = QtWidgets.QPushButton("⬇️ Atualizar dados")
         btn1.clicked.connect(lambda: self.mostrar_em_desenvolvimento("Dashboard principal"))
         btn2.clicked.connect(self.abrir_mne_browser)
-        btn3.clicked.connect(lambda: self.mostrar_em_desenvolvimento("Exportar relatório"))
+        btn3.clicked.connect(self.exportar_relatorio)
         btn_toggle_metricas.clicked.connect(self.alternar_visualizacao_analise)
         btn_reset.clicked.connect(self.reset_views)
         btn_reload_from_lsl.clicked.connect(self.recarregar_de_lsl)
@@ -478,7 +460,7 @@ class JanelaNeuro(QtWidgets.QMainWindow):
         lbl_max = QtWidgets.QLabel("Freq. máx. (Hz):")
         self.fft_max_spin = QtWidgets.QSpinBox()
         self.fft_max_spin.setRange(1, 2000)
-        self.fft_max_spin.setValue(120)
+        self.fft_max_spin.setValue(10)
         self.fft_max_spin.setSingleStep(1)
 
         fft_ctrl_layout.addWidget(lbl_source)
@@ -534,7 +516,7 @@ class JanelaNeuro(QtWidgets.QMainWindow):
 
         # --- Inicializa thread de captura LSL em tempo real ---
         # buffer_size=1250 = 5 segundos de histórico a 250 Hz (escala menor no eixo X)
-        self.lsl_worker = LSLRealtimeWorker(sfreq=250.0, buffer_size=1250, intervalo_atualizar=0.15)
+        self.lsl_worker = LSLRealtimeWorker(sfreq=250.0, buffer_size=1, intervalo_atualizar=0.10)
         self.lsl_worker.dados_atualizados.connect(self.on_dados_lsl_recebidos)
         self.lsl_worker.status_atualizado.connect(self.on_status_lsl_atualizado)
         self.lsl_worker.erro_captura.connect(self.on_erro_lsl)
@@ -614,7 +596,7 @@ class JanelaNeuro(QtWidgets.QMainWindow):
             try:
                 max_freq = int(getattr(self, 'fft_max_spin').value())
             except Exception:
-                max_freq = 120
+                max_freq = 20
 
             if np.isfinite(max_freq) and max_freq > 0:
                 mask = freqs <= float(max_freq)
@@ -833,11 +815,11 @@ class JanelaNeuro(QtWidgets.QMainWindow):
         self.layout_graficos.setContentsMargins(0, 0, 0, 0)
         self.layout_graficos.setSpacing(12)
 
-        self.lbl_r_box = QtWidgets.QLabel("Boxplot")
+        self.lbl_r_box = QtWidgets.QLabel("Violino")
         self.lbl_r_pairs = QtWidgets.QLabel("Matriz de Dispersão")
-        self.lbl_r_radar = QtWidgets.QLabel("Biplot")
+        self.lbl_r_biplot = QtWidgets.QLabel("Biplot")
 
-        for lbl in (self.lbl_r_box, self.lbl_r_pairs, self.lbl_r_radar):
+        for lbl in (self.lbl_r_box, self.lbl_r_pairs, self.lbl_r_biplot):
             lbl.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
             # Permite que o label expanda horizontalmente dentro do layout
             lbl.setSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Fixed)
@@ -920,7 +902,7 @@ class JanelaNeuro(QtWidgets.QMainWindow):
         except Exception:
             sfreq = 250.0
 
-        # Usa a janela inteira (os 5 segundos) para rolar a tela como num EKG/EMG.
+        # Usa a janela inteira (os 5 segundos) para rolar a tela como num EMG.
         try:
             # Limita a janela para o buffer configurado (ex: buffer_size)
             max_dur = 5.0
@@ -956,10 +938,12 @@ class JanelaNeuro(QtWidgets.QMainWindow):
             else:
                 alvo = getattr(self.raw_browser, "_data", None)
                 if isinstance(alvo, np.ndarray) and alvo.ndim == 2:
-                    alvo[:] = 0.0
                     n_canais_raw = min(alvo.shape[0], segmento.shape[0])
-                    n_amostras_raw = min(alvo.shape[1], segmento.shape[1])
-                    alvo[:n_canais_raw, -n_amostras_raw:] = segmento[:n_canais_raw, -n_amostras_raw:]
+                    n_amostras_copia = min(alvo.shape[1], segmento.shape[1])
+                    if n_amostras_copia < alvo.shape[1]:
+                        alvo[:n_canais_raw, :alvo.shape[1] - n_amostras_copia] = \
+                            alvo[:n_canais_raw, n_amostras_copia:]
+                    alvo[:n_canais_raw, -n_amostras_copia:] = segmento[:n_canais_raw, -n_amostras_copia:]
                 else:
                     self.raw_browser = self._criar_raw_mne(segmento, sfreq, desc="EMG (LSL - realtime)")
                     if self.raw_browser is None:
@@ -1032,7 +1016,7 @@ class JanelaNeuro(QtWidgets.QMainWindow):
         if self.raw_browser is None:
             return
 
-        n_canais_browser = min(4, max(1, int(self.raw_browser.info.get("nchan", 1))))
+        n_canais_browser = min(1, max(1, int(self.raw_browser.info.get("nchan", 1))))
         duracao = min(5.0, max(self.raw_browser.times[-1] if self.raw_browser.n_times > 1 else 1.0, 0.5))
 
         try:
@@ -1067,9 +1051,9 @@ class JanelaNeuro(QtWidgets.QMainWindow):
         if paths_r:
             self._limpar_tmp_r_anterior()
             self._tmp_dir_r_atual = paths_r.get("tmp_dir")
-            self._mostrar_pixmap_em_label(self.lbl_r_box, paths_r["boxplot"])
+            self._mostrar_pixmap_em_label(self.lbl_r_box, paths_r["violin"])
             self._mostrar_pixmap_em_label(self.lbl_r_pairs, paths_r["pares"])
-            self._mostrar_pixmap_em_label(self.lbl_r_radar, paths_r["radar"])
+            self._mostrar_pixmap_em_label(self.lbl_r_biplot, paths_r["biplot"])
             self.lbl_status_graficos.setText("Gráficos R atualizados.")
             self._graficos_ja_plotados = True
             LOGGER.info("Gráficos R atualizados na janela.")
@@ -1083,6 +1067,28 @@ class JanelaNeuro(QtWidgets.QMainWindow):
             LOGGER.info("Versões científicas salvas em output/: %s", paths_py)
         else:
             LOGGER.warning("Não foi possível gerar gráficos científicos no output.")
+
+        # Gera o gráfico comparativo bruto vs processado (últimos 5 s)
+        try:
+            bruto = self._ultimo_bruto
+            
+            if bruto is not None:
+                # O analisador de tipo agora sabe que 'bruto' não é None,
+                # logo 'filtrado' também nunca será None.
+                filtrado = self._ultimo_filt if self._ultimo_filt is not None else bruto
+                
+                sfreq = float(getattr(self.lsl_worker, "sfreq", 1500.0))
+                png_comp = gerar_grafico_comparacao_r(bruto, filtrado, sfreq)
+                
+                if png_comp:
+                    LOGGER.info("Gráfico comparativo salvo em: %s", png_comp)
+                else:
+                    LOGGER.warning("Gráfico comparativo não gerado (R indisponível ou erro).")
+                    
+        except Exception as e:
+            LOGGER.warning("Erro ao gerar gráfico comparativo: %s", e)
+
+
 
     def criar_widget_metricas(self):
         container = QtWidgets.QWidget()
@@ -1129,6 +1135,53 @@ class JanelaNeuro(QtWidgets.QMainWindow):
             self.plot_signal.autoRange()
         except Exception:
             pass
+
+    def exportar_relatorio(self) -> None:
+        """Agrupa todos os PNGs da pasta output/ em um único PDF, um por página."""
+        from PIL import Image as PilImage
+
+        output_dir = caminho_saida_dir()
+        pngs = sorted(output_dir.glob("*.png"))
+
+        if not pngs:
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Exportar Relatório",
+                "Nenhuma imagem PNG encontrada na pasta output/.\n"
+                "Gere os gráficos antes de exportar.",
+            )
+            return
+
+        destino, _ = QtWidgets.QFileDialog.getSaveFileName(
+            self,
+            "Salvar Relatório PDF",
+            str(output_dir / "relatorio.pdf"),
+            "PDF (*.pdf)",
+        )
+        if not destino:
+            return
+
+        try:
+            imagens = [PilImage.open(p).convert("RGB") for p in pngs]
+            imagens[0].save(
+                destino,
+                format="PDF",
+                save_all=True,
+                append_images=imagens[1:],
+            )
+            QtWidgets.QMessageBox.information(
+                self,
+                "Exportar Relatório",
+                f"PDF gerado com sucesso:\n{destino}",
+            )
+            LOGGER.info("Relatório PDF exportado: %s (%d imagens)", destino, len(imagens))
+        except Exception as e:
+            LOGGER.exception("Erro ao exportar relatório PDF: %s", e)
+            QtWidgets.QMessageBox.critical(
+                self,
+                "Erro ao exportar",
+                f"Não foi possível gerar o PDF:\n{e}",
+            )
 
     def mostrar_em_desenvolvimento(self, recurso: str):
         QtWidgets.QMessageBox.information(
@@ -1240,7 +1293,7 @@ class JanelaNeuro(QtWidgets.QMainWindow):
             return
 
         try:
-            sfreq = 250.0
+            sfreq = 430.0
             bruto = self._ultimo_bruto
             filt = self._ultimo_filt if self._ultimo_filt is not None else bruto
 
@@ -1441,9 +1494,9 @@ def gerar_grafico_r(metricas_por_canal: list[dict] | None = None) -> dict[str, P
     output_csv = temp_dir / "metricas_canais.csv"
     
     # Usar diretório temporário para gráficos (não salva em output/)
-    temp_png_box = temp_dir / "grafico_boxplot_facet_temp.png"
+    temp_png_violin = temp_dir / "grafico_violin_facet_temp.png"
     temp_png_pairs = temp_dir / "grafico_matriz_dispersao_temp.png"
-    temp_png_radar = temp_dir / "grafico_radar_temp.png"
+    temp_png_biplot = temp_dir / "grafico_biplot_temp.png"
 
     if not metricas_por_canal:
         LOGGER.warning("Sem metricas para gerar analise R.")
@@ -1465,7 +1518,7 @@ def gerar_grafico_r(metricas_por_canal: list[dict] | None = None) -> dict[str, P
         output_r_csv <- args[[1]]
         output_r_png_box <- args[[2]]
         output_r_png_pairs <- args[[3]]
-        output_r_png_radar <- args[[4]]
+        output_r_png_biplot <- args[[4]]
 
         suppressPackageStartupMessages({{
             library(ggplot2)
@@ -1492,9 +1545,10 @@ def gerar_grafico_r(metricas_por_canal: list[dict] | None = None) -> dict[str, P
             ) %>%
             mutate(feature = factor(feature, levels = names(nomes_features), labels = unname(nomes_features)))
 
-        p_box <- ggplot(long_df, aes(x = modo, y = valor, color = modo, fill = modo)) +
-            geom_boxplot(outlier.shape = NA, alpha = 0.25, width = 0.58, linewidth = 0.5) +
-            geom_jitter(width = 0.11, alpha = 0.75, size = 1.8) +
+        p_violin <- ggplot(long_df, aes(x = modo, y = valor, color = modo, fill = modo)) +
+            geom_violin(trim = FALSE, alpha = 0.35, linewidth = 0.5) +
+            geom_boxplot(width = 0.12, alpha = 0.0, outlier.shape = NA, linewidth = 0.6, color = "#1F2937") +
+            geom_jitter(width = 0.08, alpha = 0.70, size = 1.8) +
             stat_summary(fun = mean, geom = "point", shape = 23, size = 3, fill = "white", color = "black") +
             facet_wrap(~feature, scales = "free_y", ncol = 2) +
             scale_color_manual(values = c("Baixa energia" = "#1f78b4", "Media energia" = "#33a02c", "Alta energia" = "#e31a1c")) +
@@ -1511,7 +1565,7 @@ def gerar_grafico_r(metricas_por_canal: list[dict] | None = None) -> dict[str, P
                 axis.title.y = element_text(margin = ggplot2::margin(r = 20))
             )
 
-        ggsave(output_r_png_box, plot = p_box, width = 12, height = 9, dpi = 120)
+        ggsave(output_r_png_box, plot = p_violin, width = 12, height = 9, dpi = 120)
 
         pair_df <- df %>% select(modo, rms, freq_mediana, zcr, waveform_length)
         cols_to_rename <- c("rms", "freq_mediana", "zcr", "waveform_length")
@@ -1602,7 +1656,7 @@ def gerar_grafico_r(metricas_por_canal: list[dict] | None = None) -> dict[str, P
             theme_minimal(base_size = 12) +
             theme(text = element_text(family = "serif"), legend.position = "right", panel.grid.minor = element_blank(), plot.title = element_blank())
 
-        ggsave(output_r_png_radar, plot = p_biplot, width = 10, height = 8, dpi = 130)
+        ggsave(output_r_png_biplot, plot = p_biplot, width = 10, height = 8, dpi = 130)
         '''
 
         script_path = temp_dir / "gerar_graficos.R"
@@ -1613,9 +1667,9 @@ def gerar_grafico_r(metricas_por_canal: list[dict] | None = None) -> dict[str, P
             "--vanilla",
             str(script_path),
             str(output_csv),
-            str(temp_png_box),
+            str(temp_png_violin),
             str(temp_png_pairs),
-            str(temp_png_radar),
+            str(temp_png_biplot),
         ]
         resultado = subprocess.run(
             comando,
@@ -1632,9 +1686,9 @@ def gerar_grafico_r(metricas_por_canal: list[dict] | None = None) -> dict[str, P
 
         LOGGER.info("Gráficos R gerados em PNG temporário.")
         return {
-            "boxplot": temp_png_box,
+            "violin": temp_png_violin,
             "pares": temp_png_pairs,
-            "radar": temp_png_radar,
+            "biplot": temp_png_biplot,
             "tmp_dir": temp_dir,
         }
         
@@ -1675,9 +1729,9 @@ def gerar_grafico_python(metricas_por_canal: list[dict] | None = None) -> dict[s
     np.random.seed(42)
 
     output_dir = caminho_saida_dir()
-    output_png_box = output_dir / "grafico_boxplot_facet_py.png"
-    output_png_pairs = output_dir / "grafico_matriz_dispersao_py.png"
-    output_png_radar = output_dir / "grafico_radar_py.png"
+    output_png_violin = output_dir / "grafico_violin_facet.png"
+    output_png_pairs = output_dir / "grafico_matriz_dispersao.png"
+    output_png_biplot = output_dir / "grafico_biplot_py.png"
 
     features = ["rms", "freq_mediana", "zcr", "waveform_length"]
     nomes_features = {
@@ -1703,7 +1757,7 @@ def gerar_grafico_python(metricas_por_canal: list[dict] | None = None) -> dict[s
     plt.rcParams["font.family"] = "serif"
     plt.rcParams["font.serif"] = ["Cambria", "Georgia", "DejaVu Serif", "serif"]
 
-    # 1) Boxplot facetado + jitter + media
+    # 1) Violin facetado + jitter + media
     if not features: return 
 
     fig, axes = plt.subplots(2, 2, figsize=(13.2, 9.8), constrained_layout=False, dpi=150)
@@ -1719,23 +1773,32 @@ def gerar_grafico_python(metricas_por_canal: list[dict] | None = None) -> dict[s
             for modo in modos
         ]
 
-        bp = ax.boxplot(
+        # 1. Alterado para violinplot e removidos os argumentos inválidos de boxplot
+        vp = ax.violinplot(
             dados_modo,
-            patch_artist=True,
-            tick_labels=modos,
-            showfliers=False,
+            showmedians=True,  # Mostra a linha da mediana (substitui o medianprops)
             widths=0.58,
-            medianprops={"color": "#1F2937", "linewidth": 2.0},
-            whiskerprops={"color": "#4B5563", "linewidth": 1.5},
-            capprops={"color": "#4B5563", "linewidth": 1.5},
         )
 
-        for patch, modo in zip(bp["boxes"], modos):
+        # 2. Ajustado para colorir os corpos ("bodies") do violinplot
+        for patch, modo in zip(vp["bodies"], modos):
             patch.set_facecolor(cores[modo])
             patch.set_alpha(0.25)
             patch.set_edgecolor(cores[modo])
             patch.set_linewidth(1.5)
 
+        # Estilização opcional das linhas de suporte do violino (médias, extremidades, etc.)
+        # Se quiser mudar a cor das linhas centrais geradas pelo Matplotlib:
+        for cb in ['cmaxes', 'cmins', 'cmeans', 'cmedians']:
+            if cb in vp:
+                vp[cb].set_edgecolor("#4B5563")
+                vp[cb].set_linewidth(1.5)
+
+        # 3. Adiciona as labels no eixo X manualmente (já que violinplot não aceita o parâmetro labels)
+        ax.set_xticks(range(1, len(modos) + 1))
+        ax.set_xticklabels(modos)
+
+        # O restante do seu código (Jitter/Scatter e Estilização de eixos) continua igual
         for pos, (modo, valores) in enumerate(zip(modos, dados_modo), start=1):
             if not valores:
                 continue
@@ -1785,7 +1848,7 @@ def gerar_grafico_python(metricas_por_canal: list[dict] | None = None) -> dict[s
         hspace=0.45,
         wspace=0.35  
     )
-    fig.savefig(str(output_png_box), dpi=300, bbox_inches="tight", facecolor="#FFFFFF", edgecolor="none")
+    fig.savefig(str(output_png_violin), dpi=300, bbox_inches="tight", facecolor="#FFFFFF", edgecolor="none")
     plt.close(fig)
 
     # 2) Matriz de dispersao e correlacao
@@ -2019,18 +2082,18 @@ def gerar_grafico_python(metricas_por_canal: list[dict] | None = None) -> dict[s
         title_fontsize=10,
     )
 
-    fig.savefig(str(output_png_radar), dpi=300, bbox_inches="tight", pad_inches=0.25, facecolor="#FFFFFF", edgecolor="none")
+    fig.savefig(str(output_png_biplot), dpi=300, bbox_inches="tight", pad_inches=0.25, facecolor="#FFFFFF", edgecolor="none")
     plt.close(fig)
 
     LOGGER.info("Gráficos científicos salvos em output/")
     return {
-        "boxplot": output_png_box,
+        "violin": output_png_violin,
         "pares": output_png_pairs,
-        "radar": output_png_radar,
+        "biplot": output_png_biplot,
     }
 
 
-def criar_raw_vazio(n_canais: int = 4, duracao: float = 2.0, sfreq: float = 250.0) -> mne.io.RawArray:
+def criar_raw_vazio(n_canais: int = 1, duracao: float = 0.01, sfreq: float = 250.0) -> mne.io.RawArray:
     """Cria um RawArray vazio para inicialização.
     
     Args:
@@ -2049,6 +2112,178 @@ def criar_raw_vazio(n_canais: int = 4, duracao: float = 2.0, sfreq: float = 250.
     LOGGER.info(f"RawArray vazio criado: {n_canais} canais, {duracao}s")
     return raw
 
+def gerar_grafico_comparacao_r(
+    bruto: np.ndarray,
+    filtrado: np.ndarray,
+    sfreq: float,
+) -> Path | None:
+    """Gera um gráfico comparativo (tempo e espectro) entre sinal bruto e processado.
+
+    Produz 4 painéis em um único PNG salvo em output/:
+      - Linha superior: Voltagem × Tempo  (bruto | processado)
+      - Linha inferior: Amplitude × Frequência via FFT  (bruto | processado)
+
+    Args:
+        bruto:    Array (n_canais × n_amostras) com sinal bruto dos últimos 5 s.
+        filtrado: Array (n_canais × n_amostras) com sinal processado dos últimos 5 s.
+        sfreq:    Frequência de amostragem em Hz.
+
+    Returns:
+        Path do PNG gerado ou None em caso de falha.
+    """
+    import tempfile as _tempfile
+
+    if bruto is None or filtrado is None:
+        LOGGER.warning("gerar_grafico_comparacao_r: dados None recebidos.")
+        return None
+
+    bruto   = np.asarray(bruto,   dtype=float)
+    filtrado = np.asarray(filtrado, dtype=float)
+
+    # Garante formato (n_canais × n_amostras)
+    if bruto.ndim == 1:
+        bruto = bruto.reshape(1, -1)
+    if filtrado.ndim == 1:
+        filtrado = filtrado.reshape(1, -1)
+
+    # Usa apenas o primeiro canal para a comparação
+    sig_bruto = bruto[0, :]
+    sig_filt  = filtrado[0, :]
+
+    # Limita aos últimos 5 segundos
+    n_max = int(5.0 * sfreq)
+    sig_bruto = sig_bruto[-n_max:]
+    sig_filt  = sig_filt[-n_max:]
+    n = len(sig_bruto)
+
+    # Eixo de tempo
+    t = np.linspace(-min(n / sfreq, 5.0), 0.0, n, endpoint=False)
+
+    # FFT (magnitude normalizada)
+    freqs    = np.fft.rfftfreq(n, d=1.0 / sfreq)
+    amp_bruto = np.abs(np.fft.rfft(sig_bruto - sig_bruto.mean()))
+    amp_filt  = np.abs(np.fft.rfft(sig_filt  - sig_filt.mean()))
+
+    # Salva CSVs em diretório temporário para o R consumir
+    temp_dir = Path(_tempfile.mkdtemp(prefix="neuro_comp_"))
+    csv_tempo   = temp_dir / "comp_tempo.csv"
+    csv_espectro = temp_dir / "comp_espectro.csv"
+    output_png  = caminho_saida_dir() / "grafico_comparacao_bruto_processado.png"
+
+    # CSV temporal
+    with csv_tempo.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow(["tempo", "bruto", "filtrado"])
+        for i in range(n):
+            writer.writerow([f"{t[i]:.6f}", f"{sig_bruto[i]:.8f}", f"{sig_filt[i]:.8f}"])
+
+    # CSV espectral
+    with csv_espectro.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow(["freq", "bruto", "filtrado"])
+        for i in range(len(freqs)):
+            writer.writerow([f"{freqs[i]:.4f}", f"{amp_bruto[i]:.8f}", f"{amp_filt[i]:.8f}"])
+
+    rscript_home = _configurar_r_sistema()
+    if rscript_home is None:
+        LOGGER.warning("R não encontrado; gráfico de comparação não gerado.")
+        shutil.rmtree(temp_dir, ignore_errors=True)
+        return None
+
+    script_r = r"""
+options(warn = 1)
+args <- commandArgs(trailingOnly = TRUE)
+csv_tempo    <- args[[1]]
+csv_espectro <- args[[2]]
+output_png   <- args[[3]]
+
+suppressPackageStartupMessages({
+    library(ggplot2)
+    library(tidyr)
+    library(dplyr)
+    library(gridExtra)
+})
+
+df_t <- read.csv(csv_tempo,    stringsAsFactors = FALSE)
+df_f <- read.csv(csv_espectro, stringsAsFactors = FALSE)
+
+# Paleta
+cor_bruto <- "#2980B9"
+cor_filt  <- "#E74C3C"
+
+# --- Painel 1: Tempo × Voltagem — Bruto ---
+p1 <- ggplot(df_t, aes(x = tempo, y = bruto)) +
+    geom_line(color = cor_bruto, linewidth = 0.55, alpha = 0.9) +
+    labs(title = "Sinal Bruto", x = "Tempo (s)", y = "Amplitude") +
+    theme_minimal(base_size = 11) +
+    theme(plot.title = element_text(face = "bold", hjust = 0.5, size = 12),
+          panel.grid.minor = element_blank())
+
+# --- Painel 2: Tempo × Voltagem — Processado ---
+p2 <- ggplot(df_t, aes(x = tempo, y = filtrado)) +
+    geom_line(color = cor_filt, linewidth = 0.55, alpha = 0.9) +
+    labs(title = "Sinal Processado", x = "Tempo (s)", y = "Amplitude") +
+    theme_minimal(base_size = 11) +
+    theme(plot.title = element_text(face = "bold", hjust = 0.5, size = 12),
+          panel.grid.minor = element_blank())
+
+# --- Painel 3: Frequência × Amplitude — Bruto ---
+p3 <- ggplot(df_f, aes(x = freq, y = bruto)) +
+    geom_line(color = cor_bruto, linewidth = 0.55, alpha = 0.9) +
+    labs(title = "Espectro Bruto", x = "Frequência (Hz)", y = "Amplitude") +
+    theme_minimal(base_size = 11) +
+    theme(plot.title = element_text(face = "bold", hjust = 0.5, size = 12),
+          panel.grid.minor = element_blank())
+
+# --- Painel 4: Frequência × Amplitude — Processado ---
+p4 <- ggplot(df_f, aes(x = freq, y = filtrado)) +
+    geom_line(color = cor_filt, linewidth = 0.55, alpha = 0.9) +
+    labs(title = "Espectro Processado", x = "Frequência (Hz)", y = "Amplitude") +
+    theme_minimal(base_size = 11) +
+    theme(plot.title = element_text(face = "bold", hjust = 0.5, size = 12),
+          panel.grid.minor = element_blank())
+
+png(output_png, width = 2400, height = 1600, res = 150)
+grid.arrange(p1, p2, p3, p4, nrow = 2,
+    top = grid::textGrob("Comparação: Sinal Bruto vs Processado (últimos 5 s)",
+                         gp = grid::gpar(fontsize = 14, fontface = "bold")))
+dev.off()
+"""
+
+    script_path = temp_dir / "comparacao.R"
+    script_path.write_text(script_r, encoding="utf-8")
+
+    try:
+        resultado = subprocess.run(
+            [
+                str(rscript_home / "bin" / "Rscript.exe"),
+                "--vanilla",
+                str(script_path),
+                str(csv_tempo),
+                str(csv_espectro),
+                str(output_png),
+            ],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=60,
+        )
+        if resultado.returncode != 0:
+            LOGGER.warning("Falha ao gerar comparação R: %s", resultado.stderr.strip())
+            shutil.rmtree(temp_dir, ignore_errors=True)
+            return None
+
+        LOGGER.info("Gráfico de comparação salvo em: %s", output_png)
+        return output_png
+
+    except Exception as e:
+        LOGGER.warning("Erro em gerar_grafico_comparacao_r: %s", e)
+        return None
+    finally:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+
+
 if __name__ == "__main__":
     configurar_logging()
 
@@ -2056,8 +2291,8 @@ if __name__ == "__main__":
     app.setStyle("Fusion")
 
     try:
-        sfreq = 250.0
-        n_canais = 4
+        sfreq = 1500.0
+        n_canais = 2
         raw = criar_raw_vazio(n_canais=n_canais, duracao=5.0, sfreq=sfreq)
         raw_filt = raw.copy()
 

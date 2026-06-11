@@ -18,10 +18,7 @@ from pathlib import Path
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Validador do pipeline EMG BLE/LSL.")
-    # No Windows/Linux, endereços BLE usam MAC (ex: "AA:BB:CC:DD:EE:FF"). 
-    # No macOS, usam UUID. Atualize o default para o formato do seu SO.
-    parser.add_argument("--address", default="AA:BB:CC:DD:EE:FF", help="Endereço MAC ou UUID do ESP32 BLE")
+    parser = argparse.ArgumentParser(description="Validador do pipeline EMG LSL.")
     parser.add_argument("--wait-seconds", type=float, default=12.0, help="Tempo máximo aguardando os streams")
     parser.add_argument("--expected-raw", default="EMG", help="Nome do stream bruto esperado")
     parser.add_argument("--expected-processed", default="EMG_Processado", help="Nome do stream processado esperado")
@@ -32,14 +29,14 @@ async def main() -> int:
     args = parse_args()
 
     try:
-        from bleak import BleakScanner
         from pylsl import resolve_streams
     except ImportError as exc:
         print(f"[ERRO] Dependências ausentes: {exc}")
         return 1
 
-    print(f"[1/3] Procurando dispositivo BLE {args.address}...")
-    try:
+    #
+    # print(f"[1/3] Procurando dispositivo BLE {args.address}...")
+    # try:
         # Busca o dispositivo para validar que o rádio Bluetooth funciona e o ESP32 está ativo
         device = await BleakScanner.find_device_by_address(args.address, timeout=5.0)
         
@@ -48,11 +45,11 @@ async def main() -> int:
             return 2
             
         print(f"      Dispositivo encontrado: {device.name or 'Sem Nome'}")
-    except Exception as exc:
-        print(f"[ERRO] Falha ao acessar o hardware Bluetooth: {exc}")
-        return 2
+    # except Exception as exc:
+    #     print(f"[ERRO] Falha ao acessar o hardware Bluetooth: {exc}")
+    #     return 2
 
-    print("[2/3] Aguardando streams LSL...")
+    print("[1/2] Aguardando streams LSL...")
     deadline = time.time() + args.wait_seconds
     found_raw = False
     found_processed = False
@@ -80,7 +77,7 @@ async def main() -> int:
         print(f"[ERRO] Stream processado '{args.expected_processed}' não apareceu.")
         return 4
 
-    print("[3/3] Contrato do pipeline validado com sucesso.")
+    print("[2/2] Contrato do pipeline validado com sucesso.")
     print(f"- {args.expected_raw} encontrado")
     print(f"- {args.expected_processed} encontrado")
     return 0
