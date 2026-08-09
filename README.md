@@ -4,8 +4,7 @@ Projeto para captura, simulação e visualização de sinais EMG em tempo real n
 
 ## Visão geral
 
-O workspace deve ser aberto na pasta `ELEX20`. Dentro dela está o projeto `ESP32_EMG`, que contém o firmware do ESP32 e as configurações do PlatformIO.
-
+O workspace deverá ser aberto na pasta `ELEX20`.
 Estrutura principal:
 
 - `ESP32_EMG/`: firmware do ESP32 e arquivos do PlatformIO
@@ -21,11 +20,10 @@ Instale e valide estes itens antes de executar o projeto:
 
 - Python 3.10 ou superior, e inferior a Python 3.13
 - R 4.5 ou superior
-- VS Code com extensões Python e PlatformIO IDE
+- VS Code com extensões Python e relacionados
 - Git, se for clonar ou atualizar o repositório
-- Para o firmware: placa ESP32, cabo USB e driver serial funcionando
 
-Confira se os comandos abaixo respondem no terminal:
+Para checar a disponibilidade dos linguagens, execute os seguintes comandos no terminal, por exemplo:
 
 ```bash
 python --version
@@ -34,7 +32,7 @@ R --version
 
 ## Configuração do Python
 
-Na raiz do workspace `ELEX20`, crie e ative um ambiente virtual:
+Na raiz do workspace `ELEX20`, crie e ative um ambiente virtual (para Python 3.12):
 
 ```bash
 (Windows)
@@ -74,7 +72,7 @@ Pacotes esperados incluem `PyQt6`, `pyqtgraph`, `mne`, `numpy`, `pylsl`, `matplo
 
 ## Configuração do R
 
-Abra o R ou o RStudio e instale os pacotes usados nos scripts de análise:
+Abra o R ou o RStudio e instale os pacotes usados na coanfecção dos gráficos:
 
 ```r
 install.packages(c("ggplot2", "tidyr", "dplyr", "scales", "GGally", "gridExtra"))
@@ -100,14 +98,14 @@ Na pasta `bin/` existe um atalho pronto:
 .\bin\Executar_Projeto.bat
 ```
 
-O script `Executar_Projeto.bat` agora sobe a cadeia completa do projeto em janelas separadas:
+O script `Executar_Projeto.bat` roda a cadeia completa do projeto em janelas separadas:
 
 1. `tools/captar_Dados.py` captura os dados do BLE e publica o stream `EMG`.
 2. `tools/filtrar_Dados.py` lê `EMG`, processa e publica `EMG_Processado`.
 3. `src/Grafico.py` consome `EMG` e `EMG_Processado` e plota os dois sinais em gráficos distintos.
 
 
-Para validar o fluxo real do ESP32 antes de abrir a interface, você pode rodar:
+Para validar o fluxo real do ESP32 antes de abrir a interface, o seguintes programas devem ser executados:
 
 ```bash
 (Windows)
@@ -179,5 +177,24 @@ Depois instale novamente os pacotes usados pelo projeto.
 ## Observação sobre o workspace
 
 Para manter os caminhos consistentes, abra o projeto a partir da pasta `ELEX20`.
+
+# Flags de saúde
+
+[![CodeScene Average Code Health](https://codescene.io/projects/83420/status-badges/average-code-health)](https://codescene.io/projects/83420)
+[![CodeScene Hotspot Code Health](https://codescene.io/projects/83420/status-badges/hotspot-code-health)](https://codescene.io/projects/83420)
+[![CodeScene System Mastery](https://codescene.io/projects/83420/status-badges/system-mastery)](https://codescene.io/projects/83420)
+[![CodeScene general](https://codescene.io/images/analyzed-by-codescene-badge.svg)](https://codescene.io/projects/83420)
+
+# Histórico
+
+## Star History
+
+<a href="https://www.star-history.com/?repos=Chan2007%2FELEX20.git&type=date&legend=top-left">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=Chan2007/ELEX20.git&type=date&theme=dark&legend=top-left&sealed_token=CvYSEE_Lm-1VGT3vpOjwnM3pcNtnthKgm4hBF1Z4jAfO8WVhlBztJhHJdR5TLhGkH4HoNKka-OwnKQq873n-FE0Ruwo8B_cMXUrvwC-LMADyJDu6hdotKJKv9Bw8Vwgyw5bOjB91wIJ4RD5rZQSvFU9OWihr8Ox6ZcRTyKRZFc7cR4gzw_JaekoPL3qH" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=Chan2007/ELEX20.git&type=date&legend=top-left&sealed_token=CvYSEE_Lm-1VGT3vpOjwnM3pcNtnthKgm4hBF1Z4jAfO8WVhlBztJhHJdR5TLhGkH4HoNKka-OwnKQq873n-FE0Ruwo8B_cMXUrvwC-LMADyJDu6hdotKJKv9Bw8Vwgyw5bOjB91wIJ4RD5rZQSvFU9OWihr8Ox6ZcRTyKRZFc7cR4gzw_JaekoPL3qH" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=Chan2007/ELEX20.git&type=date&legend=top-left&sealed_token=CvYSEE_Lm-1VGT3vpOjwnM3pcNtnthKgm4hBF1Z4jAfO8WVhlBztJhHJdR5TLhGkH4HoNKka-OwnKQq873n-FE0Ruwo8B_cMXUrvwC-LMADyJDu6hdotKJKv9Bw8Vwgyw5bOjB91wIJ4RD5rZQSvFU9OWihr8Ox6ZcRTyKRZFc7cR4gzw_JaekoPL3qH" />
+ </picture>
+</a>
 
 
