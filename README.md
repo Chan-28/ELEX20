@@ -178,14 +178,13 @@ Depois instale novamente os pacotes usados pelo projeto.
 
 Para manter os caminhos consistentes, abra o projeto a partir da pasta `ELEX20`.
 
-# Flags de saúde
+## Flags de saúde
 
 [![CodeScene Average Code Health](https://codescene.io/projects/83420/status-badges/average-code-health)](https://codescene.io/projects/83420)
 [![CodeScene Hotspot Code Health](https://codescene.io/projects/83420/status-badges/hotspot-code-health)](https://codescene.io/projects/83420)
 [![CodeScene System Mastery](https://codescene.io/projects/83420/status-badges/system-mastery)](https://codescene.io/projects/83420)
 [![CodeScene general](https://codescene.io/images/analyzed-by-codescene-badge.svg)](https://codescene.io/projects/83420)
 
-# Histórico
 
 ## Star History
 
