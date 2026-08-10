@@ -35,7 +35,8 @@ def main():
     try:
         with open(filename, 'w', newline='') as f:
             writer = csv.writer(f)
-            writer.writerow(['timestamp', 'canal1'])  # ou canal1, canal2
+            n_canais = inlet.channel_count
+            writer.writerow(['timestamp'] + [f'canal{i+1}' for i in range(n_canais)])  
 
             print(f"Salvando em {filename}...")
 
