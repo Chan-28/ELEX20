@@ -1,11 +1,14 @@
 PyQt6==6.7.0
-PyQt6-sip==13.0.0
 pyqtgraph==0.13.7
 mne==1.8.0
-numpy==1.24.3
+mne-qt-browser==0.6.3
+numpy>=1.26.0
 scipy==1.13.0
 pylsl==1.16.2
 pyserial==3.5
 matplotlib==3.8.4
 pandas==2.2.0
 scikit-learn==1.4.0
+pillow==12.2.0
+bleak==3.0.2
+psutil==7.2.2

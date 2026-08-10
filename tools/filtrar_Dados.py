@@ -1,33 +1,37 @@
-import asyncio
 import argparse
-import struct
 import time
 from collections import deque
-from typing import Optional, List, Tuple
+from typing import Optional, List
 
 import numpy as np
 import scipy.signal as signal
-from bleak import BleakScanner, BleakClient
-from pylsl import StreamInfo, StreamOutlet, StreamInlet, resolve_streams, cf_float32
+from pylsl import StreamInfo, StreamOutlet, StreamInlet, resolve_byprop, cf_float32
 
 
-class EMGBLEToLSLProcessor:
+class EMGLSLProcessor:
+    """
+    Lê o stream LSL de EMG bruto (publicado pelo captar_Dados.py),
+    aplica pré-processamento + RMS/normalização e publica um novo
+    stream LSL com os dados processados.
+
+    Uso típico:
+        1. Inicie captar_Dados.py  →  stream "EMG" disponível na rede LSL
+        2. Inicie este script      →  stream "EMG_Processado" disponível na rede LSL
+    """
+
     def __init__(
         self,
-        device_name: str = "ESP32-EMG",
-        char_uuid: str = "bef8d6c9-9c21-4c9e-b632-bd763f7a92bf",
         raw_stream_name: str = "EMG",
         processed_stream_name: str = "EMG_Processado",
-        sample_rate: float = 500.0,
+        sample_rate: float = 1500.0,
         processing_mode: str = "rms",
         rms_window_ms: float = 50.0,
         buffer_size: int = 500,
         use_bandpass: bool = True,
         use_notch: bool = True,
         use_envelope: bool = True,
+        resolve_timeout: float = 10.0,
     ):
-        self.device_name = device_name
-        self.char_uuid = char_uuid
         self.raw_stream_name = raw_stream_name
         self.processed_stream_name = processed_stream_name
         self.sample_rate = sample_rate
@@ -37,20 +41,18 @@ class EMGBLEToLSLProcessor:
         self.use_bandpass = use_bandpass
         self.use_notch = use_notch
         self.use_envelope = use_envelope
+        self.resolve_timeout = resolve_timeout
 
-        self.raw_outlet = self._create_lsl_outlet(raw_stream_name, 1, sample_rate, "emg-esp32-ble-raw-001")
-        self.processed_outlet: Optional[StreamOutlet] = None
-
-        self.channel_count = 1
-        self.rms_window_samples = max(1, int((self.rms_window_ms / 1000.0) * self.sample_rate))
-        self.rms_buffers = [deque(maxlen=self.rms_window_samples)]
+        # --- Buffers de processamento ---
+        self.rms_window_samples = max(1, int((rms_window_ms / 1000.0) * sample_rate))
+        self.rms_buffer: deque = deque(maxlen=self.rms_window_samples)
+        self.signal_window: deque = deque(maxlen=buffer_size)
 
         self.normalization_buffer: Optional[deque] = None
-        if self.processing_mode == "normalized":
-            self.normalization_buffer = deque(maxlen=int(self.sample_rate * 5.0))
+        if processing_mode == "normalized":
+            self.normalization_buffer = deque(maxlen=int(sample_rate * 5.0))
 
-        self.signal_window = deque(maxlen=self.buffer_size)
-
+        # --- Filtros ---
         self.sos_bandpass = None
         self.b_notch = None
         self.a_notch = None
@@ -60,94 +62,69 @@ class EMGBLEToLSLProcessor:
         self.env_state = None
         self._init_filters()
 
+        # --- Estatísticas ---
         self.total_samples = 0
         self.error_count = 0
 
-    def _create_lsl_outlet(self, name: str, channel_count: int, srate: float, source_id: str) -> StreamOutlet:
-        info = StreamInfo(
-            name=name,
-            type="EMG",
-            channel_count=channel_count,
-            nominal_srate=srate,
-            channel_format=cf_float32,
-            source_id=source_id,
-        )
-        return StreamOutlet(info, chunk_size=32)
+    # ------------------------------------------------------------------
+    # Inicialização dos filtros
+    # ------------------------------------------------------------------
 
-    def _init_filters(self):
+    def _init_filters(self) -> None:
+        nyq = self.sample_rate / 2.0  # Frequência de Nyquist
+
         if self.use_bandpass:
-            self.sos_bandpass = signal.butter(
-                4, [20.0, 450.0], btype="bandpass", fs=self.sample_rate, output="sos"
-            )
-            # Usa a função nativa do SciPy para obter as condições iniciais
-            self.bp_state = signal.sosfilt_zi(self.sos_bandpass)
+            bp_low = 20.0
+            bp_high = min(430.0, nyq * 0.95)  # Garante que fica abaixo de Nyquist
+
+            if bp_low >= bp_high:
+                print(
+                    f"Aviso: taxa de amostragem {self.sample_rate} Hz muito baixa para o "
+                    f"filtro passa-banda (20–430 Hz). Filtro passa-banda desativado."
+                )
+                self.use_bandpass = False
+            else:
+                self.sos_bandpass = signal.butter(
+                    4, [bp_low, bp_high], btype="bandpass", fs=self.sample_rate, output="sos"
+                )
+                self.bp_state = signal.sosfilt_zi(self.sos_bandpass)
 
         if self.use_notch:
-            self.b_notch, self.a_notch = signal.iirnotch(
-                60.0, 30.0, fs=self.sample_rate
-            )
-            self.notch_state = signal.lfilter_zi(self.b_notch, self.a_notch)
+            notch_freq = 60.0
+            if notch_freq >= nyq:
+                print(
+                    f"Aviso: frequência do filtro notch (60 Hz) >= Nyquist ({nyq} Hz). "
+                    f"Filtro notch desativado."
+                )
+                self.use_notch = False
+            else:
+                self.b_notch, self.a_notch = signal.iirnotch(notch_freq, 30.0, fs=self.sample_rate)
+                self.notch_state = signal.lfilter_zi(self.b_notch, self.a_notch)
 
         if self.use_envelope:
             self.sos_envelope = signal.butter(
                 2, 5.0, btype="lowpass", fs=self.sample_rate, output="sos"
             )
-            # O SciPy garante que sos_envelope é um ndarray, sem necessidade de checagens extras
             self.env_state = signal.sosfilt_zi(self.sos_envelope)
 
-    async def run(self):
-        print(f"Procurando dispositivo BLE '{self.device_name}'...")
-        device = await BleakScanner.find_device_by_filter(
-            lambda d, ad: d.name == self.device_name,
-            timeout=10.0,
+    # ------------------------------------------------------------------
+    # Criação do outlet LSL processado
+    # ------------------------------------------------------------------
+
+    def _create_outlet(self) -> StreamOutlet:
+        info = StreamInfo(
+            name=self.processed_stream_name,
+            type="EMG",
+            channel_count=1,
+            nominal_srate=self.sample_rate,
+            channel_format=cf_float32,
+            source_id="emg-lsl-processed-001",
         )
-        if device is None:
-            raise RuntimeError(f"Dispositivo '{self.device_name}' não encontrado")
+        return StreamOutlet(info, chunk_size=32)
 
-        print(f"Dispositivo encontrado: {device.address}")
-        print("Criando stream LSL processado...")
-
-        self.processed_outlet = self._create_lsl_outlet(
-            self.processed_stream_name, 1, self.sample_rate, "emg-esp32-ble-processed-001"
-        )
-
-        async def keep_alive():
-            while True:
-                await asyncio.sleep(1)
-
-        def on_notify(sender, data: bytearray):
-            try:
-                if len(data) != 8:
-                    return
-
-                timestamp_ms, voltage = struct.unpack("<If", data)
-                raw_value = float(voltage)
-
-                self.raw_outlet.push_sample([raw_value], timestamp=time.time())
-
-                processed_value = self._process_sample([raw_value])[0]
-                # processed_outlet may be Optional; guard against None to satisfy static analyzers
-                if self.processed_outlet is not None:
-                    self.processed_outlet.push_sample([processed_value], timestamp=time.time())
-
-                self.total_samples += 1
-                if self.total_samples % 500 == 0:
-                    print(
-                        f"Amostras: {self.total_samples} | "
-                        f"Bruto: {raw_value:.4f} | "
-                        f"Processado: {processed_value:.4f}"
-                    )
-
-            except Exception as e:
-                self.error_count += 1
-                if self.error_count % 50 == 1:
-                    print(f"Erro no callback BLE: {e}")
-
-        async with BleakClient(device) as client:
-            print(f"Conectado ao BLE. Assinando UUID {self.char_uuid}...")
-            await client.start_notify(self.char_uuid, on_notify)
-            print("Notificações ativas. Ctrl+C para parar.")
-            await keep_alive()
+    # ------------------------------------------------------------------
+    # Pipeline de processamento
+    # ------------------------------------------------------------------
 
     def _preprocess_sample(self, sample_value: float) -> float:
         self.signal_window.append(sample_value)
@@ -161,7 +138,9 @@ class EMGBLEToLSLProcessor:
             hist = np.asarray(y, dtype=float)
 
         if self.use_notch and self.b_notch is not None and self.a_notch is not None:
-            y, self.notch_state = signal.lfilter(self.b_notch, self.a_notch, hist, zi=self.notch_state)
+            y, self.notch_state = signal.lfilter(
+                self.b_notch, self.a_notch, hist, zi=self.notch_state
+            )
             hist = np.asarray(y, dtype=float)
 
         if self.use_envelope and self.sos_envelope is not None:
@@ -171,57 +150,156 @@ class EMGBLEToLSLProcessor:
 
         return float(hist[-1])
 
-    def calculate_rms(self, channel_idx: int) -> float:
-        buffer = self.rms_buffers[channel_idx]
-        if len(buffer) == 0:
+    def _calculate_rms(self) -> float:
+        if len(self.rms_buffer) == 0:
             return 0.0
-        data = np.array(buffer, dtype=float)
+        data = np.array(self.rms_buffer, dtype=float)
         return float(np.sqrt(np.mean(data ** 2)))
 
-    def _process_sample(self, sample: List[float]) -> List[float]:
-        preprocessed = self._preprocess_sample(sample[0])
-        self.rms_buffers[0].append(preprocessed)
+    def _process_sample(self, raw_value: float) -> float:
+        preprocessed = self._preprocess_sample(raw_value)
+        self.rms_buffer.append(preprocessed)
 
         if self.processing_mode == "raw":
-            return [preprocessed]
+            return preprocessed
 
         if self.processing_mode == "rms":
-            return [self.calculate_rms(0)]
+            return self._calculate_rms()
 
         if self.processing_mode == "normalized":
-            rms_value = self.calculate_rms(0)
+            rms_value = self._calculate_rms()
             if self.normalization_buffer is not None:
-                self.normalization_buffer.append([rms_value])
+                self.normalization_buffer.append(rms_value)
             if not self.normalization_buffer or len(self.normalization_buffer) < 100:
-                return [rms_value]
+                return rms_value
             arr = np.array(list(self.normalization_buffer))
             min_v = float(np.min(arr))
             max_v = float(np.max(arr))
-            rng = max_v - min_v if (max_v - min_v) != 0 else 1.0
-            return [float((rms_value - min_v) / rng)]
+            rng = (max_v - min_v) if (max_v - min_v) != 0 else 1.0
+            return float((rms_value - min_v) / rng)
 
         raise ValueError(f"Modo inválido: {self.processing_mode}")
 
+    # ------------------------------------------------------------------
+    # Loop principal
+    # ------------------------------------------------------------------
 
-def parse_args():
-    parser = argparse.ArgumentParser(description="Recebe EMG via BLE, publica em LSL e aplica pré-processamento + RMS.")
-    parser.add_argument("--device-name", default="ESP32-EMG")
-    parser.add_argument("--char-uuid", default="bef8d6c9-9c21-4c9e-b632-bd763f7a92bf")
-    parser.add_argument("--sample-rate", type=float, default=500.0)
-    parser.add_argument("--mode", choices=["raw", "rms", "normalized"], default="rms")
-    parser.add_argument("--rms-window-ms", type=float, default=50.0)
-    parser.add_argument("--buffer-size", type=int, default=500)
-    parser.add_argument("--no-bandpass", action="store_true")
-    parser.add_argument("--no-notch", action="store_true")
-    parser.add_argument("--no-envelope", action="store_true")
+    def run(self) -> None:
+        """
+        Resolve o stream LSL de entrada, cria o outlet processado
+        e entra no loop de leitura/processamento/publicação.
+        """
+        print(f"Procurando stream LSL '{self.raw_stream_name}'...")
+        streams = resolve_byprop("name", self.raw_stream_name, timeout=self.resolve_timeout)
+
+        if not streams:
+            raise RuntimeError(
+                f"Stream LSL '{self.raw_stream_name}' não encontrado. "
+                "Certifique-se de que o captar_Dados.py está rodando."
+            )
+
+        inlet = StreamInlet(streams[0], max_buflen=360)
+        # Usa a taxa de amostragem informada pelo próprio stream, se disponível
+        stream_srate = streams[0].nominal_srate()
+        if stream_srate > 0 and stream_srate != self.sample_rate:
+            print(
+                f"Aviso: taxa do stream ({stream_srate} Hz) difere do parâmetro "
+                f"configurado ({self.sample_rate} Hz). Usando {stream_srate} Hz."
+            )
+            self.sample_rate = stream_srate
+            self._init_filters()  # Reinicializa filtros com a taxa correta
+
+        outlet = self._create_outlet()
+
+        print(f"Stream de entrada  : '{self.raw_stream_name}'")
+        print(f"Stream de saída    : '{self.processed_stream_name}'")
+        print(f"Modo               : {self.processing_mode}")
+        print(f"Taxa de amostragem : {self.sample_rate} Hz")
+        print(f"Filtros ativos     : bandpass={self.use_bandpass}, "
+              f"notch={self.use_notch}, envelope={self.use_envelope}")
+        print("Processando... (Ctrl+C para parar)\n")
+
+        try:
+            while True:
+                sample, timestamp = inlet.pull_sample(timeout=1.0)
+
+                if sample is None:
+                    continue  # Timeout — aguarda nova amostra
+
+                try:
+                    raw_value = float(sample[0])
+                    processed_value = self._process_sample(raw_value)
+                    outlet.push_sample([processed_value], timestamp=time.time())
+
+                    self.total_samples += 1
+                    if self.total_samples % 500 == 0:
+                        print(
+                            f"Amostras: {self.total_samples:>8d} | "
+                            f"Bruto: {raw_value:>8.4f} | "
+                            f"Processado: {processed_value:>8.4f}"
+                        )
+                except Exception as e:
+                    self.error_count += 1
+                    if self.error_count % 50 == 1:
+                        print(f"Erro ao processar amostra: {e}")
+
+        except KeyboardInterrupt:
+            print("\nProcessamento encerrado pelo usuário.")
+        finally:
+            print(f"\nResumo: {self.total_samples} amostras processadas, "
+                  f"{self.error_count} erros.")
+
+
+# ----------------------------------------------------------------------
+# CLI
+# ----------------------------------------------------------------------
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description=(
+            "Lê o stream LSL de EMG bruto, aplica pré-processamento + RMS "
+            "e publica um novo stream LSL com os dados processados."
+        )
+    )
+    parser.add_argument(
+        "--raw-stream", default="EMG",
+        help="Nome do stream LSL de entrada (padrão: EMG)"
+    )
+    parser.add_argument(
+        "--processed-stream", default="EMG_Processado",
+        help="Nome do stream LSL de saída (padrão: EMG_Processado)"
+    )
+    parser.add_argument(
+        "--sample-rate", type=float, default=1500.0,
+        help="Taxa de amostragem em Hz (padrão: 1500)"
+    )
+    parser.add_argument(
+        "--mode", choices=["raw", "rms", "normalized"], default="rms",
+        help="Modo de processamento (padrão: rms)"
+    )
+    parser.add_argument(
+        "--rms-window-ms", type=float, default=50.0,
+        help="Janela RMS em ms (padrão: 50)"
+    )
+    parser.add_argument(
+        "--buffer-size", type=int, default=500,
+        help="Tamanho do buffer de sinal (padrão: 500)"
+    )
+    parser.add_argument(
+        "--resolve-timeout", type=float, default=10.0,
+        help="Timeout para encontrar o stream LSL de entrada, em segundos (padrão: 10)"
+    )
+    parser.add_argument("--no-bandpass", action="store_true", help="Desativa filtro passa-banda")
+    parser.add_argument("--no-notch",    action="store_true", help="Desativa filtro notch (60 Hz)")
+    parser.add_argument("--no-envelope", action="store_true", help="Desativa extração de envelope")
     return parser.parse_args()
 
 
-def main():
+def main() -> None:
     args = parse_args()
-    app = EMGBLEToLSLProcessor(
-        device_name=args.device_name,
-        char_uuid=args.char_uuid,
+    processor = EMGLSLProcessor(
+        raw_stream_name=args.raw_stream,
+        processed_stream_name=args.processed_stream,
         sample_rate=args.sample_rate,
         processing_mode=args.mode,
         rms_window_ms=args.rms_window_ms,
@@ -229,13 +307,12 @@ def main():
         use_bandpass=not args.no_bandpass,
         use_notch=not args.no_notch,
         use_envelope=not args.no_envelope,
+        resolve_timeout=args.resolve_timeout,
     )
     try:
-        asyncio.run(app.run())
-    except KeyboardInterrupt:
-        print("\nConexão encerrada.")
-    except Exception as e:
-        print(f"\nErro crítico: {e}")
+        processor.run()
+    except RuntimeError as e:
+        print(f"\nErro: {e}")
         raise
 
 

@@ -21,18 +21,18 @@ class EMGEngine:
     
     def __init__(
         self,
-        device_name: str = "ESP32-EMG",
-        char_uuid: str = "bef8d6c9-9c21-4c9e-b632-bd763f7a92bf",  # UUID padrão BLE SPP
-        service_uuid: Optional[str] = None,
+        device_name: str = "ESP32_EMG",  
+        char_uuid: str = "6E400003-B5A3-F393-E0A9-E50E24DCCA9E",  # UUID do Arduino
+        service_uuid: Optional[str] = "6E400001-B5A3-F393-E0A9-E50E24DCCA9E",  # Service UUID
         queue_maxsize: int = 2048,
         scan_timeout: float = 10.0,
         sample_rate: float = 500.0,  # Hz
     ):
         """
         Args:
-            device_name: Nome do dispositivo BLE a conectar
+            device_name: Nome do dispositivo BLE a conectar (ESP32_EMG)
             char_uuid: UUID da característica BLE que envia os dados
-            service_uuid: UUID do serviço (opcional)
+            service_uuid: UUID do serviço (para validação)
             queue_maxsize: Tamanho máximo da fila interna
             scan_timeout: Timeout para escaneamento
             sample_rate: Taxa de amostragem em Hz (para LSL)
@@ -82,8 +82,8 @@ class EMGEngine:
     ) -> None:
         """
         Handler de notificações BLE.
-        Esperado formato: timestamp(4 bytes int) + voltage(4 bytes float)
-        Ou apenas voltage se dados simples.
+        Esperado formato: timestamp(4 bytes uint32) + voltage(4 bytes float)
+        Total: 8 bytes
         """
         try:
             # Tenta decodificar como timestamp + voltage
@@ -191,9 +191,10 @@ class EMGEngine:
                 print(f"✗ Dispositivo '{self.device_name}' não encontrado.")
                 print("\n💡 Dicas de troubleshooting:")
                 print("   1. Verifique se o ESP32 está ligado e com Bluetooth ativo")
-                print("   2. Tente aumentar o timeout: --timeout 30")
-                print("   3. Verifique o nome do dispositivo em settings Bluetooth")
+                print("   2. Tente aumentar o timeout: max_run_seconds=30")
+                print("   3. Verifique o nome do dispositivo no Arduino IDE")
                 print("   4. Em Linux: sudo bluetoothctl scan on")
+                print("   5. Use example_discover() para listar todos os dispositivos")
                 self.is_running = False
                 return
 
@@ -209,14 +210,21 @@ class EMGEngine:
                 
                 # Lista características disponíveis
                 print("\n📋 Características BLE disponíveis:")
+                found_char = False
                 for service in client.services:
                     for char in service.characteristics:
                         print(f"   - {char.uuid}: {char.description}")
+                        if str(char.uuid).lower() == self.char_uuid.lower():
+                            found_char = True
+                            print(f"     ✓ Esta é a característica que usaremos!")
+                
+                if not found_char:
+                    print(f"\n⚠ Característica {self.char_uuid} não encontrada!")
+                    print("   Verifique se o UUID está correto no código Arduino")
 
                 # Inicia worker de dispatch
-                print(f"\n▶ Iniciando captura de dados (amostragem: {self.sample_rate} Hz)...")
                 worker_task = asyncio.create_task(
-                    self._dispatch_worker(stop_event, max_samples=max_samples)
+                    self._dispatch_worker(stop_event, max_samples)
                 )
 
                 # Timer para parar por tempo
@@ -231,10 +239,14 @@ class EMGEngine:
 
                 # Inicia notificações BLE
                 try:
+                    print(f"\n📡 Iniciando notificações na característica {self.char_uuid}...")
                     await client.start_notify(self.char_uuid, self._notification_handler)
+                    print("✓ Notificações iniciadas com sucesso!")
+                    print("\n▶ Aguardando dados... (Ctrl+C para parar)\n")
                 except Exception as e:
                     print(f"✗ Erro ao iniciar notificações: {e}")
                     print(f"   UUID usado: {self.char_uuid}")
+                    print(f"   Verifique se este UUID existe no Arduino")
                     stop_event.set()
 
                 # Aguarda parada
@@ -264,9 +276,11 @@ class EMGEngine:
             
             # --- ESTATÍSTICAS FINAIS ---
             print("\n📊 Estatísticas de Captura:")
-            print(f"   Amostras recebidas: {self.samples_received}")
-            print(f"   Erros: {self.errors_received}")
-            print(f"   Taxa efetiva: {self.samples_received / max_run_seconds:.1f} Hz" if max_run_seconds else "")
+            print(f"   ✓ Amostras recebidas: {self.samples_received}")
+            print(f"   ✗ Erros: {self.errors_received}")
+            if max_run_seconds:
+                taxa_efetiva = self.samples_received / max_run_seconds
+                print(f"   Taxa efetiva: {taxa_efetiva:.1f} Hz (esperado: 500 Hz)")
             print(f"   Último valor: {self.last_value:.4f} V")
 
     async def get_device_info(self) -> Optional[dict]:
@@ -278,6 +292,7 @@ class EMGEngine:
         )
 
         if not device:
+            print(f"✗ Dispositivo '{self.device_name}' não encontrado")
             return None
 
         rssi = getattr(device, "rssi", None)
@@ -300,6 +315,11 @@ class EMGEngine:
                         print(f"  └─ {char.uuid}")
                         print(f"     Propriedades: {flags}")
                         print(f"     Descrição: {char.description}")
+                        
+                        # Se for a característica esperada, marca
+                        if str(char.uuid).lower() == "6e400003-b5a3-f393-e0a9-e50e24dcca9e":
+                            print(f"     ← ✓ ESTA É A CARACTERÍSTICA DO EMG")
+                        
                 info["services"] = [
                     {
                         "uuid": str(service.uuid),
@@ -323,12 +343,12 @@ class EMGEngine:
 
 def print_callback(value: float) -> None:
     """Imprime cada valor recebido."""
-    print(f"EMG: {value:.4f} V")
+    print(f"📊 EMG: {value:.4f} V")
 
 
 async def async_print_callback(value: float) -> None:
     """Versão assíncrona (mais lenta, não recomendada para alto throughput)."""
-    print(f"EMG (async): {value:.4f} V")
+    print(f"📊 EMG (async): {value:.4f} V")
 
 
 # --- EXEMPLO DE USO COM LSL ---
@@ -341,14 +361,11 @@ async def example_with_lsl():
     if sys.platform != "win32":
         for sig in (signal.SIGINT, signal.SIGTERM):
             loop.add_signal_handler(sig, stop_event.set)
-    else:
-        # Windows: Ctrl+C dispara KeyboardInterrupt
-        pass
 
     # --- CRIAR ENGINE ---
     engine = EMGEngine(
-        device_name="ESP32-EMG",  # Ajuste para seu dispositivo
-        char_uuid="bef8d6c9-9c21-4c9e-b632-bd763f7a92bf",  # UUID BLE SPP
+        device_name="ESP32_EMG",  # ✓ CORRIGIDO
+        char_uuid="6E400003-B5A3-F393-E0A9-E50E24DCCA9E",  # ✓ CORRIGIDO
         sample_rate=500.0,
     )
 
@@ -373,6 +390,7 @@ async def example_with_lsl():
     # engine.subscribe(print_callback)
 
     engine.subscribe(lsl_publisher)
+    engine.subscribe(print_callback)  # ← Adicionado para ver dados em tempo real
 
     # --- RODAR ---
     try:
@@ -404,7 +422,7 @@ async def example_discover():
 # --- EXEMPLO: EXPLORAR CARACTERÍSTICAS ---
 async def example_explore():
     """Conecta a um dispositivo e lista suas características."""
-    engine = EMGEngine(device_name="ESP32-EMG")
+    engine = EMGEngine(device_name="ESP32_EMG")
     info = await engine.get_device_info()
     
     if info:
@@ -415,16 +433,19 @@ async def example_explore():
 if __name__ == "__main__":
     print("╔═══════════════════════════════════════════╗")
     print("║  EMG Engine - BLE com Bleak + LSL         ║")
+    print("║  Versão: 2.0 (Corrigida para Arduino)     ║")
     print("╚═══════════════════════════════════════════╝\n")
     
     try:
         # Escolha o exemplo:
+        
+        # 1. Receber dados e publicar em LSL (RECOMENDADO):
         asyncio.run(example_with_lsl())
         
-        # Ou para descobrir dispositivos:
+        # 2. Descobrir dispositivos BLE:
         # asyncio.run(example_discover())
         
-        # Ou para explorar características:
+        # 3. Explorar características de um dispositivo:
         # asyncio.run(example_explore())
         
     except KeyboardInterrupt:
