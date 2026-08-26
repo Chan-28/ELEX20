@@ -7,7 +7,6 @@ Projeto para captura, simulação e visualização de sinais EMG em tempo real n
 O workspace deverá ser aberto na pasta `ELEX20`.
 Estrutura principal:
 
-- `ESP32_EMG/`: firmware do ESP32 e arquivos do PlatformIO
 - `bin/`: scripts `.bat` para executar o projeto
 - `src/`: aplicativos Python principais
 - `tools/`: utilitários de captura, filtro e exportação
@@ -46,19 +45,16 @@ python3.12 -m venv .venv
 source .venv/bin/activate 
 
 ```
-
 Depois instale as dependências do projeto:
 
 ```bash
 pip install -r requirements.txt
 ```
-
 Se quiser validar rapidamente os pacotes instalados:
 
 ```bash
 pip list
 ```
-
 IMPORTANTE!!!
 As bibliotecas `bleak` e `pylsl` requerem dependências extras para o SO de Linux:
 ```bash
@@ -67,7 +63,6 @@ sudo apt install glib-2.0 libbluetooth-dev bluez
 (pylsl)
 conda install -c conda-forge liblsl
 ```
-
 Pacotes esperados incluem `PyQt6`, `pyqtgraph`, `mne`, `numpy`, `pylsl`, `matplotlib`, `pandas`, `scipy`, `scikit-learn`, `pillow` e `bleak`.
 
 ## Configuração do R
@@ -77,7 +72,6 @@ Abra o R ou o RStudio e instale os pacotes usados na coanfecção dos gráficos:
 ```r
 install.packages(c("ggplot2", "tidyr", "dplyr", "scales", "GGally", "gridExtra"))
 ```
-
 Se aparecer erro de repositório, escolha um mirror CRAN próximo.
 
 Obs.: Para Linux, o comando
@@ -104,8 +98,7 @@ O script `Executar_Projeto.bat` roda a cadeia completa do projeto em janelas sep
 2. `tools/filtrar_Dados.py` lê `EMG`, processa e publica `EMG_Processado`.
 3. `src/Grafico.py` consome `EMG` e `EMG_Processado` e plota os dois sinais em gráficos distintos.
 
-
-Para validar o fluxo real do ESP32 antes de abrir a interface, o seguintes programas devem ser executados:
+Para validar o fluxo real do ESP32 antes de abrir a interface, os seguintes programas devem ser executados:
 
 ```bash
 (Windows)
@@ -113,7 +106,6 @@ python .\tests\verificar_stream.py
 (Linux)
 python3 tests/verificar_stream.py
 ```
-
 Esse teste confirma se os streams LSL `EMG` e `EMG_Processado` aparecem com os nomes esperados.
 
 ### Via Python direto
@@ -129,13 +121,11 @@ python3 src/filtrar_Dados.py
 python3 src/Grafico.py
 
 ```
-
 ## Checklist de validação
 
 Antes de considerar o projeto pronto, confirme:
 
-1. `python --version` funciona.
-2. `R --version` funciona.
+1. `python --version` e `R --version` funciona.
 3. `pip install -r requirements.txt` termina sem erro.
 4. O simulador LSL inicia antes do gráfico principal.
 5. O dispositivo BLE aparece com o nome esperado `ESP32_EMG`.
@@ -149,7 +139,6 @@ Reinstale as dependências:
 ```bash
 pip install -r requirements.txt
 ```
-
 Se estiver usando ambiente virtual, confirme que ele está ativado.
 
 ### O R não abre ou não é reconhecido
@@ -167,13 +156,12 @@ Depois instale novamente os pacotes usados pelo projeto.
 - Verifique se os nomes dos streams são `EMG` e `EMG_Processado`.
 - Feche outras aplicações que possam estar consumindo o mesmo stream.
 
-
 ### O BLE não conecta no ESP32
 
 - Confirme o nome do dispositivo: `ESP32_EMG`.
 - Verifique se o ESP32 está ligado e com Bluetooth ativo.
 - Tente aproximar o computador da placa.
-
+- 
 ## Observação sobre o workspace
 
 Para manter os caminhos consistentes, abra o projeto a partir da pasta `ELEX20`.
@@ -184,7 +172,6 @@ Para manter os caminhos consistentes, abra o projeto a partir da pasta `ELEX20`.
 [![CodeScene Hotspot Code Health](https://codescene.io/projects/83420/status-badges/hotspot-code-health)](https://codescene.io/projects/83420)
 [![CodeScene System Mastery](https://codescene.io/projects/83420/status-badges/system-mastery)](https://codescene.io/projects/83420)
 [![CodeScene general](https://codescene.io/images/analyzed-by-codescene-badge.svg)](https://codescene.io/projects/83420)
-
 
 ## Star History
 
