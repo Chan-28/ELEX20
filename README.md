@@ -161,7 +161,7 @@ Depois instale novamente os pacotes usados pelo projeto.
 - Confirme o nome do dispositivo: `ESP32_EMG`.
 - Verifique se o ESP32 está ligado e com Bluetooth ativo.
 - Tente aproximar o computador da placa.
-- 
+  
 ## Observação sobre o workspace
 
 Para manter os caminhos consistentes, abra o projeto a partir da pasta `ELEX20`.
