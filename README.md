@@ -188,11 +188,13 @@ Para manter os caminhos consistentes, abra o projeto a partir da pasta `ELEX20`.
 
 ## Star History
 
-<a href="https://www.star-history.com/?repos=Chan2007%2FELEX20.git&type=date&legend=top-left">
+<a href="https://www.star-history.com/?repos=Chan-28%2FELEX20.git&type=date&legend=top-left">
  <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=Chan2007/ELEX20.git&type=date&theme=dark&legend=top-left&sealed_token=CvYSEE_Lm-1VGT3vpOjwnM3pcNtnthKgm4hBF1Z4jAfO8WVhlBztJhHJdR5TLhGkH4HoNKka-OwnKQq873n-FE0Ruwo8B_cMXUrvwC-LMADyJDu6hdotKJKv9Bw8Vwgyw5bOjB91wIJ4RD5rZQSvFU9OWihr8Ox6ZcRTyKRZFc7cR4gzw_JaekoPL3qH" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=Chan2007/ELEX20.git&type=date&legend=top-left&sealed_token=CvYSEE_Lm-1VGT3vpOjwnM3pcNtnthKgm4hBF1Z4jAfO8WVhlBztJhHJdR5TLhGkH4HoNKka-OwnKQq873n-FE0Ruwo8B_cMXUrvwC-LMADyJDu6hdotKJKv9Bw8Vwgyw5bOjB91wIJ4RD5rZQSvFU9OWihr8Ox6ZcRTyKRZFc7cR4gzw_JaekoPL3qH" />
-   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=Chan2007/ELEX20.git&type=date&legend=top-left&sealed_token=CvYSEE_Lm-1VGT3vpOjwnM3pcNtnthKgm4hBF1Z4jAfO8WVhlBztJhHJdR5TLhGkH4HoNKka-OwnKQq873n-FE0Ruwo8B_cMXUrvwC-LMADyJDu6hdotKJKv9Bw8Vwgyw5bOjB91wIJ4RD5rZQSvFU9OWihr8Ox6ZcRTyKRZFc7cR4gzw_JaekoPL3qH" />
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=Chan-28/ELEX20.git&type=date&theme=dark&legend=top-left&sealed_token=NR-lIw07qnsnl0b8_AmOpAHvwOIoG9rXi3WJ0sUY1kw50Z4gu6blbDXnK9FLCnocezkv7Td2qNNOr2Mde_2teQCzJBz7wTwnrF3v38U8ULQuh9HL2hfM9U6ajRIjAhs89t8RKPBVoSfMFzICESpxk027ugaYM8pYsH-SyTOQJ-6Oyf6eapu62_8XP09c" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=Chan-28/ELEX20.git&type=date&legend=top-left&sealed_token=NR-lIw07qnsnl0b8_AmOpAHvwOIoG9rXi3WJ0sUY1kw50Z4gu6blbDXnK9FLCnocezkv7Td2qNNOr2Mde_2teQCzJBz7wTwnrF3v38U8ULQuh9HL2hfM9U6ajRIjAhs89t8RKPBVoSfMFzICESpxk027ugaYM8pYsH-SyTOQJ-6Oyf6eapu62_8XP09c" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=Chan-28/ELEX20.git&type=date&legend=top-left&sealed_token=NR-lIw07qnsnl0b8_AmOpAHvwOIoG9rXi3WJ0sUY1kw50Z4gu6blbDXnK9FLCnocezkv7Td2qNNOr2Mde_2teQCzJBz7wTwnrF3v38U8ULQuh9HL2hfM9U6ajRIjAhs89t8RKPBVoSfMFzICESpxk027ugaYM8pYsH-SyTOQJ-6Oyf6eapu62_8XP09c" />
+ </picture>
+</a>
  </picture>
 </a>
 
