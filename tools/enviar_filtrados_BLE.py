@@ -1,6 +1,7 @@
 import asyncio
-from pylsl import resolve_stream, StreamInlet
+
 from bleak import BleakClient, BleakScanner
+from pylsl import StreamInlet, resolve_stream
 
 DEVICE_NAME = "ESP32_EMG_BLE"
 
@@ -36,16 +37,15 @@ async def main():
     print("Conectando ao ESP32...")
 
     async with BleakClient(device.address) as client:
-
         print("BLE conectado.")
 
         print(f"Procurando stream LSL '{STREAM_NAME}'...")
 
-        streams = resolve_stream('name', STREAM_NAME)
+        streams = resolve_stream("name", STREAM_NAME)
         if not streams:
             print("Stream LSL não encontrado.")
             return
-        
+
         inlet = StreamInlet(streams[0])
 
         print("LSL conectado.")
@@ -53,7 +53,6 @@ async def main():
         buffer = []
 
         while True:
-
             sample, timestamp = inlet.pull_sample(timeout=1.0)
 
             if sample is None:
@@ -64,15 +63,9 @@ async def main():
             buffer.append(valor)
 
             if len(buffer) >= BLOCK_SIZE:
+                msg = ",".join(f"{x:.4f}" for x in buffer)
 
-                msg = ",".join(
-                    f"{x:.4f}" for x in buffer
-                )
-
-                await client.write_gatt_char(
-                    CHARACTERISTIC_UUID,
-                    msg.encode("utf-8")
-                )
+                await client.write_gatt_char(CHARACTERISTIC_UUID, msg.encode("utf-8"))
 
                 print(f"Enviado: {msg}")
 

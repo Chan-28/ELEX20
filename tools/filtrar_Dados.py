@@ -1,11 +1,10 @@
 import argparse
 import time
 from collections import deque
-from typing import Optional, List
 
 import numpy as np
-import scipy.signal as signal
-from pylsl import StreamInfo, StreamOutlet, StreamInlet, resolve_byprop, cf_float32
+from pylsl import StreamInfo, StreamInlet, StreamOutlet, cf_float32, resolve_byprop
+from scipy import signal
 
 
 class EMGLSLProcessor:
@@ -48,7 +47,7 @@ class EMGLSLProcessor:
         self.rms_buffer: deque = deque(maxlen=self.rms_window_samples)
         self.signal_window: deque = deque(maxlen=buffer_size)
 
-        self.normalization_buffer: Optional[deque] = None
+        self.normalization_buffer: deque | None = None
         if processing_mode == "normalized":
             self.normalization_buffer = deque(maxlen=int(sample_rate * 5.0))
 
@@ -85,7 +84,11 @@ class EMGLSLProcessor:
                 self.use_bandpass = False
             else:
                 self.sos_bandpass = signal.butter(
-                    4, [bp_low, bp_high], btype="bandpass", fs=self.sample_rate, output="sos"
+                    4,
+                    [bp_low, bp_high],
+                    btype="bandpass",
+                    fs=self.sample_rate,
+                    output="sos",
                 )
                 self.bp_state = signal.sosfilt_zi(self.sos_bandpass)
 
@@ -98,7 +101,9 @@ class EMGLSLProcessor:
                 )
                 self.use_notch = False
             else:
-                self.b_notch, self.a_notch = signal.iirnotch(notch_freq, 30.0, fs=self.sample_rate)
+                self.b_notch, self.a_notch = signal.iirnotch(
+                    notch_freq, 30.0, fs=self.sample_rate
+                )
                 self.notch_state = signal.lfilter_zi(self.b_notch, self.a_notch)
 
         if self.use_envelope:
@@ -145,7 +150,9 @@ class EMGLSLProcessor:
 
         if self.use_envelope and self.sos_envelope is not None:
             rect = np.abs(hist)
-            y, self.env_state = signal.sosfilt(self.sos_envelope, rect, zi=self.env_state)
+            y, self.env_state = signal.sosfilt(
+                self.sos_envelope, rect, zi=self.env_state
+            )
             hist = np.asarray(y, dtype=float)
 
         return float(hist[-1])
@@ -154,7 +161,7 @@ class EMGLSLProcessor:
         if len(self.rms_buffer) == 0:
             return 0.0
         data = np.array(self.rms_buffer, dtype=float)
-        return float(np.sqrt(np.mean(data ** 2)))
+        return float(np.sqrt(np.mean(data**2)))
 
     def _process_sample(self, raw_value: float) -> float:
         preprocessed = self._preprocess_sample(raw_value)
@@ -190,7 +197,9 @@ class EMGLSLProcessor:
         e entra no loop de leitura/processamento/publicação.
         """
         print(f"Procurando stream LSL '{self.raw_stream_name}'...")
-        streams = resolve_byprop("name", self.raw_stream_name, timeout=self.resolve_timeout)
+        streams = resolve_byprop(
+            "name", self.raw_stream_name, timeout=self.resolve_timeout
+        )
 
         if not streams:
             raise RuntimeError(
@@ -215,8 +224,10 @@ class EMGLSLProcessor:
         print(f"Stream de saída    : '{self.processed_stream_name}'")
         print(f"Modo               : {self.processing_mode}")
         print(f"Taxa de amostragem : {self.sample_rate} Hz")
-        print(f"Filtros ativos     : bandpass={self.use_bandpass}, "
-              f"notch={self.use_notch}, envelope={self.use_envelope}")
+        print(
+            f"Filtros ativos     : bandpass={self.use_bandpass}, "
+            f"notch={self.use_notch}, envelope={self.use_envelope}"
+        )
         print("Processando... (Ctrl+C para parar)\n")
 
         try:
@@ -246,13 +257,16 @@ class EMGLSLProcessor:
         except KeyboardInterrupt:
             print("\nProcessamento encerrado pelo usuário.")
         finally:
-            print(f"\nResumo: {self.total_samples} amostras processadas, "
-                  f"{self.error_count} erros.")
+            print(
+                f"\nResumo: {self.total_samples} amostras processadas, "
+                f"{self.error_count} erros."
+            )
 
 
 # ----------------------------------------------------------------------
 # CLI
 # ----------------------------------------------------------------------
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
@@ -262,36 +276,54 @@ def parse_args() -> argparse.Namespace:
         )
     )
     parser.add_argument(
-        "--raw-stream", default="EMG",
-        help="Nome do stream LSL de entrada (padrão: EMG)"
+        "--raw-stream",
+        default="EMG",
+        help="Nome do stream LSL de entrada (padrão: EMG)",
     )
     parser.add_argument(
-        "--processed-stream", default="EMG_Processado",
-        help="Nome do stream LSL de saída (padrão: EMG_Processado)"
+        "--processed-stream",
+        default="EMG_Processado",
+        help="Nome do stream LSL de saída (padrão: EMG_Processado)",
     )
     parser.add_argument(
-        "--sample-rate", type=float, default=1500.0,
-        help="Taxa de amostragem em Hz (padrão: 1500)"
+        "--sample-rate",
+        type=float,
+        default=1500.0,
+        help="Taxa de amostragem em Hz (padrão: 1500)",
     )
     parser.add_argument(
-        "--mode", choices=["raw", "rms", "normalized"], default="rms",
-        help="Modo de processamento (padrão: rms)"
+        "--mode",
+        choices=["raw", "rms", "normalized"],
+        default="rms",
+        help="Modo de processamento (padrão: rms)",
     )
     parser.add_argument(
-        "--rms-window-ms", type=float, default=50.0,
-        help="Janela RMS em ms (padrão: 50)"
+        "--rms-window-ms",
+        type=float,
+        default=50.0,
+        help="Janela RMS em ms (padrão: 50)",
     )
     parser.add_argument(
-        "--buffer-size", type=int, default=500,
-        help="Tamanho do buffer de sinal (padrão: 500)"
+        "--buffer-size",
+        type=int,
+        default=500,
+        help="Tamanho do buffer de sinal (padrão: 500)",
     )
     parser.add_argument(
-        "--resolve-timeout", type=float, default=10.0,
-        help="Timeout para encontrar o stream LSL de entrada, em segundos (padrão: 10)"
+        "--resolve-timeout",
+        type=float,
+        default=10.0,
+        help="Timeout para encontrar o stream LSL de entrada, em segundos (padrão: 10)",
     )
-    parser.add_argument("--no-bandpass", action="store_true", help="Desativa filtro passa-banda")
-    parser.add_argument("--no-notch",    action="store_true", help="Desativa filtro notch (60 Hz)")
-    parser.add_argument("--no-envelope", action="store_true", help="Desativa extração de envelope")
+    parser.add_argument(
+        "--no-bandpass", action="store_true", help="Desativa filtro passa-banda"
+    )
+    parser.add_argument(
+        "--no-notch", action="store_true", help="Desativa filtro notch (60 Hz)"
+    )
+    parser.add_argument(
+        "--no-envelope", action="store_true", help="Desativa extração de envelope"
+    )
     return parser.parse_args()
 
 
