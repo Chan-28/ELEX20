@@ -1,4 +1,29 @@
 {
+  "name": "elex20",
+  "version": "1.0.0",
+  "description": "Projeto para captura, simulação e visualização de sinais EMG em tempo real no Windows, usando Python, LSL, PyQt6 e R.",
+  "main": "commitlint.config.cjs",
+  "type": "commonjs",
+  "directories": {
+    "test": "tests"
+  },
+  "scripts": {
+    "prepare": "husky",
+    "lint": "uv run ruff check .",
+    "format": "uv run ruff format .",
+    "fix": "uv run ruff check . --fix && uv run ruff format ."
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Chan-28/ELEX20.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/Chan-28/ELEX20/issues"
+  },
+  "homepage": "https://github.com/Chan-28/ELEX20#readme",
   "dependencies": {
     "openclaw": "^0.0.1"
   },
@@ -11,9 +36,6 @@
     "husky": "^9.1.7",
     "lint-staged": "^17.3.0",
     "prettier": "3.9.6"
-  },
-  "scripts": {
-    "prepare": "husky install"
   },
   "lint-staged": {
     "*.{js,mjs,cjs,json,md}": [

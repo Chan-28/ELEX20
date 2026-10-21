@@ -14,14 +14,24 @@ import argparse
 import asyncio
 import sys
 import time
-from pathlib import Path
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Validador do pipeline EMG LSL.")
-    parser.add_argument("--wait-seconds", type=float, default=12.0, help="Tempo máximo aguardando os streams")
-    parser.add_argument("--expected-raw", default="EMG", help="Nome do stream bruto esperado")
-    parser.add_argument("--expected-processed", default="EMG_Processado", help="Nome do stream processado esperado")
+    parser.add_argument(
+        "--wait-seconds",
+        type=float,
+        default=12.0,
+        help="Tempo máximo aguardando os streams",
+    )
+    parser.add_argument(
+        "--expected-raw", default="EMG", help="Nome do stream bruto esperado"
+    )
+    parser.add_argument(
+        "--expected-processed",
+        default="EMG_Processado",
+        help="Nome do stream processado esperado",
+    )
     return parser.parse_args()
 
 
@@ -34,16 +44,16 @@ async def main() -> int:
         print(f"[ERRO] Dependências ausentes: {exc}")
         return 1
 
-    #
-    # print(f"[1/3] Procurando dispositivo BLE {args.address}...")
-    # try:
+        #
+        # print(f"[1/3] Procurando dispositivo BLE {args.address}...")
+        # try:
         # Busca o dispositivo para validar que o rádio Bluetooth funciona e o ESP32 está ativo
         device = await BleakScanner.find_device_by_address(args.address, timeout=5.0)
-        
+
         if not device:
             print(f"[ERRO] Dispositivo BLE {args.address} não encontrado no scan.")
             return 2
-            
+
         print(f"      Dispositivo encontrado: {device.name or 'Sem Nome'}")
     # except Exception as exc:
     #     print(f"[ERRO] Falha ao acessar o hardware Bluetooth: {exc}")
@@ -56,17 +66,17 @@ async def main() -> int:
 
     while time.time() < deadline:
         # resolve_streams(0.5) bloqueia a execução por 0.5s.
-        # Em um script assíncrono complexo usaríamos run_in_executor, 
+        # Em um script assíncrono complexo usaríamos run_in_executor,
         # mas para este script simples de validação, isso é perfeitamente aceitável.
         streams = resolve_streams(0.5)
         nomes = {stream.name() for stream in streams}
-        
+
         found_raw = args.expected_raw in nomes
         found_processed = args.expected_processed in nomes
-        
+
         if found_raw and found_processed:
             break
-            
+
         # Repassa o controle para o event loop
         await asyncio.sleep(0.1)
 

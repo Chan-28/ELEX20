@@ -1,11 +1,12 @@
-import pylsl
 import csv
 from datetime import datetime
+
+import pylsl
 
 
 def main():
     print("Procurando stream 'EMG_Processado' na rede...")
-    
+
     # Busca o stream transmitido pelo EMGEngine
     streams = pylsl.resolve_streams(1.0)
 
@@ -22,21 +23,21 @@ def main():
 
     # Conecta no stream
     inlet = pylsl.StreamInlet(stream_info)
-    print(f"Conectado ao stream EMG_Processado")
+    print("Conectado ao stream EMG_Processado")
     print(f"Canais: {inlet.channel_count}")
     print(f"Taxa de Amostragem: {inlet.info().nominal_srate()} Hz")
     print("\nRecebendo dados (Ctrl+C para parar)...\n")
-    
+
     # Recebe e processa dados continuamente
     sample_count = 0
     flush_every = 100
     filename = f"emg_data_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
 
     try:
-        with open(filename, 'w', newline='') as f:
+        with open(filename, "w", newline="") as f:
             writer = csv.writer(f)
             n_canais = inlet.channel_count
-            writer.writerow(['timestamp'] + [f'canal{i+1}' for i in range(n_canais)])  
+            writer.writerow(["timestamp"] + [f"canal{i + 1}" for i in range(n_canais)])
 
             print(f"Salvando em {filename}...")
 
@@ -50,7 +51,7 @@ def main():
                 sample_count += 1
 
                 # Exemplo: mostra a cada 500 amostras (~0.25s a 2000Hz)
-                
+
                 """
                 if sample_count % 500 == 0:
                     print(f"Sample #{sample_count}: {sample} @ {timestamp:.3f}s")
@@ -63,7 +64,6 @@ def main():
     except KeyboardInterrupt:
         print(f"\nRecebidas {sample_count} amostras. Dados salvos em {filename}")
 
+
 if __name__ == "__main__":
     main()
-
-

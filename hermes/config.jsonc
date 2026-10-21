@@ -1,0 +1,79 @@
+{
+  "agent": {
+    "name": "Hermes",
+    "prompt_profile": "default",
+    "telemetry": {
+      "enabled": false
+    }
+  },
+  "llm": {
+    "provider": "openrouter",
+    "model": "gpt-4o-mini",
+    "api_key_env": "OPENROUTER_API_KEY",
+
+    "fallback": {
+      "provider": "ollama",
+      "ollama": {
+        "base_url": "http://ollama:11434",
+        // Opções de modelo local (escolha um):
+        // "qwen2.5:3b"        — equilibrado, bom para código e conversa
+        // "qwen2.5-coder:3b"  — especializado em código
+        // "llama3.2:3b"       — conversa geral
+        // "phi4-mini"         — raciocínio lógico
+        // "gemma3:4b"         — mais potente, mais pesado
+        "model": "qwen3:3b"
+      }
+    }
+  },
+  "terminal": {
+    "backend": "docker",
+    "docker": {
+      "image": "python:3.11-slim",
+      "network": "monitoring",
+      "workdir": "/workspace"
+    }
+  },
+  "browser": {
+    "provider": "lightpanda",
+    "lightpanda": {
+      "cdp_url": "ws://lightpanda:9222"
+    }
+  },
+  "search": {
+    "provider": "duckduckgo",
+    "auto_extract_content": true
+  },
+  "tts": {
+    "provider": "edge",
+    "voice": "default"
+  },
+  "image_generation": {
+    "provider": "none"
+  },
+  "gateways": {
+    "discord": {
+      "enabled": true,
+      "bot_token_env": "DISCORD_BOT_TOKEN"
+    },
+    "telegram": {
+      "enabled": true,
+      "bot_token_env": "TELEGRAM_BOT_TOKEN"
+    },
+    "email": {
+      "enabled": true,
+      "smtp_host_env": "SMTP_HOST",
+      "smtp_port_env": "SMTP_PORT",
+      "smtp_user_env": "SMTP_USER",
+      "smtp_pass_env": "SMTP_PASS",
+      "imap_host_env": "IMAP_HOST"
+    }
+  },
+  "tools": [
+    "duckduckgo_search",
+    "browser_automation",
+    "docker_terminal",
+    "discord_tools",
+    "telegram_tools",
+    "edge_tts"
+  ]
+}

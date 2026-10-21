@@ -2,8 +2,9 @@ import asyncio
 import signal
 import struct
 import sys
-from typing import Callable, Optional
-from bleak import BleakScanner, BleakClient
+from collections.abc import Callable
+
+from bleak import BleakClient, BleakScanner
 from bleak.backends.characteristic import BleakGATTCharacteristic
 from pylsl import StreamInfo, StreamOutlet, cf_float32
 
@@ -11,19 +12,19 @@ from pylsl import StreamInfo, StreamOutlet, cf_float32
 class EMGEngine:
     """
     Engine para capturar dados EMG via BLE usando Bleak.
-    
+
     Suporta:
     - Escanear e conectar a dispositivos BLE
     - Receber notificações em tempo real
     - Publicar em LSL para integração com outros softwares
     - Callbacks customizados
     """
-    
+
     def __init__(
         self,
-        device_name: str = "ESP32_EMG",  
+        device_name: str = "ESP32_EMG",
         char_uuid: str = "6E400003-B5A3-F393-E0A9-E50E24DCCA9E",  # UUID do Arduino
-        service_uuid: Optional[str] = "6E400001-B5A3-F393-E0A9-E50E24DCCA9E",  # Service UUID
+        service_uuid: str | None = "6E400001-B5A3-F393-E0A9-E50E24DCCA9E",  # Service UUID
         queue_maxsize: int = 2048,
         scan_timeout: float = 10.0,
         sample_rate: float = 500.0,  # Hz
@@ -43,11 +44,13 @@ class EMGEngine:
         self.scan_timeout = scan_timeout
         self.sample_rate = sample_rate
         self.is_running = False
-        self._stop_event: Optional[asyncio.Event] = None
+        self._stop_event: asyncio.Event | None = None
 
-        self._queue: asyncio.Queue[tuple[float, float]] = asyncio.Queue(maxsize=queue_maxsize)
+        self._queue: asyncio.Queue[tuple[float, float]] = asyncio.Queue(
+            maxsize=queue_maxsize
+        )
         self._subscribers: list[Callable] = []
-        
+
         # Estatísticas
         self.samples_received = 0
         self.errors_received = 0
@@ -57,7 +60,7 @@ class EMGEngine:
     def subscribe(self, callback: Callable) -> None:
         """
         Adiciona uma função (sync ou async) para receber os dados.
-        
+
         Assinatura da callback: callback(value: float) ou async def callback(value: float)
         """
         self._subscribers.append(callback)
@@ -88,14 +91,14 @@ class EMGEngine:
         try:
             # Tenta decodificar como timestamp + voltage
             if len(data) == 8:
-                timestamp, value = struct.unpack('<If', data)
+                timestamp, value = struct.unpack("<If", data)
             # Ou apenas voltage (float)
             elif len(data) == 4:
-                value = struct.unpack('<f', data)[0]
+                value = struct.unpack("<f", data)[0]
                 timestamp = self.last_timestamp
             # Ou múltiplos floats
             elif len(data) % 4 == 0:
-                values = struct.unpack(f'<{len(data)//4}f', data)
+                values = struct.unpack(f"<{len(data) // 4}f", data)
                 value = values[0]  # Toma o primeiro
                 timestamp = self.last_timestamp
             else:
@@ -118,14 +121,16 @@ class EMGEngine:
                     pass
 
         except struct.error as e:
-            print(f"✗ Erro de decodificação: {e} | Raw ({len(data)} bytes): {data.hex()}")
+            print(
+                f"✗ Erro de decodificação: {e} | Raw ({len(data)} bytes): {data.hex()}"
+            )
             self.errors_received += 1
             return
 
     async def _dispatch_worker(
         self,
         stop_event: asyncio.Event,
-        max_samples: Optional[int] = None,
+        max_samples: int | None = None,
     ) -> None:
         """
         Worker separado: drena a fila e despacha para os subscribers.
@@ -138,7 +143,7 @@ class EMGEngine:
                 timestamp, value = await asyncio.wait_for(
                     self._queue.get(), timeout=1.0
                 )
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 continue
 
             # Dispara callbacks
@@ -160,13 +165,13 @@ class EMGEngine:
 
     async def run(
         self,
-        stop_event: Optional[asyncio.Event] = None,
-        max_run_seconds: Optional[float] = None,
-        max_samples: Optional[int] = None,
+        stop_event: asyncio.Event | None = None,
+        max_run_seconds: float | None = None,
+        max_samples: int | None = None,
     ) -> None:
         """
         Executa o engine EMG.
-        
+
         Args:
             stop_event: Event para parar manualmente
             max_run_seconds: Parar após N segundos
@@ -177,11 +182,13 @@ class EMGEngine:
 
         self._stop_event = stop_event
         self.is_running = True
-        timer_task: Optional[asyncio.Task] = None
+        timer_task: asyncio.Task | None = None
 
         try:
             # --- ESCANEAR DISPOSITIVO ---
-            print(f"\n🔍 Buscando '{self.device_name}'... (timeout: {self.scan_timeout}s)")
+            print(
+                f"\n🔍 Buscando '{self.device_name}'... (timeout: {self.scan_timeout}s)"
+            )
             device = await BleakScanner.find_device_by_filter(
                 lambda d, ad: d.name == self.device_name,
                 timeout=self.scan_timeout,
@@ -205,9 +212,11 @@ class EMGEngine:
                 print(f"\n⚠ Dispositivo {client.address} desconectado")
                 stop_event.set()
 
-            async with BleakClient(device, disconnected_callback=on_disconnect) as client:
+            async with BleakClient(
+                device, disconnected_callback=on_disconnect
+            ) as client:
                 print(f"✓ Conectado em {device.address}")
-                
+
                 # Lista características disponíveis
                 print("\n📋 Características BLE disponíveis:")
                 found_char = False
@@ -216,8 +225,8 @@ class EMGEngine:
                         print(f"   - {char.uuid}: {char.description}")
                         if str(char.uuid).lower() == self.char_uuid.lower():
                             found_char = True
-                            print(f"     ✓ Esta é a característica que usaremos!")
-                
+                            print("     ✓ Esta é a característica que usaremos!")
+
                 if not found_char:
                     print(f"\n⚠ Característica {self.char_uuid} não encontrada!")
                     print("   Verifique se o UUID está correto no código Arduino")
@@ -229,6 +238,7 @@ class EMGEngine:
 
                 # Timer para parar por tempo
                 if max_run_seconds is not None:
+
                     async def _stop_after_timeout() -> None:
                         await asyncio.sleep(max_run_seconds)
                         if not stop_event.is_set():
@@ -239,14 +249,18 @@ class EMGEngine:
 
                 # Inicia notificações BLE
                 try:
-                    print(f"\n📡 Iniciando notificações na característica {self.char_uuid}...")
-                    await client.start_notify(self.char_uuid, self._notification_handler)
+                    print(
+                        f"\n📡 Iniciando notificações na característica {self.char_uuid}..."
+                    )
+                    await client.start_notify(
+                        self.char_uuid, self._notification_handler
+                    )
                     print("✓ Notificações iniciadas com sucesso!")
                     print("\n▶ Aguardando dados... (Ctrl+C para parar)\n")
                 except Exception as e:
                     print(f"✗ Erro ao iniciar notificações: {e}")
                     print(f"   UUID usado: {self.char_uuid}")
-                    print(f"   Verifique se este UUID existe no Arduino")
+                    print("   Verifique se este UUID existe no Arduino")
                     stop_event.set()
 
                 # Aguarda parada
@@ -262,7 +276,7 @@ class EMGEngine:
                     # Drena o que restou na fila
                     try:
                         await asyncio.wait_for(worker_task, timeout=5.0)
-                    except asyncio.TimeoutError:
+                    except TimeoutError:
                         worker_task.cancel()
                         await asyncio.gather(worker_task, return_exceptions=True)
 
@@ -273,7 +287,7 @@ class EMGEngine:
         finally:
             self.is_running = False
             self._stop_event = None
-            
+
             # --- ESTATÍSTICAS FINAIS ---
             print("\n📊 Estatísticas de Captura:")
             print(f"   ✓ Amostras recebidas: {self.samples_received}")
@@ -283,7 +297,7 @@ class EMGEngine:
                 print(f"   Taxa efetiva: {taxa_efetiva:.1f} Hz (esperado: 500 Hz)")
             print(f"   Último valor: {self.last_value:.4f} V")
 
-    async def get_device_info(self) -> Optional[dict]:
+    async def get_device_info(self) -> dict | None:
         """Obtém informações do dispositivo sem conectar permanentemente."""
         print(f"🔍 Buscando informações de '{self.device_name}'...")
         device = await BleakScanner.find_device_by_filter(
@@ -315,11 +329,14 @@ class EMGEngine:
                         print(f"  └─ {char.uuid}")
                         print(f"     Propriedades: {flags}")
                         print(f"     Descrição: {char.description}")
-                        
+
                         # Se for a característica esperada, marca
-                        if str(char.uuid).lower() == "6e400003-b5a3-f393-e0a9-e50e24dcca9e":
-                            print(f"     ← ✓ ESTA É A CARACTERÍSTICA DO EMG")
-                        
+                        if (
+                            str(char.uuid).lower()
+                            == "6e400003-b5a3-f393-e0a9-e50e24dcca9e"
+                        ):
+                            print("     ← ✓ ESTA É A CARACTERÍSTICA DO EMG")
+
                 info["services"] = [
                     {
                         "uuid": str(service.uuid),
@@ -329,7 +346,7 @@ class EMGEngine:
                                 "properties": char.properties,
                             }
                             for char in service.characteristics
-                        ]
+                        ],
                     }
                     for service in client.services
                 ]
@@ -340,6 +357,7 @@ class EMGEngine:
 
 
 # --- CALLBACKS DE EXEMPLO ---
+
 
 def print_callback(value: float) -> None:
     """Imprime cada valor recebido."""
@@ -405,18 +423,20 @@ async def example_with_lsl():
 async def example_discover():
     """Escaneia e lista todos os dispositivos BLE disponíveis."""
     print("🔍 Escaneando dispositivos BLE (10s)...\n")
-    
+
     devices = await BleakScanner.discover(timeout=10.0)
-    
+
     if not devices:
         print("Nenhum dispositivo encontrado")
         return
-    
+
     print(f"✓ {len(devices)} dispositivo(s) encontrado(s):\n")
     for i, device in enumerate(devices, 1):
         rssi = getattr(device, "rssi", None)
         rssi_text = f"{rssi:4d}" if isinstance(rssi, int) else " n/d"
-        print(f"{i}. {device.name or 'Desconhecido':20s} | {device.address:17s} | RSSI: {rssi_text}")
+        print(
+            f"{i}. {device.name or 'Desconhecido':20s} | {device.address:17s} | RSSI: {rssi_text}"
+        )
 
 
 # --- EXEMPLO: EXPLORAR CARACTERÍSTICAS ---
@@ -424,9 +444,10 @@ async def example_explore():
     """Conecta a um dispositivo e lista suas características."""
     engine = EMGEngine(device_name="ESP32_EMG")
     info = await engine.get_device_info()
-    
+
     if info:
         import json
+
         print("\n" + json.dumps(info, indent=2, default=str))
 
 
@@ -435,22 +456,23 @@ if __name__ == "__main__":
     print("║  EMG Engine - BLE com Bleak + LSL         ║")
     print("║  Versão: 2.0 (Corrigida para Arduino)     ║")
     print("╚═══════════════════════════════════════════╝\n")
-    
+
     try:
         # Escolha o exemplo:
-        
+
         # 1. Receber dados e publicar em LSL (RECOMENDADO):
         asyncio.run(example_with_lsl())
-        
+
         # 2. Descobrir dispositivos BLE:
         # asyncio.run(example_discover())
-        
+
         # 3. Explorar características de um dispositivo:
         # asyncio.run(example_explore())
-        
+
     except KeyboardInterrupt:
         print("\n✓ Aplicação encerrada")
     except Exception as e:
         print(f"\n✗ Erro: {e}")
         import traceback
+
         traceback.print_exc()
