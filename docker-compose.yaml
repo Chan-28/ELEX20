@@ -44,6 +44,8 @@ services:
     depends_on:
       timescaledb:
         condition: service_healthy
+      mosquitto:
+        condition: service_healthy
 
   ollama:
     image: ollama/ollama:latest
@@ -158,6 +160,25 @@ services:
     networks:
       - monitoring
 
+  mosquitto:
+    image: eclipse-mosquitto:2
+    container_name: mosquitto
+    restart: unless-stopped
+    # Porta 1883 exposta ao host para que o ESP32 (WiFi LAN) consiga publicar
+    ports:
+      - "1883:1883"
+    volumes:
+      - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - mosquitto_data:/mosquitto/data
+      - mosquitto_log:/mosquitto/log
+    healthcheck:
+      test: ["CMD-SHELL", "mosquitto_pub -h localhost -t health -m ping -q 0 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      - monitoring
+
 volumes:
   timescaledb_data:
   n8n_data:
@@ -165,6 +186,8 @@ volumes:
   grafana_data:
   loki_data:
   pyroscope_data:
+  mosquitto_data:
+  mosquitto_log:
 
 networks:
   monitoring:
