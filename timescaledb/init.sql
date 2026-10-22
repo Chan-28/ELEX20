@@ -1,8 +1,8 @@
 CREATE EXTENSION IF NOT EXISTS timescaledb;
 
 -- ─────────────────────────────────────────────────────────────
--- Resultados de inferência do modelo Edge Impulse (ESP32)
--- Populada pelo workflow n8n via MQTT trigger
+-- Resultados de inferência do modelo Edge Impulse (ESP32-S3)
+-- Classificação de som ambiente — populada pelo workflow n8n via MQTT
 -- ─────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS emg_inference (
     time        TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
