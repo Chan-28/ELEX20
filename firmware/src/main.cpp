@@ -1,39 +1,63 @@
 /**
- * ELEX20 — ESP32 Edge Impulse + MQTT
+ * ELEX20 — ESP32-S3 · Classificação de Som Ambiente
  *
  * Fluxo:
- *   ADS1115 (I2C) → buffer circular → Edge Impulse classifier
+ *   Microfone I2S → buffer PCM 16-bit 16 kHz
+ *   → Edge Impulse classifier (MFCC/MFE no dispositivo)
  *   → resultado JSON → MQTT → Mosquitto → n8n → TimescaleDB
  *
- * Tópicos publicados:
- *   emg/inference/<DEVICE_ID>  {"label":"...","confidence":0.95,"ts":12345}
- *   emg/status/<DEVICE_ID>     {"uptime_s":60,"heap":120000,"rssi":-55}
- *   emg/raw/<DEVICE_ID>        {"v":0.0012,"ts":12345}  (apenas se DEBUG_MQTT)
+ * Tópicos publicados (Mosquitto local):
+ *   emg/inference/<DEVICE_ID>
+ *     {"label":"chuva","confidence":0.92,"ts":12345,"device":"..."}
+ *   emg/status/<DEVICE_ID>
+ *     {"uptime_s":60,"heap":200000,"rssi":-52}
  *
- * Pré-requisito: exportar modelo do Edge Impulse como Arduino library,
- *   extrair em firmware/lib/ei-model/ e ajustar o include abaixo.
+ * Hardware testado:
+ *   - ESP32-S3-DevKitC-1
+ *   - Microfone INMP441 (I2S, mono, 16-bit)
+ *     WS  → GPIO 42  |  SCK → GPIO 40  |  SD → GPIO 41
+ *
+ * Para integrar o modelo Edge Impulse:
+ *   1. Exportar projeto EI → Deployment → Arduino library → .zip
+ *   2. Extrair em firmware/lib/ei-model/
+ *   3. Ajustar EI_MODEL_HEADER em platformio.ini
+ *   4. Descomentar as linhas marcadas com "// EI:"
+ *   5. Remover runInferenceMock()
  */
 
 #include <Arduino.h>
 #include <WiFi.h>
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
-#include <Wire.h>
-#include <Adafruit_ADS1X15.h>
-#include <LiquidCrystal_I2C.h>
+#include <driver/i2s.h>
 
-// Edge Impulse — ajuste o nome do header ao modelo exportado
-// Ex: se o projeto se chama "emg_classifier", o header será:
-//   #include <emg_classifier_inferencing.h>
-// Descomente quando o modelo estiver em lib/ei-model/
-// #include <ei-model_inferencing.h>
+// EI: descomente e ajuste ao nome do header exportado pelo Edge Impulse
+// #include EI_MODEL_HEADER
 
-// ── Pins ─────────────────────────────────────────────────────
-#define SDA_PIN 21
-#define SCL_PIN 22
-#define POT_PIN 35  // potenciômetro de amplitude (opcional)
+// ── Pinos I2S (configuráveis em platformio.ini) ──────────────
+#ifndef I2S_WS_PIN
+#  define I2S_WS_PIN  42
+#endif
+#ifndef I2S_SCK_PIN
+#  define I2S_SCK_PIN 40
+#endif
+#ifndef I2S_SD_PIN
+#  define I2S_SD_PIN  41
+#endif
 
-// ── Configuração (via platformio.ini build_flags) ────────────
+// ── Parâmetros de áudio ───────────────────────────────────────
+#ifndef AUDIO_SAMPLE_RATE
+#  define AUDIO_SAMPLE_RATE 16000
+#endif
+#ifndef AUDIO_WINDOW_MS
+#  define AUDIO_WINDOW_MS   1000
+#endif
+
+// Número de amostras na janela de inferência
+static constexpr size_t AUDIO_WINDOW_SAMPLES =
+    (AUDIO_SAMPLE_RATE * AUDIO_WINDOW_MS) / 1000;
+
+// ── Credenciais (via platformio.ini build_flags) ─────────────
 #ifndef WIFI_SSID
 #  define WIFI_SSID "YOUR_SSID"
 #endif
@@ -47,40 +71,46 @@
 #  define MQTT_PORT 1883
 #endif
 #ifndef DEVICE_ID
-#  define DEVICE_ID "esp32-emg-01"
-#endif
-#ifndef EI_WINDOW_SIZE
-#  define EI_WINDOW_SIZE 500
-#endif
-#ifndef SAMPLE_RATE_HZ
-#  define SAMPLE_RATE_HZ 500
+#  define DEVICE_ID "esp32s3-sound-01"
 #endif
 
-// Tópicos MQTT completos (device_id sufixado)
 static const char TOPIC_INFERENCE[] = MQTT_TOPIC_INFERENCE "/" DEVICE_ID;
 static const char TOPIC_STATUS[]    = MQTT_TOPIC_STATUS    "/" DEVICE_ID;
-#ifdef DEBUG_MQTT
-static const char TOPIC_RAW[]       = MQTT_TOPIC_RAW       "/" DEVICE_ID;
-#endif
 
 // ── Objetos ──────────────────────────────────────────────────
-Adafruit_ADS1115 ads;
-LiquidCrystal_I2C lcd(0x27, 16, 2);  // endereço padrão PCF8574
-WiFiClient        wifiClient;
-PubSubClient      mqtt(wifiClient);
+WiFiClient   wifiClient;
+PubSubClient mqtt(wifiClient);
 
-// Buffer circular para janela de inferência
-static float     sampleBuf[EI_WINDOW_SIZE];
-static uint16_t  sampleIdx   = 0;
-static bool      bufferFull  = false;
+// Buffer de áudio — alocado em PSRAM se disponível
+static int16_t* audioBuf = nullptr;
+static size_t   audioIdx = 0;
+static bool     bufferFull = false;
 
-// Intervalo de amostragem em µs
-static const uint32_t SAMPLE_INTERVAL_US = 1000000UL / SAMPLE_RATE_HZ;
-static uint32_t lastSampleUs = 0;
-
-// Intervalo de status heartbeat (ms)
-static const uint32_t STATUS_INTERVAL_MS = 5000;
-static uint32_t lastStatusMs = 0;
+// ── I2S ──────────────────────────────────────────────────────
+static void i2sInit() {
+    i2s_config_t cfg = {
+        .mode                 = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_RX),
+        .sample_rate          = AUDIO_SAMPLE_RATE,
+        .bits_per_sample      = I2S_BITS_PER_SAMPLE_32BIT,
+        .channel_format       = I2S_CHANNEL_FMT_ONLY_LEFT,
+        .communication_format = I2S_COMM_FORMAT_STAND_I2S,
+        .intr_alloc_flags     = ESP_INTR_FLAG_LEVEL1,
+        .dma_buf_count        = 8,
+        .dma_buf_len          = 512,
+        .use_apll             = false,
+        .tx_desc_auto_clear   = false,
+        .fixed_mclk           = 0,
+    };
+    i2s_pin_config_t pins = {
+        .bck_io_num   = I2S_SCK_PIN,
+        .ws_io_num    = I2S_WS_PIN,
+        .data_out_num = I2S_PIN_NO_CHANGE,
+        .data_in_num  = I2S_SD_PIN,
+    };
+    ESP_ERROR_CHECK(i2s_driver_install(I2S_NUM_0, &cfg, 0, nullptr));
+    ESP_ERROR_CHECK(i2s_set_pin(I2S_NUM_0, &pins));
+    Serial.println("[I2S] Microfone inicializado");
+}
 
 // ── WiFi ─────────────────────────────────────────────────────
 static void connectWiFi() {
@@ -94,37 +124,28 @@ static void connectWiFi() {
         attempts++;
     }
     if (WiFi.status() == WL_CONNECTED) {
-        Serial.printf("\n[WiFi] Conectado. IP: %s  RSSI: %d dBm\n",
+        Serial.printf("\n[WiFi] IP: %s  RSSI: %d dBm\n",
                       WiFi.localIP().toString().c_str(), WiFi.RSSI());
-        lcd.setCursor(0, 1);
-        lcd.print(WiFi.localIP().toString());
     } else {
-        Serial.println("\n[WiFi] Falha na conexão. Reiniciando...");
+        Serial.println("\n[WiFi] Falha. Reiniciando...");
         ESP.restart();
     }
 }
 
 // ── MQTT ─────────────────────────────────────────────────────
 static void mqttReconnect() {
-    uint8_t retries = 0;
-    while (!mqtt.connected() && retries < 5) {
+    for (uint8_t i = 0; i < 5 && !mqtt.connected(); i++) {
         Serial.printf("[MQTT] Conectando a %s:%d ...\n", MQTT_HOST, MQTT_PORT);
         if (mqtt.connect(DEVICE_ID)) {
             Serial.println("[MQTT] Conectado.");
-            lcd.setCursor(0, 0);
-            lcd.print("MQTT OK         ");
         } else {
-            Serial.printf("[MQTT] Falhou (rc=%d). Tentando em 2s...\n", mqtt.state());
+            Serial.printf("[MQTT] rc=%d — aguardando 2s\n", mqtt.state());
             delay(2000);
-            retries++;
         }
-    }
-    if (!mqtt.connected()) {
-        Serial.println("[MQTT] Sem conexão após 5 tentativas. Verifique o broker.");
     }
 }
 
-// ── Publicar resultado de inferência ────────────────────────
+// ── Publicar resultado ────────────────────────────────────────
 static void publishInference(const char* label, float confidence) {
     StaticJsonDocument<128> doc;
     doc["label"]      = label;
@@ -134,18 +155,11 @@ static void publishInference(const char* label, float confidence) {
 
     char payload[128];
     serializeJson(doc, payload, sizeof(payload));
+    mqtt.publish(TOPIC_INFERENCE, payload, false);
 
-    if (mqtt.publish(TOPIC_INFERENCE, payload, /*retained=*/false)) {
-#ifdef DEBUG_MQTT
-        Serial.printf("[MQTT] inference → %s\n", payload);
-#endif
-    }
-
-    lcd.setCursor(0, 0);
-    lcd.printf("%-10s %3d%%", label, (int)(confidence * 100));
+    Serial.printf("[INF] %s  %.2f%%\n", label, confidence * 100.f);
 }
 
-// ── Publicar heartbeat de status ────────────────────────────
 static void publishStatus() {
     StaticJsonDocument<128> doc;
     doc["uptime_s"] = millis() / 1000;
@@ -155,113 +169,113 @@ static void publishStatus() {
 
     char payload[128];
     serializeJson(doc, payload, sizeof(payload));
-    mqtt.publish(TOPIC_STATUS, payload, /*retained=*/true);
+    mqtt.publish(TOPIC_STATUS, payload, true);
 }
 
-// ── Inferência (wrapper Edge Impulse) ───────────────────────
-// Descomente e adapte quando o modelo estiver disponível.
-// static void runInference() {
-//     signal_t signal;
-//     numpy::signal_from_buffer(sampleBuf, EI_WINDOW_SIZE, &signal);
-//
-//     ei_impulse_result_t result;
-//     EI_IMPULSE_ERROR err = run_classifier(&signal, &result, false);
-//     if (err != EI_IMPULSE_OK) return;
-//
-//     // Encontra label com maior confiança
-//     uint8_t bestIdx = 0;
-//     for (uint8_t i = 1; i < EI_CLASSIFIER_LABEL_COUNT; i++) {
-//         if (result.classification[i].value > result.classification[bestIdx].value)
-//             bestIdx = i;
-//     }
-//     publishInference(result.classification[bestIdx].label,
-//                      result.classification[bestIdx].value);
-// }
+// ── Inferência Edge Impulse ───────────────────────────────────
+// EI: descomente este bloco inteiro quando o modelo estiver em lib/ei-model/
+/*
+static int getMicData(size_t offset, size_t length, float* out) {
+    for (size_t i = 0; i < length; i++)
+        out[i] = (float)audioBuf[offset + i] / 32768.f;
+    return 0;
+}
 
-// Simulador de inferência — remove quando o modelo real estiver integrado
+static void runInference() {
+    signal_t signal;
+    signal.total_length = AUDIO_WINDOW_SAMPLES;
+    signal.get_data     = &getMicData;
+
+    ei_impulse_result_t result = {0};
+    EI_IMPULSE_ERROR err = run_classifier(&signal, &result, false);
+    if (err != EI_IMPULSE_OK) {
+        Serial.printf("[EI] Erro: %d\n", err);
+        return;
+    }
+
+    // Encontra a classe com maior confiança
+    uint8_t best = 0;
+    for (uint8_t i = 1; i < EI_CLASSIFIER_LABEL_COUNT; i++) {
+        if (result.classification[i].value > result.classification[best].value)
+            best = i;
+    }
+    publishInference(result.classification[best].label,
+                     result.classification[best].value);
+}
+*/
+
+// Simulador — remove ao integrar o modelo real
 static void runInferenceMock() {
-    static const char* labels[] = {"repouso", "contracao", "relaxamento"};
-    static uint8_t     idx      = 0;
-    float conf = 0.80f + (random(0, 20) / 100.0f);
-    publishInference(labels[idx % 3], conf);
-    idx++;
+    static const char* sounds[] = {
+        "silencio", "fala", "chuva", "transito", "musica", "alarme"
+    };
+    static uint8_t idx = 0;
+    float conf = 0.75f + (random(0, 25) / 100.f);
+    publishInference(sounds[idx++ % 6], conf);
 }
 
 // ── Setup ─────────────────────────────────────────────────────
 void setup() {
     Serial.begin(115200);
-    Wire.begin(SDA_PIN, SCL_PIN);
+    delay(500);
+    Serial.println("\n[ELEX20] Boot — classificação de som ambiente");
 
-    // LCD
-    lcd.init();
-    lcd.backlight();
-    lcd.setCursor(0, 0);
-    lcd.print("ELEX20 Boot...");
-
-    // ADS1115
-    if (!ads.begin()) {
-        Serial.println("[ADS1115] Não encontrado — usando simulador");
+    // Aloca buffer de áudio na PSRAM (preferível) ou na heap normal
+    size_t bufBytes = AUDIO_WINDOW_SAMPLES * sizeof(int16_t);
+    if (psramFound()) {
+        audioBuf = (int16_t*)ps_malloc(bufBytes);
+        Serial.printf("[MEM] Buffer %.1f KB alocado na PSRAM\n", bufBytes / 1024.f);
     } else {
-        ads.setGain(GAIN_TWOTHIRDS);  // ±6.144 V
-        ads.setDataRate(RATE_ADS1115_860SPS);
-        Serial.println("[ADS1115] OK");
+        audioBuf = (int16_t*)malloc(bufBytes);
+        Serial.printf("[MEM] Buffer %.1f KB alocado na heap\n", bufBytes / 1024.f);
+    }
+    if (!audioBuf) {
+        Serial.println("[MEM] ERRO: sem memória para o buffer de áudio!");
+        ESP.restart();
     }
 
+    i2sInit();
     connectWiFi();
 
     mqtt.setServer(MQTT_HOST, MQTT_PORT);
     mqtt.setBufferSize(512);
     mqtt.setKeepAlive(30);
     mqttReconnect();
-
-    lastSampleUs = micros();
-    lastStatusMs = millis();
 }
 
 // ── Loop ──────────────────────────────────────────────────────
+static uint32_t lastStatusMs = 0;
+
 void loop() {
-    // Reconexão automática
     if (WiFi.status() != WL_CONNECTED) connectWiFi();
     if (!mqtt.connected())             mqttReconnect();
     mqtt.loop();
 
-    // Coleta de amostras
-    uint32_t now = micros();
-    if (now - lastSampleUs >= SAMPLE_INTERVAL_US) {
-        lastSampleUs = now;
+    // Lê amostras do microfone I2S
+    // O I2S retorna 32 bits por amostra (INMP441) → shift para obter 16 bits
+    int32_t rawSample32;
+    size_t  bytesRead = 0;
+    i2s_read(I2S_NUM_0, &rawSample32, sizeof(rawSample32),
+             &bytesRead, portMAX_DELAY);
 
-        // Lê ADS1115 canal 0 (ou simula se não disponível)
-        int16_t raw    = ads.readADC_SingleEnded(0);
-        float   voltV  = ads.computeVolts(raw);
-        float   voltUV = voltV * 1e6f;  // µV
+    if (bytesRead == sizeof(rawSample32) && audioIdx < AUDIO_WINDOW_SAMPLES) {
+        audioBuf[audioIdx++] = (int16_t)(rawSample32 >> 14);
 
-        sampleBuf[sampleIdx++] = voltUV;
-
-        if (sampleIdx >= EI_WINDOW_SIZE) {
-            sampleIdx  = 0;
+        if (audioIdx >= AUDIO_WINDOW_SAMPLES) {
+            audioIdx   = 0;
             bufferFull = true;
         }
-
-#ifdef DEBUG_MQTT
-        // Publica amostras brutas (apenas em debug — alto volume)
-        StaticJsonDocument<64> raw_doc;
-        raw_doc["v"]  = voltUV;
-        raw_doc["ts"] = millis();
-        char raw_payload[64];
-        serializeJson(raw_doc, raw_payload, sizeof(raw_payload));
-        mqtt.publish(TOPIC_RAW, raw_payload);
-#endif
     }
 
-    // Inferência quando o buffer estiver cheio
+    // Inferência quando a janela estiver cheia
     if (bufferFull) {
         bufferFull = false;
-        // runInference();       // ← habilitar com modelo real
-        runInferenceMock();      // ← remover quando modelo real estiver pronto
+        // runInference();     // ← habilitar com modelo EI real
+        runInferenceMock();    // ← remover ao integrar modelo
     }
 
-    // Heartbeat de status
-    if (millis() - lastStatusMs >= STATUS_INTERVAL_MS) {
+    // Heartbeat a cada 5 s
+    if (millis() - lastStatusMs >= 5000UL) {
         lastStatusMs = millis();
         publishStatus();
     }
