@@ -7,9 +7,9 @@
  *   → resultado JSON → MQTT → Mosquitto → n8n → TimescaleDB
  *
  * Tópicos publicados (Mosquitto local):
- *   emg/inference/<DEVICE_ID>
+ *   sound/inference/<DEVICE_ID>
  *     {"label":"chuva","confidence":0.92,"ts":12345,"device":"..."}
- *   emg/status/<DEVICE_ID>
+ *   sound/status/<DEVICE_ID>
  *     {"uptime_s":60,"heap":200000,"rssi":-52}
  *
  * Hardware testado:
