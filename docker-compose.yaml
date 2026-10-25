@@ -69,6 +69,10 @@ services:
     image: nousresearch/hermes-agent:latest
     container_name: hermes-agent
     restart: unless-stopped
+    # s6-rc marca um serviço como essential e ignora SIGTERM;
+    # stop_grace_period reduz o tempo de espera antes do SIGKILL
+    stop_signal: SIGTERM
+    stop_grace_period: 5s
     ports:
       - "127.0.0.1:8080:8080"
     environment:
@@ -113,7 +117,14 @@ services:
       - GF_DATABASE_NAME=${POSTGRES_DB}
       - GF_DATABASE_USER=${POSTGRES_USER}
       - GF_DATABASE_PASSWORD=${POSTGRES_PASSWORD}
-      - GF_DATABASE_SSL_MODE=require
+      - GF_DATABASE_SSL_MODE=disable
+    healthcheck:
+      test:
+        ["CMD-SHELL", "wget -qO- http://localhost:3000/api/health | grep -q ok"]
+      interval: 15s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
     volumes:
       - grafana_data:/var/lib/grafana
       - ./grafana/provisioning:/etc/grafana/provisioning
@@ -172,7 +183,11 @@ services:
       - mosquitto_data:/mosquitto/data
       - mosquitto_log:/mosquitto/log
     healthcheck:
-      test: ["CMD-SHELL", "mosquitto_pub -h localhost -t health -m ping -q 0 || exit 1"]
+      test:
+        [
+          "CMD-SHELL",
+          "mosquitto_pub -h localhost -t health -m ping -q 0 || exit 1",
+        ]
       interval: 10s
       timeout: 5s
       retries: 3
