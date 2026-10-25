@@ -1,34 +1,63 @@
 CREATE EXTENSION IF NOT EXISTS timescaledb;
 
 -- ─────────────────────────────────────────────────────────────
--- Resultados de inferência do modelo Edge Impulse (ESP32-S3)
--- Classificação de som ambiente — populada pelo workflow n8n via MQTT
+-- Dispositivos registrados (ESP32-S3 com microfone INMP441)
 -- ─────────────────────────────────────────────────────────────
-CREATE TABLE IF NOT EXISTS emg_inference (
+CREATE TABLE IF NOT EXISTS devices (
+    device_id     TEXT         PRIMARY KEY,
+    name          TEXT,
+    location      TEXT,
+    registered_at TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+
+-- ─────────────────────────────────────────────────────────────
+-- Eventos de classificação de som ambiente
+-- Populada pelo workflow n8n via MQTT topic sound/inference/<id>
+-- ─────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS sound_events (
     time        TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
     device_id   TEXT         NOT NULL,
     label       TEXT         NOT NULL,
     confidence  FLOAT4       NOT NULL CHECK (confidence BETWEEN 0 AND 1),
+    location    TEXT,
     raw_json    JSONB
 );
 
-SELECT create_hypertable('emg_inference', 'time', if_not_exists => TRUE);
+SELECT create_hypertable('sound_events', 'time', if_not_exists => TRUE);
 
-CREATE INDEX IF NOT EXISTS idx_emg_inference_device_time
-    ON emg_inference (device_id, time DESC);
+CREATE INDEX IF NOT EXISTS idx_sound_events_device_time
+    ON sound_events (device_id, time DESC);
+
+CREATE INDEX IF NOT EXISTS idx_sound_events_label_time
+    ON sound_events (label, time DESC);
 
 -- ─────────────────────────────────────────────────────────────
--- Amostras brutas EMG (opcional — para replay ou análise offline)
--- Populada diretamente pelo Python (captar_Dados.py → psycopg2)
+-- Agregação contínua: contagem e confiança média por hora
+-- Atualizada automaticamente pelo TimescaleDB background worker
 -- ─────────────────────────────────────────────────────────────
-CREATE TABLE IF NOT EXISTS emg_raw (
-    time        TIMESTAMPTZ  NOT NULL,
-    device_id   TEXT         NOT NULL,
-    channel     SMALLINT     NOT NULL DEFAULT 0,
-    voltage_uv  FLOAT4       NOT NULL
-);
+CREATE MATERIALIZED VIEW IF NOT EXISTS sound_events_hourly
+WITH (timescaledb.continuous) AS
+SELECT
+    time_bucket('1 hour', time) AS hour,
+    device_id,
+    label,
+    COUNT(*)        AS event_count,
+    AVG(confidence) AS avg_confidence
+FROM sound_events
+GROUP BY hour, device_id, label;
 
-SELECT create_hypertable('emg_raw', 'time', if_not_exists => TRUE);
+-- Política de refresh: mantém a vista atualizada a cada hora,
+-- cobrindo as últimas 7 dias
+SELECT add_continuous_aggregate_policy('sound_events_hourly',
+    start_offset => INTERVAL '7 days',
+    end_offset   => INTERVAL '1 hour',
+    schedule_interval => INTERVAL '1 hour',
+    if_not_exists => TRUE);
 
-CREATE INDEX IF NOT EXISTS idx_emg_raw_device_time
-    ON emg_raw (device_id, time DESC);
+-- ─────────────────────────────────────────────────────────────
+-- Política de retenção: 90 dias de dados brutos
+-- (a agregação contínua mantém o histórico compacto)
+-- ─────────────────────────────────────────────────────────────
+SELECT add_retention_policy('sound_events',
+    INTERVAL '90 days',
+    if_not_exists => TRUE);
