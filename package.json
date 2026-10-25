@@ -38,8 +38,11 @@
     "prettier": "3.9.6"
   },
   "lint-staged": {
-    "*.{js,mjs,cjs,json,md}": [
+    "*.{js,mjs,cjs}": [
       "eslint --fix",
+      "prettier --write"
+    ],
+    "*.{json,md,yaml,yml}": [
       "prettier --write"
     ]
   }
