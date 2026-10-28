@@ -65,6 +65,15 @@ services:
     networks:
       - monitoring
 
+  hermes-init:
+    image: busybox
+    container_name: hermes-init
+    user: root
+    command: sh -c "mkdir -p /opt/data && chown -R 10000:10000 /opt/data && chmod 750 /opt/data"
+    volumes:
+      - ./hermes_data:/opt/data
+    restart: "no"
+
   hermes-agent:
     image: nousresearch/hermes-agent:latest
     container_name: hermes-agent
@@ -101,8 +110,12 @@ services:
     networks:
       - monitoring
     depends_on:
-      - ollama
-      - lightpanda
+      hermes-init:
+        condition: service_completed_successfully
+      ollama:
+        condition: service_started
+      lightpanda:
+        condition: service_started
 
   grafana:
     image: grafana/grafana:latest
