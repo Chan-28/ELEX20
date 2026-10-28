@@ -3,6 +3,3 @@ node_modules/
 .env
 .env.local
 .env.*.local
-
-# Portainer password hash (gerado localmente, não commitado)
-portainer/admin_password_hash
