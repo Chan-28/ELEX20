@@ -20,7 +20,7 @@ logger = logging.getLogger("simulador_lsl")
 try:
     from pylsl import StreamInfo, StreamOutlet, cf_float32
 except ImportError:
-    logger.error("pylsl não instalado. Execute: pip install pylsl")
+    logger.error("pylsl não instalado. Execute: uv pip install pylsl")
     sys.exit(1)
 
 
