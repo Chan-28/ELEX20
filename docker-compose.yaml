@@ -75,7 +75,7 @@ services:
     stop_signal: SIGTERM
     stop_grace_period: 5s
     ports:
-      - "127.0.0.1:8080:8080"
+      - "127.0.0.1:9119:9119"
     environment:
       - HERMES_TELEMETRY_ENABLED=false
       - LLM_PROVIDER=ollama
@@ -88,6 +88,9 @@ services:
       - SMTP_USER=${SMTP_USER:-}
       - SMTP_PASS=${SMTP_PASS:-}
       - IMAP_HOST=${IMAP_HOST:-}
+      - HERMES_DASHBOARD=true
+      - HERMES_DASHBOARD_BASIC_AUTH_USERNAME=${HERMES_DASHBOARD_USER:-admin}
+      - HERMES_DASHBOARD_BASIC_AUTH_PASSWORD=${HERMES_DASHBOARD_PASS}
       # AVISO: montar o socket Docker dá ao container controle total sobre o host.
       # Remova se o backend de terminal não for necessário.
       - DOCKER_HOST=unix:///var/run/docker.sock
@@ -199,11 +202,17 @@ services:
     image: portainer/portainer-ce:latest
     container_name: portainer
     restart: unless-stopped
+    # --admin-password-file só se aplica ao primeiro start com volume vazio.
+    # Para redefinir senha: docker compose down && docker volume rm elex20_portainer_data && docker compose up -d portainer
+    # O arquivo portainer/admin_password_hash contém hash bcrypt da senha "password".
+    # Para gerar outro: python3 -c "import bcrypt; print(bcrypt.hashpw(b'SENHA', bcrypt.gensalt()).decode())" > portainer/admin_password_hash
+    command: ["--admin-password-file", "/portainer_password"]
     ports:
       - "127.0.0.1:9000:9000"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - portainer_data:/data
+      - ./portainer/admin_password_hash:/portainer_password:ro
     networks:
       - monitoring
 
