@@ -2,7 +2,7 @@
   "__inputs": [],
   "__requires": [],
   "annotations": { "list": [] },
-  "description": "Monitoramento de sons urbanos — ESP32-S3 + Edge Impulse + TimescaleDB",
+  "description": "Monitoramento de sons urbanos com ESP32-S3 + Edge Impulse + TimescaleDB",
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 1,
