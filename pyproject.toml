@@ -41,6 +41,8 @@ dev = [
     "black>=26.5.1",
     "isort>=9.0.1",
     "ruff>=0.16.9",
+    "mypy>=1.15.0",
+    "scipy-stubs>=1.5.1",
 ]
 
 [tool.ruff]
@@ -58,3 +60,12 @@ ignore = []
 
 [tool.ruff.lint.isort]
 combine-as-imports = true
+
+[tool.mypy]
+python_version = "3.11"
+strict = false
+warn_unused_ignores = true
+warn_return_any = true
+check_untyped_defs = true
+exclude = ["hermes_data"]
+
