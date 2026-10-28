@@ -69,6 +69,7 @@ services:
     image: nousresearch/hermes-agent:latest
     container_name: hermes-agent
     restart: unless-stopped
+    command: gateway run
     # s6-rc marca um serviço como essential e ignora SIGTERM;
     # stop_grace_period reduz o tempo de espera antes do SIGKILL
     stop_signal: SIGTERM
@@ -194,6 +195,18 @@ services:
     networks:
       - monitoring
 
+  portainer:
+    image: portainer/portainer-ce:latest
+    container_name: portainer
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:9000:9000"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - portainer_data:/data
+    networks:
+      - monitoring
+
 volumes:
   timescaledb_data:
   n8n_data:
@@ -203,6 +216,7 @@ volumes:
   pyroscope_data:
   mosquitto_data:
   mosquitto_log:
+  portainer_data:
 
 networks:
   monitoring:
