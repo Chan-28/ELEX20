@@ -49,6 +49,20 @@ Toda a camada de coleta, armazenamento e visualização roda em containers Docke
 
 ---
 
+### Compatibilidade de sistemas operacionais
+
+| Recurso                         | Linux | macOS | Windows                                                         |
+| ------------------------------- | ----- | ----- | --------------------------------------------------------------- |
+| Docker Compose (stack completa) | ✅    | ✅    | ✅ Docker Desktop + WSL2                                        |
+| Python / uv / firmware          | ✅    | ✅    | ✅                                                              |
+| Coleta de logs (Alloy)          | ✅    | ✅    | ✅ via WSL2                                                     |
+| direnv (`.envrc`)               | ✅    | ✅    | ⚠️ não disponível — use `set DOCKER_HOST=...` no WSL2 ou ignore |
+| Commits com Husky               | ✅    | ✅    | ✅ Git Bash ou WSL2                                             |
+
+> **Windows**: recomenda-se usar **Docker Desktop** com backend **WSL2** e rodar todos os comandos no terminal WSL2 (Ubuntu) ou Git Bash. O PowerShell nativo pode ter limitações com as ferramentas de desenvolvimento.
+
+---
+
 ### Pré-requisitos
 
 Apenas **um programa** precisa ser instalado:
@@ -280,7 +294,9 @@ uv --version
 ```bash
 # Linux / macOS
 curl -LsSf https://astral.sh/uv/install.sh | sh
+```
 
+```powershell
 # Windows (PowerShell)
 powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
 ```
