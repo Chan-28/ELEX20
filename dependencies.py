@@ -211,7 +211,7 @@ class UVDependencyManager:
             try:
                 content = py_file.read_text(encoding="utf-8", errors="ignore")
                 found = re.findall(r"from\s+([a-zA-Z_][a-zA-Z0-9_.]*)", content)
-                found += re.findall(r"import\s+([a-zA-Z_][a-zA-Z0-9_.,\s]*)", content)
+                found += re.findall(r"import\s+([a-zA-Z_][a-zA-Z0-9_., \t]*)", content)
                 for imp in found:
                     root = imp.split(".")[0].split(",")[0].strip()
                     if not root or root.startswith("_"):
