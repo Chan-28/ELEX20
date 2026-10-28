@@ -35,7 +35,7 @@ jobs:
           python-version: "3.11"
 
       - name: Install PlatformIO
-        run: pip install --upgrade platformio
+        run: uv tool install platformio
 
       # Variáveis dummy para satisfazer os build_flags (-DWIFI_SSID=...)
       # O firmware não é executado em CI, apenas compilado.

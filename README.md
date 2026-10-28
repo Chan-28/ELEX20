@@ -1,6 +1,6 @@
-# ELEX20 - Análise Neurofisiológica Portátil
+# ELEX20 - Análise e Reconhecimento de Sons Locais
 
-Projeto para captura, classificação e visualização de sinais EMG em tempo real, usando ESP32 com Edge Impulse (inferência local), MQTT, n8n, TimescaleDB, Grafana e Python/LSL/PyQt6.
+Projeto para captura, classificação e visualização de sinais EMG em tempo real, usando ESP32 com Edge Impulse (inferência local), MQTT, n8n, TimescaleDB, Grafana e Python.
 
 ## Visão geral
 
@@ -18,15 +18,14 @@ Estrutura principal:
 
 ### Fluxo de dados
 
-```
+```text
 ESP32 (Edge Impulse, inferência EMG)
+
     → [MQTT / WiFi] → Mosquitto
     → [trigger]     → n8n (automação)
     → [insert]      → TimescaleDB
     → [query]       → Grafana (dashboards ao vivo)
 
-ESP32 (ADS1115, BLE, 1500 Hz)
-    → [BLE] → captar_Dados.py → [LSL] → filtrar_Dados.py → Grafico.py
 ```
 
 ---
@@ -39,10 +38,10 @@ Toda a camada de coleta, armazenamento e visualização roda em containers Docke
 
 | Serviço                              | Endereço                    | Usuário             | Senha      |
 | ------------------------------------ | --------------------------- | ------------------- | ---------- |
-| **Grafana** — dashboards e métricas  | http://localhost:3000       | `admin`             | `password` |
-| **n8n** — automação de fluxos        | http://localhost:5678       | criado no 1º acesso | —          |
-| **Portainer** — gerenciar containers | http://localhost:9000       | `admin`             | `password` |
-| **Hermes Dashboard** — assistente IA | http://localhost:9119       | `admin`             | `password` |
+| **Grafana** — dashboards e métricas  | <http://localhost:3000>     | `admin`             | `password` |
+| **n8n** — automação de fluxos        | <http://localhost:5678>     | criado no 1º acesso | —          |
+| **Portainer** — gerenciar containers | <http://localhost:9000>     | `admin`             | `password` |
+| **Hermes Dashboard** — assistente IA | <http://localhost:9119>     | `admin`             | `password` |
 | **Mosquitto** — broker MQTT (ESP32)  | `mqtt://localhost:1883`     | —                   | —          |
 | **TimescaleDB** — banco de dados     | interno (sem porta exposta) | `postgres`          | `password` |
 
@@ -55,8 +54,8 @@ Toda a camada de coleta, armazenamento e visualização roda em containers Docke
 Apenas **um programa** precisa ser instalado:
 
 - **Docker Engine** (Linux) **ou Docker Desktop** (Windows / macOS)
-  - Linux: https://docs.docker.com/engine/install/ubuntu/
-  - Windows / macOS: https://www.docker.com/products/docker-desktop/
+  - Linux: <https://docs.docker.com/engine/install/ubuntu/>
+  - Windows / macOS: <https://www.docker.com/products/docker-desktop/>
 
 Após instalar, verifique:
 
@@ -101,7 +100,7 @@ Todos os serviços devem aparecer como `running` ou `healthy`.
 
 #### Grafana — dashboards
 
-1. Acesse http://localhost:3000
+1. Acesse <http://localhost:3000>
 2. Entre com `admin` / `password`
 3. Os dashboards de EMG já estão pré-configurados na seção **Dashboards**
 
@@ -109,7 +108,7 @@ Todos os serviços devem aparecer como `running` ou `healthy`.
 
 O n8n exige a criação de uma conta **apenas na primeira abertura**:
 
-1. Acesse http://localhost:5678
+1. Acesse <http://localhost:5678>
 2. Preencha o formulário com nome, e-mail e senha (qualquer valor — é local)
 3. Clique em **Get started**
 4. A conta é salva automaticamente e não precisa ser criada novamente
@@ -118,13 +117,13 @@ O n8n exige a criação de uma conta **apenas na primeira abertura**:
 
 #### Portainer — gerenciamento de containers
 
-1. Acesse http://localhost:9000
+1. Acesse <http://localhost:9000>
 2. Entre com `admin` / `password`
 3. Clique em **Get Started** → **local** para ver todos os containers
 
 #### Hermes Dashboard — assistente de IA
 
-1. Acesse http://localhost:9119
+1. Acesse <http://localhost:9119>
 2. Entre com `admin` / `password`
 3. Configure os gateways (Telegram / Discord) pela interface
 
@@ -165,7 +164,7 @@ docker compose up -d
 
 Edite o arquivo `.env` com um editor de texto e altere os valores:
 
-```
+```code
 GRAFANA_ADMIN_PASSWORD=nova_senha
 HERMES_DASHBOARD_PASS=nova_senha
 POSTGRES_PASSWORD=nova_senha
@@ -189,7 +188,7 @@ docker volume rm elex20_portainer_data
 docker compose up -d portainer
 ```
 
-**Para trocar a senha do n8n:** acesse http://localhost:5678, clique no seu nome de usuário (canto inferior esquerdo) → **Settings** → **Change password**.
+**Para trocar a senha do n8n:** acesse <http://localhost:5678>, clique no seu nome de usuário (canto inferior esquerdo) → **Settings** → **Change password**.
 
 ---
 
@@ -233,7 +232,7 @@ docker volume rm elex20_portainer_data
 docker compose up -d portainer
 ```
 
-Acesse http://localhost:9000 imediatamente após este comando.
+Acesse <http://localhost:9000> imediatamente após este comando.
 
 #### n8n mostra erro de banco de dados
 
@@ -262,60 +261,78 @@ docker compose restart hermes-agent
 
 ## Pré-requisitos (Python e R)
 
-Instale e valide estes itens antes de executar o projeto Python:
-
-- Python 3.10 ou superior, e inferior a Python 3.13
+- Python **3.11** ou superior
 - R 4.5 ou superior
-- VS Code com extensões Python e relacionados
-- Git, se for clonar ou atualizar o repositório
-
-Para checar a disponibilidade dos linguagens, execute os seguintes comandos no terminal, por exemplo:
+- [uv](https://docs.astral.sh/uv/) — gerenciador de pacotes Python
+- VS Code com extensões Python
+- Git
 
 ```bash
-python --version
+python --version   # deve retornar 3.11+
 R --version
+uv --version
 ```
 
 ## Configuração do Python
 
-Na raiz do workspace `ELEX20`, crie e ative um ambiente virtual (para Python 3.12):
+### Instalar o uv (se ainda não tiver)
 
 ```bash
-(Windows)
+# Linux / macOS
+curl -LsSf https://astral.sh/uv/install.sh | sh
 
-py -3.12 -m venv .venv
-.venv\Scripts\activate
+# Windows (PowerShell)
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+```
 
-(Linux)
+### Instalar as dependências do projeto
 
-python3.12 -m venv .venv
+Na raiz do workspace `ELEX20`:
+
+```bash
+uv sync
+```
+
+Isso cria o ambiente virtual `.venv` e instala exatamente o que está em `uv.lock` — reprodutível em qualquer máquina.
+
+Para ativar o ambiente manualmente:
+
+```bash
+# Linux / macOS
 source .venv/bin/activate
 
+# Windows
+.venv\Scripts\activate
 ```
 
-Depois instale as dependências do projeto:
+### Gerenciamento de dependências (`dependencies.py`)
+
+O script `dependencies.py` é a **única interface** de gerenciamento de pacotes do projeto. Ele usa UV exclusivamente e lê o `pyproject.toml` como fonte de verdade.
 
 ```bash
-pip install -r requirements.txt
+# Verificar ambiente e sincronizar dependências faltantes
+python dependencies.py
+
+# Apenas verificar, sem instalar
+python dependencies.py --no-install
+
+# Verificar consistência do lockfile (uv.lock)
+python dependencies.py --lock-check
+
+# Sincronizar ambiente via uv sync --frozen
+python dependencies.py --sync
 ```
 
-Se quiser validar rapidamente os pacotes instalados:
+> Para adicionar uma nova dependência ao projeto, edite `pyproject.toml` e execute `uv lock` para atualizar o lockfile.
+
+IMPORTANTE: As bibliotecas `bleak` e `pylsl` requerem dependências extras no Linux:
 
 ```bash
-pip list
-```
-
-IMPORTANTE!!!
-As bibliotecas `bleak` e `pylsl` requerem dependências extras para o SO de Linux:
-
-```bash
-(bleak)
+# bleak (Bluetooth Low Energy)
 sudo apt install glib-2.0 libbluetooth-dev bluez
-(pylsl)
+# pylsl
 conda install -c conda-forge liblsl
 ```
-
-Pacotes esperados incluem `PyQt6`, `pyqtgraph`, `mne`, `numpy`, `pylsl`, `matplotlib`, `pandas`, `scipy`, `scikit-learn`, `pillow` e `bleak`.
 
 ## Configuração do R
 
@@ -383,7 +400,7 @@ python3 src/Grafico.py
 Antes de considerar o projeto pronto, confirme:
 
 1. `python --version` e `R --version` funciona.
-2. `pip install -r requirements.txt` termina sem erro.
+2. `uv sync` termina sem erro.
 3. O simulador LSL inicia antes do gráfico principal.
 4. O dispositivo BLE aparece com o nome esperado `ESP32_EMG`.
 
@@ -394,10 +411,10 @@ Antes de considerar o projeto pronto, confirme:
 Reinstale as dependências:
 
 ```bash
-pip install -r requirements.txt
+uv sync
 ```
 
-Se estiver usando ambiente virtual, confirme que ele está ativado.
+Se estiver usando ambiente virtual, confirme que ele está ativado (`source .venv/bin/activate`).
 
 ### O R não abre ou não é reconhecido
 
