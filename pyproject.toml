@@ -14,7 +14,7 @@ dependencies = [
     # MQTT — utilitários de teste e ingestão alternativa
     "paho-mqtt>=2.1.0",
     # HTTP assíncrono (integrações, webhooks)
-    "aiohttp>=3.14.3",
+    "aiohttp>=3.14.4",
     # Análise de dados leve (consultas, agregações)
     "numpy>=2.4.6",
     "pandas>=2.3.0",
