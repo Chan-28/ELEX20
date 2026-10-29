@@ -1,0 +1,47 @@
+name: Gerar e Assinar Release Automatizada
+
+on:
+  push:
+    tags:
+      - 'v*' # Dispara o processo sempre que você enviar uma tag começando com 'v' (ex: v1.0.0)
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write    # Necessário para criar a release no GitHub
+      id-token: write    # Obrigatório para a assinatura Keyless (OIDC) funcionar
+
+    steps:
+      - name: Checkout do código
+        uses: actions/checkout@v4
+
+      # 1. Instala a ferramenta de assinatura oficial da Sigstore
+      - name: Instalar Cosign
+        uses: sigstore/cosign-installer@v3.5.0
+
+      # 2. Cria alguns arquivos de exemplo para simular seus binários/artefatos
+      - name: Preparar arquivos da Release
+        run: |
+          echo "Conteúdo do software versão ${{ github.ref_name }}" > meu-app-${{ github.ref_name }}.txt
+          tar -czvf release-artefato.tar.gz meu-app-${{ github.ref_name }}.txt
+
+      # 3. Assina o arquivo digitalmente (Sem precisar de senhas ou chaves secretas)
+      - name: Assinar os artefatos da Release
+        run: |
+          cosign sign-blob --yes --output-signature release-artefato.tar.gz.sig release-artefato.tar.gz
+
+      # 4. Cria a página de Release no GitHub e anexa o arquivo junto com a assinatura dele
+      - name: Criar Release e Fazer Upload dos Assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            release-artefato.tar.gz
+            release-artefato.tar.gz.sig
+          body: |
+            Release automatizada gerada via GitHub Actions.
+            
+            **Como verificar a integridade deste arquivo:**
+            ```bash
+            cosign verify-blob --certificate-identity-regexp "https://github.com" --oidc-issuer https://githubusercontent.com --signature release-artefato.tar.gz.sig release-artefato.tar.gz
+            ```
