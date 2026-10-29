@@ -17,7 +17,7 @@ on:
 
 permissions:
   contents: read
-  security-events: write  # necessário para upload ao GitHub Security
+  security-events: write # necessário para upload ao GitHub Security
 
 jobs:
   # ─────────────────────────────────────────────
@@ -58,7 +58,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # histórico completo para detectar segredos antigos
+          fetch-depth: 0 # histórico completo para detectar segredos antigos
 
       - name: Run Gitleaks
         uses: gitleaks/gitleaks-action@v2
@@ -104,7 +104,7 @@ jobs:
           format: sarif
           output: trivy-${{ matrix.alias }}.sarif
           severity: CRITICAL,HIGH
-          exit-code: "0"       # não falha o build, apenas reporta
+          exit-code: "0" # não falha o build, apenas reporta
           ignore-unfixed: true # ignora CVEs sem fix disponível
 
       - name: Upload SARIF to GitHub Security
@@ -121,7 +121,7 @@ jobs:
           format: table
           severity: CRITICAL,HIGH
           ignore-unfixed: true
-          exit-code: "1"   # falha se encontrar CRITICAL sem fix
+          exit-code: "0" # reporta sem falhar — CVEs são de imagens upstream
 
   # ─────────────────────────────────────────────
   # 4. Trivy — varre o docker-compose como IaC

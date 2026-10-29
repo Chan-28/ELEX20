@@ -12,7 +12,6 @@ Fonte única de verdade: pyproject.toml + uv.lock
 Não lê nem gera requirements.txt.
 """
 
-import os
 import re
 import shutil
 import subprocess

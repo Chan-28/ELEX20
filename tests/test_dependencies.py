@@ -3,9 +3,7 @@ Testes unitários para dependencies.py
 """
 
 import json
-import subprocess
 import sys
-import tomllib
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -100,7 +98,7 @@ def test_pkg_name_maps_cv2():
     assert m._pkg_name("cv2") == "opencv-python"
 
 
-def test_pkg_name_maps_PIL():
+def test_pkg_name_maps_pil():
     m = UVDependencyManager.__new__(UVDependencyManager)
     assert m._pkg_name("PIL") == "pillow"
 
