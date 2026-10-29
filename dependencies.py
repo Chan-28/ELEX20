@@ -51,9 +51,7 @@ class UVDependencyManager:
 
     def _uv_version(self) -> str:
         try:
-            r = subprocess.run(
-                ["uv", "--version"], capture_output=True, text=True, timeout=10
-            )
+            r = subprocess.run(["uv", "--version"], capture_output=True, text=True, timeout=10)
             return r.stdout.split()[1] if r.returncode == 0 else "desconhecida"
         except Exception:
             return "desconhecida"
@@ -66,9 +64,9 @@ class UVDependencyManager:
             f.write(line + "\n")
 
     def _section(self, title: str) -> None:
-        print(f"\n{Colors.BOLD}{Colors.MAGENTA}{'='*60}")
+        print(f"\n{Colors.BOLD}{Colors.MAGENTA}{'=' * 60}")
         print(f"  {title}")
-        print(f"{'='*60}{Colors.RESET}\n")
+        print(f"{'=' * 60}{Colors.RESET}\n")
 
     # ──────────────────────────────── verificação ────────────────────────────
 
@@ -89,9 +87,7 @@ class UVDependencyManager:
             print(f"{Colors.BOLD}{name}:{Colors.RESET} {color}{value}{Colors.RESET}")
 
         if not self.uv_available:
-            print(
-                f"\n{Colors.YELLOW}⚠ UV não encontrado. Instale em: https://docs.astral.sh/uv/{Colors.RESET}"
-            )
+            print(f"\n{Colors.YELLOW}⚠ UV não encontrado. Instale em: https://docs.astral.sh/uv/{Colors.RESET}")
 
         if not self.pyproject_file.exists():
             print(f"\n{Colors.RED}✗ pyproject.toml ausente — execute na raiz do projeto.{Colors.RESET}")
@@ -104,8 +100,14 @@ class UVDependencyManager:
 
         patterns_glob = ["**/__pycache__", "**/*.pyc", "**/*.pyo", "**/*.egg-info"]
         dirs_direct = [
-            ".pytest_cache", ".mypy_cache", ".ruff_cache",
-            ".eggs", "dist", "build", "htmlcov", ".uv_cache",
+            ".pytest_cache",
+            ".mypy_cache",
+            ".ruff_cache",
+            ".eggs",
+            "dist",
+            "build",
+            "htmlcov",
+            ".uv_cache",
         ]
 
         removed = 0
@@ -149,7 +151,9 @@ class UVDependencyManager:
         try:
             r = subprocess.run(
                 ["uv", "pip", "list", "--format=json"],
-                capture_output=True, text=True, timeout=30,
+                capture_output=True,
+                text=True,
+                timeout=30,
             )
             if r.returncode == 0:
                 pkgs = json.loads(r.stdout)
@@ -179,26 +183,75 @@ class UVDependencyManager:
         self._section("🔍 DETECÇÃO DE IMPORTS")
 
         stdlib = {
-            "os", "sys", "json", "csv", "re", "math", "random", "datetime",
-            "collections", "itertools", "functools", "operator", "pathlib",
-            "subprocess", "shutil", "tempfile", "glob", "io", "time",
-            "hashlib", "hmac", "secrets", "struct", "codecs", "string",
-            "urllib", "http", "socket", "ssl", "asyncio", "threading",
-            "multiprocessing", "logging", "traceback", "warnings", "inspect",
-            "copy", "pprint", "enum", "types", "numbers", "decimal",
-            "statistics", "sqlite3", "pickle", "zipfile", "tarfile",
-            "configparser", "email", "mimetypes", "base64", "binascii",
-            "html", "xml", "unittest", "doctest", "pdb", "gc", "abc",
-            "argparse", "tomllib", "toml", "typing",
+            "os",
+            "sys",
+            "json",
+            "csv",
+            "re",
+            "math",
+            "random",
+            "datetime",
+            "collections",
+            "itertools",
+            "functools",
+            "operator",
+            "pathlib",
+            "subprocess",
+            "shutil",
+            "tempfile",
+            "glob",
+            "io",
+            "time",
+            "hashlib",
+            "hmac",
+            "secrets",
+            "struct",
+            "codecs",
+            "string",
+            "urllib",
+            "http",
+            "socket",
+            "ssl",
+            "asyncio",
+            "threading",
+            "multiprocessing",
+            "logging",
+            "traceback",
+            "warnings",
+            "inspect",
+            "copy",
+            "pprint",
+            "enum",
+            "types",
+            "numbers",
+            "decimal",
+            "statistics",
+            "sqlite3",
+            "pickle",
+            "zipfile",
+            "tarfile",
+            "configparser",
+            "email",
+            "mimetypes",
+            "base64",
+            "binascii",
+            "html",
+            "xml",
+            "unittest",
+            "doctest",
+            "pdb",
+            "gc",
+            "abc",
+            "argparse",
+            "tomllib",
+            "toml",
+            "typing",
         }
 
         imports: set[str] = set()
         std: set[str] = set()
 
-        py_files = [
-            p for p in self.project_root.rglob("*.py")
-            if ".venv" not in p.parts and "venv" not in p.parts
-        ]
+        py_files = [p for p in self.project_root.rglob("*.py") if ".venv" not in p.parts and "venv" not in p.parts]
 
         if not py_files:
             print(f"{Colors.YELLOW}⚠ Nenhum arquivo Python encontrado{Colors.RESET}")

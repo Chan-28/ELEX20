@@ -70,14 +70,13 @@ jobs:
           uv export --frozen --no-dev -o /tmp/requirements-audit.txt
           uv tool run pip-audit \
             --requirement /tmp/requirements-audit.txt \
-            --output-format cyclonedx-json \
+            --format cyclonedx-json \
             > pip-audit-report.json || true
 
-      - name: Fail on CRITICAL CVEs
+      - name: Fail on known CVEs
         run: |
           uv tool run pip-audit \
             --requirement /tmp/requirements-audit.txt \
-            --severity CRITICAL \
             --strict
         continue-on-error: false
 
@@ -89,9 +88,6 @@ jobs:
           path: pip-audit-report.json
           retention-days: 30
 
-  # ─────────────────────────────────────────────
-  # 3. Verifica consistência do uv.lock
-  # ─────────────────────────────────────────────
   lock-check:
     name: uv.lock consistency
     runs-on: ubuntu-latest
@@ -106,9 +102,6 @@ jobs:
       - name: Check lock file is up to date
         run: uv lock --check
 
-  # ─────────────────────────────────────────────
-  # 4. Testes + cobertura
-  # ─────────────────────────────────────────────
   test:
     name: Pytest + Coverage
     runs-on: ubuntu-latest
