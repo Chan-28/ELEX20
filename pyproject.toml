@@ -14,7 +14,7 @@ dependencies = [
     # MQTT — utilitários de teste e ingestão alternativa
     "paho-mqtt>=2.1.0",
     # HTTP assíncrono (integrações, webhooks)
-    "aiohttp>=3.14.3",
+    "aiohttp>=3.14.4",
     # Análise de dados leve (consultas, agregações)
     "numpy>=2.4.6",
     "pandas>=2.3.0",
@@ -41,9 +41,14 @@ dev = [
     "black>=26.5.1",
     "isort>=9.0.1",
     "ruff>=0.16.9",
+    "mypy>=1.15.0",
+    "scipy-stubs>=1.5.1",
 ]
 
 [tool.ruff]
+line-length = 120
+
+[tool.ruff.lint]
 select = [
     "E", "F",   # erros e estilo
     "I",        # organização de imports
@@ -56,5 +61,18 @@ select = [
 ]
 ignore = []
 
+[tool.ruff.lint.per-file-ignores]
+"dependencies.py" = ["S603", "S607", "S110"]
+"tests/*.py" = ["S101", "N802"]
+
 [tool.ruff.lint.isort]
 combine-as-imports = true
+
+[tool.mypy]
+python_version = "3.11"
+strict = false
+warn_unused_ignores = true
+warn_return_any = true
+check_untyped_defs = true
+exclude = ["hermes_data"]
+

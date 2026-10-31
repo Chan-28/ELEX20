@@ -3,9 +3,7 @@ Testes unitários para dependencies.py
 """
 
 import json
-import subprocess
 import sys
-import tomllib
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -33,6 +31,7 @@ def mgr(tmp_path, monkeypatch):
 
 # ── _check_uv ────────────────────────────────────────────────────────────────
 
+
 def test_check_uv_returns_true_when_present():
     with patch("subprocess.run") as mock_run:
         mock_run.return_value = MagicMock(returncode=0)
@@ -54,6 +53,7 @@ def test_check_uv_returns_false_on_nonzero():
 
 
 # ── read_pyproject_toml ───────────────────────────────────────────────────────
+
 
 def test_read_pyproject_toml_returns_dependencies(mgr):
     deps = mgr.read_pyproject_toml()
@@ -83,8 +83,7 @@ def test_read_pyproject_toml_strips_version_specifiers(mgr):
 def test_read_pyproject_toml_ignores_platform_markers(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     (tmp_path / "pyproject.toml").write_text(
-        '[project]\nname = "t"\nversion = "0.1.0"\n'
-        'dependencies = ["uvloop>=0.20; sys_platform != \'win32\'"]\n',
+        '[project]\nname = "t"\nversion = "0.1.0"\ndependencies = ["uvloop>=0.20; sys_platform != \'win32\'"]\n',
         encoding="utf-8",
     )
     m = UVDependencyManager()
@@ -95,12 +94,13 @@ def test_read_pyproject_toml_ignores_platform_markers(tmp_path, monkeypatch):
 
 # ── _pkg_name (mapeamento de imports) ────────────────────────────────────────
 
+
 def test_pkg_name_maps_cv2():
     m = UVDependencyManager.__new__(UVDependencyManager)
     assert m._pkg_name("cv2") == "opencv-python"
 
 
-def test_pkg_name_maps_PIL():
+def test_pkg_name_maps_pil():
     m = UVDependencyManager.__new__(UVDependencyManager)
     assert m._pkg_name("PIL") == "pillow"
 
@@ -111,6 +111,7 @@ def test_pkg_name_passthrough_unknown():
 
 
 # ── check_missing_packages ────────────────────────────────────────────────────
+
 
 def test_check_missing_packages_installed(mgr):
     mgr.installed_packages = {"numpy": "1.26.0", "pandas": "2.0.0"}
@@ -134,6 +135,7 @@ def test_check_missing_packages_partial(mgr):
 
 
 # ── detect_python_files ───────────────────────────────────────────────────────
+
 
 def test_detect_python_files_finds_imports(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
@@ -180,6 +182,7 @@ def test_detect_python_files_excludes_venv(tmp_path, monkeypatch):
 
 # ── get_installed_packages ────────────────────────────────────────────────────
 
+
 def test_get_installed_packages_parses_json(mgr):
     fake_output = json.dumps([{"name": "numpy", "version": "1.26.0"}])
     with patch("subprocess.run") as mock_run:
@@ -196,6 +199,7 @@ def test_get_installed_packages_returns_false_on_error(mgr):
 
 
 # ── install_packages ──────────────────────────────────────────────────────────
+
 
 def test_install_packages_calls_uv(mgr):
     with patch("subprocess.run") as mock_run:
@@ -222,6 +226,7 @@ def test_install_packages_fails_without_uv(mgr):
 
 # ── check_lock ────────────────────────────────────────────────────────────────
 
+
 def test_check_lock_returns_true_when_consistent(mgr):
     with patch("subprocess.run") as mock_run:
         mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
@@ -237,6 +242,7 @@ def test_check_lock_returns_false_when_stale(mgr):
 
 
 # ── sync ──────────────────────────────────────────────────────────────────────
+
 
 def test_sync_calls_uv_sync_frozen(mgr):
     with patch("subprocess.run") as mock_run:
