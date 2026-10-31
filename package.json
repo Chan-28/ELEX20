@@ -25,7 +25,7 @@
   },
   "homepage": "https://github.com/Chan-28/ELEX20#readme",
   "dependencies": {
-    "openclaw": "^0.0.1"
+    "openclaw": "^2026.6.6"
   },
   "devDependencies": {
     "@commitlint/cli": "^21.2.2",
