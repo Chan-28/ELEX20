@@ -11,23 +11,23 @@ on:
     paths:
       - "docker-compose.yaml"
   schedule:
-    # Varredura semanal toda segunda às 06:00 UTC
-    - cron: "0 6 * * 1"
+    # Varredura às 12:00 UTC
+    - cron: "0 12 * * *"
   workflow_dispatch:
 
 permissions:
-  contents: read
-  security-events: write # necessário para upload ao GitHub Security
+  contents: read # security-events: write só nos jobs que enviam SARIF
 
 jobs:
-  # ─────────────────────────────────────────────
   # 1. Valida sintaxe do docker-compose.yaml
-  # ─────────────────────────────────────────────
+
   validate-compose:
     name: Validate docker-compose
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
       - name: Install Docker Compose
         run: |
@@ -49,88 +49,101 @@ jobs:
             fi
           done
 
-  # ─────────────────────────────────────────────
-  # 2. Escaneia segredos no repositório
-  # ─────────────────────────────────────────────
+  # 2. Escaneia "leaks" no repositório
+
   secrets-scan:
     name: Secrets Detection (Gitleaks)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0 # histórico completo para detectar segredos antigos
+          persist-credentials: false
 
       - name: Run Gitleaks
-        uses: gitleaks/gitleaks-action@v2
+        uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
 
-  # ─────────────────────────────────────────────
-  # 3. Trivy — varre cada imagem do compose
-  # ─────────────────────────────────────────────
-  trivy-scan:
-    name: Trivy Image Scan (${{ matrix.image }})
+  # 3. Varre cada imagem do compose
+
+  grype-scan:
+    name: Grype Image Scan (${{ matrix.image }})
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write # upload do SARIF ao GitHub Security
     strategy:
       fail-fast: false
       matrix:
         include:
-          - image: "timescale/timescaledb:latest-pg16"
+          - image: "timescale/timescaledb:2.31.0-pg16"
             alias: timescaledb
-          - image: "docker.n8n.io/n8nio/n8n:latest"
+          - image: "docker.n8n.io/n8nio/n8n:2.46.3"
             alias: n8n
           - image: "ollama/ollama:latest"
             alias: ollama
-          - image: "grafana/grafana:latest"
+          - image: "grafana/grafana:13.3.0"
             alias: grafana
-          - image: "grafana/loki:latest"
+          - image: "grafana/loki:3.7.9"
             alias: loki
           - image: "grafana/alloy:latest"
             alias: alloy
           - image: "grafana/pyroscope:latest"
             alias: pyroscope
+          - image: "eclipse-mosquitto:2"
+            alias: mosquitto
+          - image: "lightpanda/browser:latest"
+            alias: lightpanda
+          - image: "nousresearch/hermes-agent:latest"
+            alias: hermes-agent
 
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Pull image
-        run: docker pull ${{ matrix.image }}
-
-      - name: Run Trivy vulnerability scan
-        uses: aquasecurity/trivy-action@master
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
-          image-ref: ${{ matrix.image }}
-          format: sarif
-          output: trivy-${{ matrix.alias }}.sarif
-          severity: CRITICAL,HIGH
-          exit-code: "0" # não falha o build, apenas reporta
-          ignore-unfixed: true # ignora CVEs sem fix disponível
+          persist-credentials: false
+
+      - name: Run Grype vulnerability scan
+        id: scan
+        uses: anchore/scan-action@e1165082ffb1fe366ebaf02d8526e7c4989ea9d2 # v7
+        with:
+          image: ${{ matrix.image }}
+          output-format: sarif
+          severity-cutoff: high
+          only-fixed: true # ignora CVEs sem fix disponível
+          fail-build: false # não falha o build, apenas reporta
+          cache-db: true
 
       - name: Upload SARIF to GitHub Security
-        if: always()
-        uses: github/codeql-action/upload-sarif@v3
+        if: always() && steps.scan.outputs.sarif != ''
+        uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4
         with:
-          sarif_file: trivy-${{ matrix.alias }}.sarif
-          category: trivy-${{ matrix.alias }}
+          sarif_file: ${{ steps.scan.outputs.sarif }}
+          category: grype-${{ matrix.alias }}
 
-      - name: Run Trivy (table summary — PR comment)
-        uses: aquasecurity/trivy-action@master
+      - name: Run Grype (table summary)
+        uses: anchore/scan-action@e1165082ffb1fe366ebaf02d8526e7c4989ea9d2 # v7
         with:
-          image-ref: ${{ matrix.image }}
-          format: table
-          severity: CRITICAL,HIGH
-          ignore-unfixed: true
-          exit-code: "0" # reporta sem falhar — CVEs são de imagens upstream
+          image: ${{ matrix.image }}
+          output-format: table
+          severity-cutoff: high
+          only-fixed: true
+          fail-build: false # reporta sem falhar — CVEs são de imagens upstream
+          cache-db: true
 
-  # ─────────────────────────────────────────────
-  # 4. Trivy — varre o docker-compose como IaC
-  # ─────────────────────────────────────────────
+  # 4. Varre o docker-compose como IaC
+
   trivy-config:
     name: Trivy IaC / Config Scan
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write # upload do SARIF ao GitHub Security
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
       - name: Scan docker-compose.yaml for misconfigurations
         uses: aquasecurity/trivy-action@master
@@ -144,14 +157,65 @@ jobs:
 
       - name: Upload SARIF
         if: always()
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4
         with:
           sarif_file: trivy-config.sarif
           category: trivy-config
 
-  # ─────────────────────────────────────────────
-  # 5. Resume final — falha se algum job crítico falhou
-  # ─────────────────────────────────────────────
+  # 5. OWASP ZAP baseline (passivo) contra Grafana e n8n
+
+  zap-baseline:
+    name: OWASP ZAP Baseline (${{ matrix.alias }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - alias: grafana
+            url: "http://localhost:3000"
+          - alias: n8n
+            url: "http://localhost:5678"
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      # Stack efêmera no runner, com os valores de exemplo do .env.example.
+      # O compose já publica Grafana/n8n em 127.0.0.1; o ZAP usa --network host.
+      - name: Subir o serviço alvo
+        run: |
+          cp .env.example .env
+          docker compose up -d --wait timescaledb ${{ matrix.alias }}
+          for i in $(seq 1 30); do
+            curl -s -o /dev/null "${{ matrix.url }}" && exit 0
+            sleep 5
+          done
+          echo "::error ::${{ matrix.alias }} não respondeu em ${{ matrix.url }}"
+          exit 1
+
+      - name: Run ZAP baseline
+        run: |
+          mkdir -p zap-out && chmod 777 zap-out
+          # -I: avisos não falham o job (achados de produto upstream)
+          docker run --rm --network host -v "$PWD/zap-out:/zap/wrk:rw" \
+            ghcr.io/zaproxy/zaproxy:stable zap-baseline.py \
+            -t "${{ matrix.url }}" \
+            -r zap-${{ matrix.alias }}.html -J zap-${{ matrix.alias }}.json -I
+
+      - name: Upload ZAP report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: zap-${{ matrix.alias }}
+          path: zap-out/
+          retention-days: 30
+
+      - name: Derrubar a stack
+        if: always()
+        run: docker compose down
+
+  # 6. Resumo final
+
   security-gate:
     name: Security Gate
     runs-on: ubuntu-latest
