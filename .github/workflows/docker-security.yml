@@ -29,13 +29,9 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Install Docker Compose
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y docker-compose-plugin
-
+      # O Docker Compose já vem instalado no ubuntu-latest.
       - name: Validate syntax
-        run: docker compose -f docker-compose.yaml config --quiet
+        run: docker compose --env-file .env.example -f docker-compose.yaml config --quiet
 
       - name: Check for required env vars
         run: |
@@ -182,16 +178,24 @@ jobs:
 
       # Stack efêmera no runner, com os valores de exemplo do .env.example.
       # O compose já publica Grafana/n8n em 127.0.0.1; o ZAP usa --network host.
-      - name: Subir o serviço alvo
+      - name: Up service stack
         run: |
           cp .env.example .env
           docker compose up -d --wait timescaledb ${{ matrix.alias }}
           for i in $(seq 1 30); do
-            curl -s -o /dev/null "${{ matrix.url }}" && exit 0
+            curl -sS --max-time 5 -o /dev/null "${{ matrix.url }}" && exit 0
             sleep 5
           done
-          echo "::error ::${{ matrix.alias }} não respondeu em ${{ matrix.url }}"
+          echo "::error ::${{ matrix.alias }} did not respond in ${{ matrix.url }}"
           exit 1
+
+      - name: Target diagnostics
+        if: failure()
+        run: |
+          docker compose ps
+          docker compose logs --tail=60 ${{ matrix.alias }}
+          docker inspect ${{ matrix.alias }} --format '{{json .State.Health}}' || true
+          curl -v --max-time 5 "${{ matrix.url }}" || true
 
       - name: Run ZAP baseline
         run: |
@@ -210,7 +214,7 @@ jobs:
           path: zap-out/
           retention-days: 30
 
-      - name: Derrubar a stack
+      - name: Down service stack
         if: always()
         run: docker compose down
 
@@ -227,7 +231,7 @@ jobs:
           RESULTS='${{ toJSON(needs) }}'
           FAILED=$(echo "$RESULTS" | grep -c '"result": "failure"' || true)
           if [ "$FAILED" -gt 0 ]; then
-            echo "::error ::$FAILED job(s) de segurança falharam. Revise os resultados acima."
+            echo "::error ::$FAILED security checks failed."
             exit 1
           fi
-          echo "✅ Todos os checks de segurança passaram."
+          echo "✅ All security checks passed."
