@@ -206,7 +206,7 @@ docker logs <nome-do-container> --tail 30
 
 #### n8n mostra erro de banco de dados
 
-O n8n usa um banco dedicado (`n8n`) no TimescaleDB. Se o banco não existir:
+O n8n usa um banco dedicado (`n8n`) no TimescaleDB, criado automaticamente pelo `timescaledb/create-n8n-db.sh` na primeira subida com volume vazio. Se o volume já existia antes disso e o banco não foi criado (`database "n8n" does not exist` nos logs):
 
 ```bash
 docker exec -it timescaledb psql -U postgres -c "CREATE DATABASE n8n OWNER postgres;"
