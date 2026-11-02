@@ -1,6 +1,6 @@
 services:
   timescaledb:
-    image: timescale/timescaledb:latest-pg16
+    image: timescale/timescaledb:2.31.0-pg16
     container_name: timescaledb
     restart: unless-stopped
     # Porta não exposta ao host — acesso apenas pela rede interna 'monitoring'
@@ -19,8 +19,30 @@ services:
     networks:
       - monitoring
 
+  # Cria o banco do n8n se ainda não existir (idempotente; funciona em volumes novos e antigos)
+  n8n-db-init:
+    image: timescale/timescaledb:2.31.0-pg16
+    container_name: n8n-db-init
+    restart: "no"
+    environment:
+      - PGHOST=timescaledb
+      - PGUSER=${POSTGRES_USER}
+      - PGPASSWORD=${POSTGRES_PASSWORD}
+      - PGDATABASE=${POSTGRES_DB}
+      - N8N_DB=${N8N_DB:-n8n}
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        psql -tAc "SELECT 1 FROM pg_database WHERE datname='$$N8N_DB'" | grep -q 1 ||
+        psql -v ON_ERROR_STOP=1 -c "CREATE DATABASE \"$$N8N_DB\""
+    networks:
+      - monitoring
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+
   n8n:
-    image: docker.n8n.io/n8nio/n8n:latest
+    image: docker.n8n.io/n8nio/n8n:2.46.3
     container_name: n8n
     restart: unless-stopped
     ports:
@@ -42,8 +64,8 @@ services:
     networks:
       - monitoring
     depends_on:
-      timescaledb:
-        condition: service_healthy
+      n8n-db-init:
+        condition: service_completed_successfully
       mosquitto:
         condition: service_healthy
 
@@ -119,7 +141,7 @@ services:
         condition: service_started
 
   grafana:
-    image: grafana/grafana:latest
+    image: grafana/grafana:13.3.0
     container_name: grafana
     restart: unless-stopped
     ports:
@@ -153,7 +175,7 @@ services:
         condition: service_healthy
 
   loki:
-    image: grafana/loki:latest
+    image: grafana/loki:3.7.9
     container_name: loki
     restart: unless-stopped
     # Porta não exposta ao host — acesso apenas pela rede interna
@@ -215,24 +237,6 @@ services:
     networks:
       - monitoring
 
-  portainer:
-    image: portainer/portainer-ce:latest
-    container_name: portainer
-    restart: unless-stopped
-    # --admin-password-file só se aplica ao primeiro start com volume vazio.
-    # Para redefinir senha: docker compose down && docker volume rm elex20_portainer_data && docker compose up -d portainer
-    # O arquivo portainer/admin_password_hash contém hash bcrypt da senha "password".
-    # Para gerar outro: python3 -c "import bcrypt; print(bcrypt.hashpw(b'SENHA', bcrypt.gensalt()).decode())" > portainer/admin_password_hash
-    command: ["--admin-password-file", "/portainer_password"]
-    ports:
-      - "127.0.0.1:9000:9000"
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-      - portainer_data:/data
-      - ./portainer/admin_password_hash:/portainer_password:ro
-    networks:
-      - monitoring
-
 volumes:
   timescaledb_data:
   n8n_data:
@@ -242,7 +246,6 @@ volumes:
   pyroscope_data:
   mosquitto_data:
   mosquitto_log:
-  portainer_data:
 
 networks:
   monitoring:

@@ -8,7 +8,11 @@ on:
 
 jobs:
   claude:
-    if: ${{ github.event_name == 'pull_request' || contains(github.event.comment.body, '/claude') }}
+    # Comentário só dispara o job se vier de quem tem acesso ao repositório;
+    # sem isso, qualquer pessoa gasta a chave do OpenRouter num repo público.
+    if: >-
+      contains(github.event.comment.body, '/claude') &&
+      contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -18,10 +22,10 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Run Claude Code Action
-        uses: anthropics/claude-code-action@v1
+        uses: anthropics/claude-code-action@d535f5172dec02b204866b393d6b20b9b2aaf98d # v1
         env:
           ANTHROPIC_BASE_URL: "https://openrouter.ai/api"
           ANTHROPIC_AUTH_TOKEN: ${{ secrets.OPENROUTER_API_KEY }}

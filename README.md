@@ -1,6 +1,6 @@
 # ELEX20 - Análise e Reconhecimento de Sons Locais
 
-Projeto para captura, classificação e visualização de sinais EMG em tempo real, usando ESP32 com Edge Impulse (inferência local), MQTT, n8n, TimescaleDB, Grafana e Python.
+Projeto para captura, classificação e visualização de sons urbanos em tempo real, usando ESP32 com Edge Impulse (inferência local), MQTT, n8n, TimescaleDB, Grafana e Python.
 
 ## Visão geral
 
@@ -19,7 +19,7 @@ Estrutura principal:
 ### Fluxo de dados
 
 ```text
-ESP32 (Edge Impulse, inferência EMG)
+ESP32 (Edge Impulse, classificação de sons urbanos)
 
     → [MQTT / WiFi] → Mosquitto
     → [trigger]     → n8n (automação)
@@ -40,7 +40,6 @@ Toda a camada de coleta, armazenamento e visualização roda em containers Docke
 | ------------------------------------ | --------------------------- | ------------------- | ---------- |
 | **Grafana** — dashboards e métricas  | <http://localhost:3000>     | `admin`             | `password` |
 | **n8n** — automação de fluxos        | <http://localhost:5678>     | criado no 1º acesso | —          |
-| **Portainer** — gerenciar containers | <http://localhost:9000>     | `admin`             | `password` |
 | **Hermes Dashboard** — assistente IA | <http://localhost:9119>     | `admin`             | `password` |
 | **Mosquitto** — broker MQTT (ESP32)  | `mqtt://localhost:1883`     | —                   | —          |
 | **TimescaleDB** — banco de dados     | interno (sem porta exposta) | `postgres`          | `password` |
@@ -116,7 +115,7 @@ Todos os serviços devem aparecer como `running` ou `healthy`.
 
 1. Acesse <http://localhost:3000>
 2. Entre com `admin` / `password`
-3. Os dashboards de EMG já estão pré-configurados na seção **Dashboards**
+3. Os dashboards de sons urbanos já estão pré-configurados na seção **Dashboards**
 
 #### n8n — automação de fluxos
 
@@ -128,12 +127,6 @@ O n8n exige a criação de uma conta **apenas na primeira abertura**:
 4. A conta é salva automaticamente e não precisa ser criada novamente
 
 > A partir da segunda abertura, basta fazer login com o e-mail e senha escolhidos.
-
-#### Portainer — gerenciamento de containers
-
-1. Acesse <http://localhost:9000>
-2. Entre com `admin` / `password`
-3. Clique em **Get Started** → **local** para ver todos os containers
 
 #### Hermes Dashboard — assistente de IA
 
@@ -190,32 +183,6 @@ Depois reinicie os serviços afetados:
 docker compose up -d grafana hermes-agent timescaledb
 ```
 
-**Para trocar a senha do Portainer:**
-
-```bash
-# 1. Gere um novo hash bcrypt
-python3 -c "import bcrypt; print(bcrypt.hashpw(b'nova_senha', bcrypt.gensalt()).decode())" > portainer/admin_password_hash
-
-# 2. Apague o volume e reinicie (necessário para o Portainer ler a nova senha)
-docker compose down
-docker volume rm elex20_portainer_data
-docker compose up -d portainer
-```
-
-**Para trocar a senha do n8n:** acesse <http://localhost:5678>, clique no seu nome de usuário (canto inferior esquerdo) → **Settings** → **Change password**.
-
----
-
-### Ver logs de um serviço
-
-```bash
-# Últimas 50 linhas de log do n8n
-docker logs n8n --tail 50
-
-# Acompanhar logs em tempo real
-docker logs grafana -f
-```
-
 ---
 
 ### Solução de problemas (Docker)
@@ -236,25 +203,12 @@ Veja os logs para entender o erro:
 docker logs <nome-do-container> --tail 30
 ```
 
-#### Portainer não abre a tela de configuração inicial
-
-O Portainer tem um **timeout de 5 minutos** para criar o primeiro usuário após o primeiro start. Se expirou:
-
-```bash
-docker compose down
-docker volume rm elex20_portainer_data
-docker compose up -d portainer
-```
-
-Acesse <http://localhost:9000> imediatamente após este comando.
-
 #### n8n mostra erro de banco de dados
 
-O n8n usa um banco dedicado (`n8n`) no TimescaleDB. Se o banco não existir:
+O n8n usa um banco dedicado (`n8n`) no TimescaleDB, criado automaticamente pelo serviço `n8n-db-init` a cada `docker compose up` (só cria se não existir, então funciona também em volumes antigos). Se o n8n ainda reclamar do banco, veja o que o init registrou:
 
 ```bash
-docker exec -it timescaledb psql -U postgres -c "CREATE DATABASE n8n OWNER postgres;"
-docker compose restart n8n
+docker compose logs n8n-db-init
 ```
 
 #### Hermes continua reiniciando
