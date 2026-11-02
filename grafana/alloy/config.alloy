@@ -29,5 +29,17 @@ loki.process "clean_docker_json" {
     source = "output"
   }
 
+  // Redação de segredos antes de enviar ao Loki (as consultas do Grafana leem tudo).
+  // Só o grupo de captura é trocado. Cobre "chave=valor"/"chave: valor" e formatos de token conhecidos.
+  stage.replace {
+    expression = "(?i)(?:token|secret|passw(?:or)?d|pass|api[_-]?key|authorization)[\"']?\\s*[:=]\\s*[\"']?(?:bearer\\s+)?([^\\s\"',;&]+)"
+    replace    = "<redacted>"
+  }
+
+  stage.replace {
+    expression = "\\b(sk-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9]{20,}|xox[abprs]-[A-Za-z0-9-]{10,}|[0-9]{8,10}:[A-Za-z0-9_-]{30,}|eyJ[A-Za-z0-9_-]{10,}\\.[A-Za-z0-9_-]{10,}\\.[A-Za-z0-9_-]{10,})\\b"
+    replace    = "<redacted>"
+  }
+
   forward_to = [loki.write.loki_receiver.receiver]
 }
