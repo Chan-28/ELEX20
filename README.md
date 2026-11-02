@@ -206,11 +206,10 @@ docker logs <nome-do-container> --tail 30
 
 #### n8n mostra erro de banco de dados
 
-O n8n usa um banco dedicado (`n8n`) no TimescaleDB, criado automaticamente pelo `timescaledb/create-n8n-db.sh` na primeira subida com volume vazio. Se o volume já existia antes disso e o banco não foi criado (`database "n8n" does not exist` nos logs):
+O n8n usa um banco dedicado (`n8n`) no TimescaleDB, criado automaticamente pelo serviço `n8n-db-init` a cada `docker compose up` (só cria se não existir, então funciona também em volumes antigos). Se o n8n ainda reclamar do banco, veja o que o init registrou:
 
 ```bash
-docker exec -it timescaledb psql -U postgres -c "CREATE DATABASE n8n OWNER postgres;"
-docker compose restart n8n
+docker compose logs n8n-db-init
 ```
 
 #### Hermes continua reiniciando
