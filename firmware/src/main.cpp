@@ -146,14 +146,16 @@ static void mqttReconnect() {
 }
 
 // ── Publicar resultado ────────────────────────────────────────
-static void publishInference(const char* label, float confidence) {
-    StaticJsonDocument<128> doc;
+// mock=true marca leituras simuladas, para nunca se misturarem às reais no banco
+static void publishInference(const char* label, float confidence, bool mock = false) {
+    StaticJsonDocument<192> doc;
     doc["label"]      = label;
     doc["confidence"] = confidence;
     doc["ts"]         = millis();
     doc["device"]     = DEVICE_ID;
+    if (mock) doc["mock"] = true;
 
-    char payload[128];
+    char payload[192];
     serializeJson(doc, payload, sizeof(payload));
     mqtt.publish(TOPIC_INFERENCE, payload, false);
 
@@ -204,15 +206,18 @@ static void runInference() {
 }
 */
 
-// Simulador — remove ao integrar o modelo real
+// Simulador — só compilado com -DELEX_MOCK_INFERENCE (env esp32s3_debug).
+// Não vai para o firmware de produção: publicaria rótulos aleatórios no banco.
+#ifdef ELEX_MOCK_INFERENCE
 static void runInferenceMock() {
     static const char* sounds[] = {
         "silencio", "fala", "chuva", "transito", "musica", "alarme"
     };
     static uint8_t idx = 0;
     float conf = 0.75f + (random(0, 25) / 100.f);
-    publishInference(sounds[idx++ % 6], conf);
+    publishInference(sounds[idx++ % 6], conf, true);
 }
+#endif
 
 // ── Setup ─────────────────────────────────────────────────────
 void setup() {
@@ -255,8 +260,9 @@ void loop() {
     // O I2S retorna 32 bits por amostra (INMP441) → shift para obter 16 bits
     int32_t rawSample32;
     size_t  bytesRead = 0;
+    // Timeout: se o microfone parar, o loop segue e o heartbeat continua
     i2s_read(I2S_NUM_0, &rawSample32, sizeof(rawSample32),
-             &bytesRead, portMAX_DELAY);
+             &bytesRead, pdMS_TO_TICKS(1000));
 
     if (bytesRead == sizeof(rawSample32) && audioIdx < AUDIO_WINDOW_SAMPLES) {
         audioBuf[audioIdx++] = (int16_t)(rawSample32 >> 14);
@@ -271,7 +277,9 @@ void loop() {
     if (bufferFull) {
         bufferFull = false;
         // runInference();     // ← habilitar com modelo EI real
-        runInferenceMock();    // ← remover ao integrar modelo
+#ifdef ELEX_MOCK_INFERENCE
+        runInferenceMock();
+#endif
     }
 
     // Heartbeat a cada 5 s

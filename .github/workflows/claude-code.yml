@@ -3,11 +3,11 @@ name: Claude Code Action via OpenRouter
 on:
   issue_comment:
     types: [created]
-  pull_request:
-    types: [opened, synchronize]
 
 jobs:
   claude:
+    # Teto de custo/tempo por execução (o job usa a chave do OpenRouter)
+    timeout-minutes: 30
     # Comentário só dispara o job se vier de quem tem acesso ao repositório;
     # sem isso, qualquer pessoa gasta a chave do OpenRouter num repo público.
     if: >-
