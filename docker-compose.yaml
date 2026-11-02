@@ -19,10 +19,11 @@ services:
     networks:
       - monitoring
 
-  # Cria o banco do n8n se ainda não existir (idempotente; funciona em volumes novos e antigos)
-  n8n-db-init:
+  # Aplica papéis de privilégio mínimo (grafana_ro, n8n_app), o banco do n8n e as
+  # restrições de dados. Idempotente: roda a cada `up`, em volumes novos e antigos.
+  db-init:
     image: timescale/timescaledb:2.31.0-pg16
-    container_name: n8n-db-init
+    container_name: db-init
     restart: "no"
     environment:
       - PGHOST=timescaledb
@@ -30,11 +31,12 @@ services:
       - PGPASSWORD=${POSTGRES_PASSWORD}
       - PGDATABASE=${POSTGRES_DB}
       - N8N_DB=${N8N_DB:-n8n}
-    entrypoint: ["/bin/sh", "-c"]
-    command:
-      - |
-        psql -tAc "SELECT 1 FROM pg_database WHERE datname='$$N8N_DB'" | grep -q 1 ||
-        psql -v ON_ERROR_STOP=1 -c "CREATE DATABASE \"$$N8N_DB\""
+      - GRAFANA_RO_PASSWORD=${GRAFANA_RO_PASSWORD:?defina GRAFANA_RO_PASSWORD no .env}
+      - N8N_DB_PASSWORD=${N8N_DB_PASSWORD:?defina N8N_DB_PASSWORD no .env}
+    entrypoint: ["/bin/sh", "/db-init.sh"]
+    volumes:
+      - ./timescaledb/db-init.sh:/db-init.sh:ro
+      - ./timescaledb/db-init.sql:/db-init.sql:ro
     networks:
       - monitoring
     depends_on:
@@ -56,21 +58,21 @@ services:
       - DB_POSTGRESDB_HOST=timescaledb
       - DB_POSTGRESDB_PORT=5432
       - DB_POSTGRESDB_DATABASE=${N8N_DB:-n8n}
-      - DB_POSTGRESDB_USER=${POSTGRES_USER}
-      - DB_POSTGRESDB_PASSWORD=${POSTGRES_PASSWORD}
+      - DB_POSTGRESDB_USER=n8n_app
+      - DB_POSTGRESDB_PASSWORD=${N8N_DB_PASSWORD:?defina N8N_DB_PASSWORD no .env}
       - N8N_WEBHOOK_URL=${N8N_WEBHOOK_URL:-http://localhost:5678/}
     volumes:
       - n8n_data:/home/node/.n8n
     networks:
       - monitoring
     depends_on:
-      n8n-db-init:
+      db-init:
         condition: service_completed_successfully
       mosquitto:
         condition: service_healthy
 
   ollama:
-    image: ollama/ollama:latest
+    image: ollama/ollama:0.40.13@sha256:b2f0122c476bc9fe7ce679d8bb4bd555351e25e2554eefb156f61cb0a89cf429
     container_name: ollama
     restart: unless-stopped
     # Porta não exposta ao host — acesso apenas pela rede interna
@@ -80,7 +82,7 @@ services:
       - monitoring
 
   lightpanda:
-    image: lightpanda/browser:latest
+    image: lightpanda/browser:1.0.2@sha256:5d1d724c476957d8c2f8393a51fd089477523b0e5aa9c783c48688785d934fb9
     container_name: lightpanda
     restart: unless-stopped
     # Porta não exposta ao host — acesso apenas pela rede interna
@@ -88,7 +90,7 @@ services:
       - monitoring
 
   hermes-init:
-    image: busybox
+    image: busybox:1.38.0@sha256:a46257e06c82ad85242d0d38077d0a52d9896389ca60a1a59d3463db586e5fa4
     container_name: hermes-init
     user: root
     command: sh -c "mkdir -p /opt/data && chown -R 10000:10000 /opt/data && chmod 750 /opt/data"
@@ -97,7 +99,7 @@ services:
     restart: "no"
 
   hermes-agent:
-    image: nousresearch/hermes-agent:latest
+    image: nousresearch/hermes-agent:v0.22.5@sha256:9c5561579f3ffdf333401797094ac3a743738d6c25d40f4331c7bf77b694238d
     container_name: hermes-agent
     restart: unless-stopped
     command: gateway run
@@ -114,6 +116,10 @@ services:
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
       - DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN:-}
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
+      # Allowlists (IDs separados por vírgula). Vazias = o gateway nega usuários
+      # desconhecidos. Nunca use GATEWAY_ALLOW_ALL_USERS: o agente executa comandos.
+      - TELEGRAM_ALLOWED_USERS=${TELEGRAM_ALLOWED_USERS:-}
+      - DISCORD_ALLOWED_USERS=${DISCORD_ALLOWED_USERS:-}
       - SMTP_HOST=${SMTP_HOST:-}
       - SMTP_PORT=${SMTP_PORT:-587}
       - SMTP_USER=${SMTP_USER:-}
@@ -122,14 +128,12 @@ services:
       - HERMES_DASHBOARD=true
       - HERMES_DASHBOARD_BASIC_AUTH_USERNAME=${HERMES_DASHBOARD_USER:-admin}
       - HERMES_DASHBOARD_BASIC_AUTH_PASSWORD=${HERMES_DASHBOARD_PASS}
-      # AVISO: montar o socket Docker dá ao container controle total sobre o host.
-      # Remova se o backend de terminal não for necessário.
-      # Windows (Docker Desktop + WSL2): DOCKER_HOST=unix:///var/run/docker.sock também funciona.
-      - DOCKER_HOST=${DOCKER_HOST:-unix:///var/run/docker.sock}
+    # O socket do Docker NÃO é montado: ele daria ao agente (que recebe texto de
+    # Discord, Telegram, e-mail e web) controle total do host. O terminal roda
+    # com backend "local", dentro deste container sem privilégios.
     volumes:
       - ./hermes_data:/opt/data
       - ./hermes/config.jsonc:/opt/data/config.json:ro
-      - /var/run/docker.sock:/var/run/docker.sock
     networks:
       - monitoring
     depends_on:
@@ -158,6 +162,9 @@ services:
       - GF_DATABASE_USER=${POSTGRES_USER}
       - GF_DATABASE_PASSWORD=${POSTGRES_PASSWORD}
       - GF_DATABASE_SSL_MODE=disable
+      # Senha do papel de leitura usado pelo datasource (grafana/provisioning)
+      - POSTGRES_DB=${POSTGRES_DB}
+      - GRAFANA_RO_PASSWORD=${GRAFANA_RO_PASSWORD:?defina GRAFANA_RO_PASSWORD no .env}
     healthcheck:
       test:
         ["CMD-SHELL", "wget -qO- http://localhost:3000/api/health | grep -q ok"]
@@ -173,6 +180,8 @@ services:
     depends_on:
       timescaledb:
         condition: service_healthy
+      db-init:
+        condition: service_completed_successfully
 
   loki:
     image: grafana/loki:3.7.9
@@ -187,7 +196,7 @@ services:
       - monitoring
 
   alloy:
-    image: grafana/alloy:latest
+    image: grafana/alloy:v1.21.3@sha256:8ab871206bd2d8f89277f53abffee5f452a293980788d52f85fa183a87a505a4
     container_name: alloy
     restart: unless-stopped
     # Porta não exposta ao host — acesso apenas pela rede interna
@@ -205,7 +214,7 @@ services:
       - loki
 
   pyroscope:
-    image: grafana/pyroscope:latest
+    image: grafana/pyroscope:2.4.2@sha256:ef9b48976386aa2781e84664dfdba7cc33a1b6793c0cc9d130812173a926ca1f
     container_name: pyroscope
     restart: unless-stopped
     # Porta não exposta ao host — acesso apenas pela rede interna
@@ -215,21 +224,31 @@ services:
       - monitoring
 
   mosquitto:
-    image: eclipse-mosquitto:2
+    image: eclipse-mosquitto:2.1.2-alpine@sha256:860aeb5d63ce509508f6dcfb2bc8a1c1dd2bc60555b562b45ce90e52d8dabb0f
     container_name: mosquitto
     restart: unless-stopped
-    # Porta 1883 exposta ao host para que o ESP32 (WiFi LAN) consiga publicar
+    # Autenticação + ACL (usuários "device" e "n8n"; senhas geradas no start).
+    # A porta 1883 só é publicada no IP de MQTT_BIND (padrão: loopback). Para o ESP32
+    # na LAN, defina MQTT_BIND no .env com o IP do host nessa rede, não 0.0.0.0.
     ports:
-      - "1883:1883"
+      - "${MQTT_BIND:-127.0.0.1}:1883:1883"
+    environment:
+      - MQTT_DEVICE_PASS=${MQTT_DEVICE_PASS:?defina MQTT_DEVICE_PASS no .env}
+      - MQTT_N8N_PASS=${MQTT_N8N_PASS:?defina MQTT_N8N_PASS no .env}
+    entrypoint: ["/bin/sh", "/entrypoint.sh"]
     volumes:
+      - ./mosquitto/entrypoint.sh:/entrypoint.sh:ro
       - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - ./mosquitto/acl:/mosquitto/config/acl:ro
+      - ./mosquitto/acl-health:/mosquitto/config/acl-health:ro
       - mosquitto_data:/mosquitto/data
       - mosquitto_log:/mosquitto/log
     healthcheck:
+      # Listener 1884 só existe em loopback dentro do container e só aceita "health"
       test:
         [
           "CMD-SHELL",
-          "mosquitto_pub -h localhost -t health -m ping -q 0 || exit 1",
+          "mosquitto_pub -h localhost -p 1884 -t health -m ping -q 0 || exit 1",
         ]
       interval: 10s
       timeout: 5s

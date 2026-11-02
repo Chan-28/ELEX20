@@ -70,6 +70,12 @@ static constexpr size_t AUDIO_WINDOW_SAMPLES =
 #ifndef MQTT_PORT
 #  define MQTT_PORT 1883
 #endif
+#ifndef MQTT_USER
+#  define MQTT_USER "device"
+#endif
+#ifndef MQTT_PASS
+#  define MQTT_PASS ""
+#endif
 #ifndef DEVICE_ID
 #  define DEVICE_ID "esp32s3-sound-01"
 #endif
@@ -136,7 +142,7 @@ static void connectWiFi() {
 static void mqttReconnect() {
     for (uint8_t i = 0; i < 5 && !mqtt.connected(); i++) {
         Serial.printf("[MQTT] Conectando a %s:%d ...\n", MQTT_HOST, MQTT_PORT);
-        if (mqtt.connect(DEVICE_ID)) {
+        if (mqtt.connect(DEVICE_ID, MQTT_USER, MQTT_PASS)) {
             Serial.println("[MQTT] Conectado.");
         } else {
             Serial.printf("[MQTT] rc=%d — aguardando 2s\n", mqtt.state());
