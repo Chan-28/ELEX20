@@ -16,8 +16,7 @@ uv sync --group dev --frozen       # instalar
 uv run ruff check .                # lint (npm run lint faz o mesmo)
 uv run ruff format .               # formatar (npm run format)
 uv run ruff check . --fix && uv run ruff format .   # npm run fix
-uv run pytest tests/ -v --tb=short # testes (mesmo comando do CI)
-uv run pytest tests/test_dependencies.py::NOME -v   # um teste só
+bash scripts/infra-smoke.sh        # testa papéis do banco e ACL do MQTT (sobe containers descartáveis)
 
 # Infra
 cp .env.example .env               # preencher antes de subir (nunca commitar)
@@ -40,8 +39,7 @@ Documentação e arquivos `.md/.json/.yaml` não exigem build. O Prettier format
 | Caminho                             | Papel                                                                                                                                                                                    |
 | ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `firmware/`                         | Código do ESP32-S3 (`src/main.cpp`, `platformio.ini`). O modelo Edge Impulse vai em `firmware/lib/ei-model/` (não versionado).                                                           |
-| `tests/`                            | pytest. Hoje só cobre `dependencies.py`.                                                                                                                                                 |
-| `dependencies.py`                   | Gerenciador de dependências baseado em `uv` (`UVDependencyManager`).                                                                                                                     |
+| `scripts/infra-smoke.sh`            | Teste de infraestrutura: papéis do banco e ACL do Mosquitto (roda no CI em `infra-smoke.yml`).                                                                                           |
 | `timescaledb/init.sql`              | Schema: `devices`, `sound_events` (hypertable).                                                                                                                                          |
 | `mosquitto/`, `grafana/`, `hermes/` | Configuração dos serviços do compose.                                                                                                                                                    |
 | `.github/workflows/`                | CI: lint Python, firmware, CodeQL, segurança de Docker (Gitleaks, Grype, Trivy config, OWASP ZAP baseline), zizmor (segurança dos próprios workflows), `pio check` no firmware, release. |
@@ -64,8 +62,8 @@ Documentação e arquivos `.md/.json/.yaml` não exigem build. O Prettier format
 
 ## Testes
 
-- pytest em `tests/`, com `tmp_path`/`monkeypatch` e mocks de `subprocess`; sem rede e sem uv real.
-- Código novo em Python precisa de teste. O CI roda `pytest` com cobertura.
+- Não há código Python de aplicação hoje. Se surgir, crie `tests/` com pytest (`uv add --group dev pytest`) e um job no `ci.yml`.
+- Mudou compose, `mosquitto/` ou `timescaledb/`? Rode `bash scripts/infra-smoke.sh` (precisa de Docker; falha se já houver containers `timescaledb`/`mosquitto`).
 
 ## Git, commits e PRs
 
