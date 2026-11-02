@@ -50,6 +50,8 @@ jobs:
           WIFI_SSID: "CI_DUMMY"
           WIFI_PASS: "CI_DUMMY"
           MQTT_HOST: "127.0.0.1"
+          MQTT_USER: "CI_DUMMY"
+          MQTT_PASS: "CI_DUMMY"
         run: pio run --environment esp32s3
 
       - name: Upload firmware artifact
@@ -96,4 +98,6 @@ jobs:
           WIFI_SSID: "CI_DUMMY"
           WIFI_PASS: "CI_DUMMY"
           MQTT_HOST: "127.0.0.1"
+          MQTT_USER: "CI_DUMMY"
+          MQTT_PASS: "CI_DUMMY"
         run: pio check --environment esp32s3 --skip-packages --severity=medium --fail-on-defect=high

@@ -1,0 +1,3 @@
+# ACL do listener de healthcheck (127.0.0.1:1884, dentro do container).
+# Cliente anônimo só pode escrever em "health".
+topic write health

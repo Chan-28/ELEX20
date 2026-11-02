@@ -31,6 +31,12 @@ jobs:
 
       # O Docker Compose já vem instalado no ubuntu-latest.
       - name: Validate syntax
+        env:
+          # Variáveis obrigatórias sem valor no .env.example (não têm senha padrão)
+          GRAFANA_RO_PASSWORD: ci-dummy
+          N8N_DB_PASSWORD: ci-dummy
+          MQTT_DEVICE_PASS: ci-dummy
+          MQTT_N8N_PASS: ci-dummy
         run: docker compose --env-file .env.example -f docker-compose.yaml config --quiet
 
       - name: Check for required env vars
@@ -78,21 +84,21 @@ jobs:
             alias: timescaledb
           - image: "docker.n8n.io/n8nio/n8n:2.46.3"
             alias: n8n
-          - image: "ollama/ollama:latest"
+          - image: "ollama/ollama:0.40.13"
             alias: ollama
           - image: "grafana/grafana:13.3.0"
             alias: grafana
           - image: "grafana/loki:3.7.9"
             alias: loki
-          - image: "grafana/alloy:latest"
+          - image: "grafana/alloy:v1.21.3"
             alias: alloy
-          - image: "grafana/pyroscope:latest"
+          - image: "grafana/pyroscope:2.4.2"
             alias: pyroscope
-          - image: "eclipse-mosquitto:2"
+          - image: "eclipse-mosquitto:2.1.2-alpine"
             alias: mosquitto
-          - image: "lightpanda/browser:latest"
+          - image: "lightpanda/browser:1.0.2"
             alias: lightpanda
-          - image: "nousresearch/hermes-agent:latest"
+          - image: "nousresearch/hermes-agent:v0.22.5"
             alias: hermes-agent
 
     steps:
@@ -179,6 +185,11 @@ jobs:
       # Stack efêmera no runner, com os valores de exemplo do .env.example.
       # O compose já publica Grafana/n8n em 127.0.0.1; o ZAP usa --network host.
       - name: Up service stack
+        env:
+          GRAFANA_RO_PASSWORD: ci-dummy
+          N8N_DB_PASSWORD: ci-dummy
+          MQTT_DEVICE_PASS: ci-dummy
+          MQTT_N8N_PASS: ci-dummy
         run: |
           cp .env.example .env
           docker compose up -d --wait timescaledb ${{ matrix.alias }}
@@ -216,6 +227,11 @@ jobs:
 
       - name: Down service stack
         if: always()
+        env:
+          GRAFANA_RO_PASSWORD: ci-dummy
+          N8N_DB_PASSWORD: ci-dummy
+          MQTT_DEVICE_PASS: ci-dummy
+          MQTT_N8N_PASS: ci-dummy
         run: docker compose down
 
   # 6. Resumo final

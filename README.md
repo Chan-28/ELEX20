@@ -41,7 +41,7 @@ Toda a camada de coleta, armazenamento e visualização roda em containers Docke
 | **Grafana** — dashboards e métricas  | <http://localhost:3000>     | `admin`             | `password` |
 | **n8n** — automação de fluxos        | <http://localhost:5678>     | criado no 1º acesso | —          |
 | **Hermes Dashboard** — assistente IA | <http://localhost:9119>     | `admin`             | `password` |
-| **Mosquitto** — broker MQTT (ESP32)  | `mqtt://localhost:1883`     | —                   | —          |
+| **Mosquitto** — broker MQTT (ESP32)  | `mqtt://localhost:1883`     | `device` / `n8n`    | `.env`     |
 | **TimescaleDB** — banco de dados     | interno (sem porta exposta) | `postgres`          | `password` |
 
 > As senhas padrão estão definidas no arquivo `.env`. Veja a seção [Trocar senhas](#trocar-senhas) para alterá-las.
@@ -87,7 +87,7 @@ docker compose version
 cp .env.example .env
 ```
 
-> O arquivo `.env` contém as senhas e configurações. O padrão já funciona sem modificações. Edite apenas se quiser trocar senhas ou adicionar tokens de API (Telegram, Discord, etc.).
+> O arquivo `.env` contém as senhas e configurações. Quatro senhas **não têm valor padrão** e precisam ser preenchidas antes do `docker compose up` (o compose falha e avisa qual falta): `GRAFANA_RO_PASSWORD`, `N8N_DB_PASSWORD`, `MQTT_DEVICE_PASS` e `MQTT_N8N_PASS`. Gere cada uma com `openssl rand -hex 24`. Para o ESP32 na LAN, defina também `MQTT_BIND` com o IP do host nessa rede (o padrão `127.0.0.1` só aceita conexões locais) e use a mesma senha de `MQTT_DEVICE_PASS` em `MQTT_PASS` no `firmware/.env`. No n8n, crie a credencial MQTT com usuário `n8n` e a senha de `MQTT_N8N_PASS`.
 
 #### Passo 2 — Iniciar todos os serviços
 
@@ -205,10 +205,10 @@ docker logs <nome-do-container> --tail 30
 
 #### n8n mostra erro de banco de dados
 
-O n8n usa um banco dedicado (`n8n`) no TimescaleDB, criado automaticamente pelo serviço `n8n-db-init` a cada `docker compose up` (só cria se não existir, então funciona também em volumes antigos). Se o n8n ainda reclamar do banco, veja o que o init registrou:
+O n8n usa um banco dedicado (`n8n`) no TimescaleDB, criado automaticamente pelo serviço `db-init` a cada `docker compose up` (só cria se não existir, então funciona também em volumes antigos). Se o n8n ainda reclamar do banco, veja o que o init registrou:
 
 ```bash
-docker compose logs n8n-db-init
+docker compose logs db-init
 ```
 
 #### Hermes continua reiniciando
@@ -280,11 +280,11 @@ source .venv/bin/activate
 O script `dependencies.py` é a **única interface** de gerenciamento de pacotes do projeto. Ele usa UV exclusivamente e lê o `pyproject.toml` como fonte de verdade.
 
 ```bash
-# Verificar ambiente e sincronizar dependências faltantes
+# Verificar o ambiente e listar dependências faltantes (não instala nada)
 python dependencies.py
 
-# Apenas verificar, sem instalar
-python dependencies.py --no-install
+# Instalar as faltantes fora do uv.lock (opt-in; prefira `uv sync --frozen`)
+python dependencies.py --install
 
 # Verificar consistência do lockfile (uv.lock)
 python dependencies.py --lock-check

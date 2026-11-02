@@ -5,12 +5,15 @@ datasources:
     type: postgres
     uid: timescaledb
     url: timescaledb:5432
-    user: ${POSTGRES_USER}
+    database: ${POSTGRES_DB}
+    # Papel somente leitura criado por timescaledb/db-init.sql (nunca o superusuário)
+    user: grafana_ro
     secureJsonData:
-      password: ${POSTGRES_PASSWORD}
+      password: ${GRAFANA_RO_PASSWORD}
     jsonData:
       database: ${POSTGRES_DB}
-      sslmode: require
+      # O TimescaleDB não tem TLS e o tráfego não sai da rede interna 'monitoring'
+      sslmode: disable
       maxOpenConns: 10
       maxIdleConns: 5
       connMaxLifetime: 14400

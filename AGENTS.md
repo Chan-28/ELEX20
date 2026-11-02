@@ -25,7 +25,7 @@ docker compose up -d
 docker compose logs -f <servico>
 
 # Firmware (a partir de firmware/)
-cp .env.example .env               # WIFI_SSID, WIFI_PASS, MQTT_HOST
+cp .env.example .env               # WIFI_SSID, WIFI_PASS, MQTT_HOST, MQTT_USER, MQTT_PASS
 pio run -e esp32s3                 # build
 pio run -e esp32s3 -t upload && pio device monitor
 
@@ -37,19 +37,21 @@ Documentação e arquivos `.md/.json/.yaml` não exigem build. O Prettier format
 
 ## Estrutura
 
-| Caminho | Papel |
-| --- | --- |
-| `firmware/` | Código do ESP32-S3 (`src/main.cpp`, `platformio.ini`). O modelo Edge Impulse vai em `firmware/lib/ei-model/` (não versionado). |
-| `tests/` | pytest. Hoje só cobre `dependencies.py`. |
-| `dependencies.py` | Gerenciador de dependências baseado em `uv` (`UVDependencyManager`). |
-| `timescaledb/init.sql` | Schema: `devices`, `sound_events` (hypertable). |
-| `mosquitto/`, `grafana/`, `hermes/` | Configuração dos serviços do compose. |
-| `.github/workflows/` | CI: lint Python, firmware, CodeQL, segurança de Docker (Gitleaks, Grype, Trivy config, OWASP ZAP baseline), zizmor (segurança dos próprios workflows), `pio check` no firmware, release. |
+| Caminho                             | Papel                                                                                                                                                                                    |
+| ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `firmware/`                         | Código do ESP32-S3 (`src/main.cpp`, `platformio.ini`). O modelo Edge Impulse vai em `firmware/lib/ei-model/` (não versionado).                                                           |
+| `tests/`                            | pytest. Hoje só cobre `dependencies.py`.                                                                                                                                                 |
+| `dependencies.py`                   | Gerenciador de dependências baseado em `uv` (`UVDependencyManager`).                                                                                                                     |
+| `timescaledb/init.sql`              | Schema: `devices`, `sound_events` (hypertable).                                                                                                                                          |
+| `mosquitto/`, `grafana/`, `hermes/` | Configuração dos serviços do compose.                                                                                                                                                    |
+| `.github/workflows/`                | CI: lint Python, firmware, CodeQL, segurança de Docker (Gitleaks, Grype, Trivy config, OWASP ZAP baseline), zizmor (segurança dos próprios workflows), `pio check` no firmware, release. |
 
 ## Arquitetura e limites
 
 - Serviços ficam na rede interna `monitoring`. **O TimescaleDB não expõe porta ao host**; não adicione `ports:` a ele.
-- O n8n escuta só em `127.0.0.1:5678`. Mantenha os serviços ligados a localhost.
+- O n8n escuta só em `127.0.0.1:5678`. Mantenha os serviços ligados a localhost. A porta 1883 só é publicada em `MQTT_BIND` (padrão loopback); o Mosquitto exige usuário (`device` publica, `n8n` assina) e ACL em `mosquitto/acl`.
+- Grafana e n8n não usam o superusuário do banco: `grafana_ro` (leitura) e `n8n_app`, criados pelo `db-init` (`timescaledb/db-init.sql`). Não monte o socket do Docker no Hermes.
+- Imagens são fixadas por versão e digest; atualize pelo Dependabot, não volte para `latest`.
 - Tópicos MQTT: `sound/inference` e `sound/status` no firmware; o schema documenta `sound/inference/<device_id>`. Mudou um, confira os outros.
 - `AUDIO_SAMPLE_RATE` (16000) e `AUDIO_WINDOW_MS` precisam coincidir com a janela do projeto Edge Impulse.
 - Credenciais do firmware entram por `sysenv` (`firmware/.env` ou secrets do CI), nunca no código.
