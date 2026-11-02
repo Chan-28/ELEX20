@@ -11,9 +11,8 @@ jobs:
     # Comentário só dispara o job se vier de quem tem acesso ao repositório;
     # sem isso, qualquer pessoa gasta a chave do OpenRouter num repo público.
     if: >-
-      github.event_name == 'pull_request' ||
-      (contains(github.event.comment.body, '/claude') &&
-      contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association))
+      contains(github.event.comment.body, '/claude') &&
+      contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)
     runs-on: ubuntu-latest
     permissions:
       contents: write
