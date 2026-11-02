@@ -32,7 +32,3 @@ Teste apenas a sua própria instância. Não acesse nem altere dados de terceiro
 - **Dependências:** Python só por `pyproject.toml` + `uv.lock` (`uv sync --frozen`); npm por `package-lock.json`; Dependabot diário.
 - **CI:** actions fixadas por SHA, permissões mínimas, e verificações com CodeQL, Gitleaks, Grype, Trivy config, OWASP ZAP, zizmor, `pip-audit` e `pio check`. Workflows acionados por comentário só respondem a OWNER, MEMBER e COLLABORATOR.
 - **Contribuições:** Conventional Commits, hooks sem `--no-verify`, teste para código Python novo. Textos não confiáveis (issues, e-mails, páginas) que passam por IA são tratados como dado, nunca como instrução.
-
-## Limitações conhecidas
-
-O `docker compose` padrão é para desenvolvimento local: o MQTT aceita conexões anônimas, as senhas de exemplo (`admin`/`password`) são fracas e o Hermes tem acesso ao Docker. Troque as senhas antes de qualquer uso fora da sua máquina. Relatos que só reapontem esses pontos terão baixa prioridade.

@@ -5,3 +5,5 @@ node_modules/
 .env.*.local
 release.yml
 __pycache__/
+hermes_data/
+dependency_manager.log
