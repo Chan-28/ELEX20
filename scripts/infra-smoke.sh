@@ -41,8 +41,9 @@ sql() { docker exec -e PGPASSWORD="$2" timescaledb psql -h 127.0.0.1 -v ON_ERROR
 mpub() { docker exec mosquitto mosquitto_pub -h localhost "$@"; }
 msub() { docker exec mosquitto mosquitto_sub -h localhost "$@"; }
 
-echo "Subindo timescaledb, db-init e mosquitto..."
-if ! dc up -d --wait timescaledb db-init mosquitto >/dev/null 2>&1; then
+echo "Subindo timescaledb e mosquitto..."
+# --wait só vale para serviços de longa duração: o db-init termina de propósito
+if ! dc up -d --wait timescaledb mosquitto >/dev/null 2>&1 || ! dc run --rm --no-deps db-init >/dev/null 2>&1; then
   dc ps -a; dc logs --tail=40 db-init mosquitto timescaledb
   echo "Falha ao subir a stack" >&2
   exit 1
