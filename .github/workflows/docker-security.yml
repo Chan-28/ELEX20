@@ -227,6 +227,11 @@ jobs:
 
       - name: Down service stack
         if: always()
+        env:
+          GRAFANA_RO_PASSWORD: ci-dummy
+          N8N_DB_PASSWORD: ci-dummy
+          MQTT_DEVICE_PASS: ci-dummy
+          MQTT_N8N_PASS: ci-dummy
         run: docker compose down
 
   # 6. Resumo final
