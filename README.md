@@ -275,25 +275,9 @@ source .venv/bin/activate
 .venv\Scripts\activate
 ```
 
-### Gerenciamento de dependências (`dependencies.py`)
+### Gerenciamento de dependências
 
-O script `dependencies.py` é a **única interface** de gerenciamento de pacotes do projeto. Ele usa UV exclusivamente e lê o `pyproject.toml` como fonte de verdade.
-
-```bash
-# Verificar o ambiente e listar dependências faltantes (não instala nada)
-python dependencies.py
-
-# Instalar as faltantes fora do uv.lock (opt-in; prefira `uv sync --frozen`)
-python dependencies.py --install
-
-# Verificar consistência do lockfile (uv.lock)
-python dependencies.py --lock-check
-
-# Sincronizar ambiente via uv sync --frozen
-python dependencies.py --sync
-```
-
-> Para adicionar uma nova dependência ao projeto, edite `pyproject.toml` e execute `uv lock` para atualizar o lockfile.
+O `pyproject.toml` + `uv.lock` são a única fonte de verdade. Para adicionar ou remover uma dependência use `uv add` / `uv remove` (atualiza o lockfile); para reproduzir o ambiente, `uv sync --frozen`.
 
 ## Observação sobre o workspace
 

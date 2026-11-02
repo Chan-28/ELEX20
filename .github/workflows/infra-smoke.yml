@@ -1,0 +1,39 @@
+name: Infra Smoke (banco e MQTT)
+
+# Valida os controles de segurança da infraestrutura: papéis do banco,
+# restrições de dados e autenticação/ACL do Mosquitto (scripts/infra-smoke.sh).
+on:
+  push:
+    branches: [main]
+    paths:
+      - "docker-compose.yaml"
+      - "mosquitto/**"
+      - "timescaledb/**"
+      - ".env.example"
+      - "scripts/infra-smoke.sh"
+      - ".github/workflows/infra-smoke.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "docker-compose.yaml"
+      - "mosquitto/**"
+      - "timescaledb/**"
+      - ".env.example"
+      - "scripts/infra-smoke.sh"
+      - ".github/workflows/infra-smoke.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    name: Banco e MQTT
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Run infra smoke
+        run: bash scripts/infra-smoke.sh

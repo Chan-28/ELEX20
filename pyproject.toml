@@ -36,8 +36,6 @@ build-backend = "uv_build"
 
 [dependency-groups]
 dev = [
-    "pytest>=9.1.1",
-    "pytest-cov>=6.0.0",
     "black>=26.5.1",
     "isort>=9.0.1",
     "ruff>=0.16.9",
@@ -60,10 +58,6 @@ select = [
     "N",        # PEP 8
 ]
 ignore = []
-
-[tool.ruff.lint.per-file-ignores]
-"dependencies.py" = ["S603", "S607", "S110"]
-"tests/*.py" = ["S101", "N802"]
 
 [tool.ruff.lint.isort]
 combine-as-imports = true
