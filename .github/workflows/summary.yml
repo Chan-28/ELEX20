@@ -30,7 +30,22 @@ jobs:
 
       - name: Comment with AI summary
         run: |
-          gh issue comment $ISSUE_NUMBER --body "$RESPONSE"
+          SAFE_RESPONSE="$(printf '%s' "$RESPONSE" \
+            | tr '\n' ' ' \
+            | sed -E 's/https?:\/\/[^ ]+/[link removed]/g' \
+            | sed -E 's/!\[[^]]*\]\([^)]*\)//g' \
+            | sed -E 's/\[([^]]+)\]\([^)]*\)/\1/g' \
+            | sed -E 's/@[A-Za-z0-9_-]+/[mention removed]/g' \
+            | sed -E 's/<[^>]*>//g' \
+            | sed -E 's/[[:space:]]+/ /g' \
+            | cut -c1-500 \
+            | sed -E 's/^[[:space:]]+|[[:space:]]+$//g')"
+
+          if [ -z "$SAFE_RESPONSE" ]; then
+            SAFE_RESPONSE="Thanks for opening this issue. An automatic summary could not be generated safely."
+          fi
+
+          gh issue comment "$ISSUE_NUMBER" --body "$SAFE_RESPONSE"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ISSUE_NUMBER: ${{ github.event.issue.number }}
