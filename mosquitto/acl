@@ -1,0 +1,11 @@
+# ACL do listener 1883 (usuários criados por mosquitto/entrypoint.sh).
+# O usuário "device" só publica nas duas árvores que o firmware usa
+# (sound/inference/<DEVICE_ID> e sound/status/<DEVICE_ID>). Com vários
+# dispositivos, crie um usuário por dispositivo com o tópico fixo.
+user device
+topic write sound/inference/+
+topic write sound/status/+
+
+# Consumidor (n8n): somente leitura
+user n8n
+topic read sound/#

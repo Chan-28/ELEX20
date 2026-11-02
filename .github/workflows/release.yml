@@ -5,42 +5,58 @@ on:
     tags:
       - 'v*' # Dispara o processo sempre que enviar uma tag começando com 'v' (ex: v1.0.0)
 
+permissions:
+  contents: read
+
 jobs:
   release:
     runs-on: ubuntu-latest
     permissions:
-      contents: write    
-      id-token: write    # Obrigatório para a assinatura Keyless (OIDC) funcionar
+      contents: write # criar a release e anexar os arquivos
+      id-token: write # obrigatório para a assinatura keyless (OIDC) funcionar
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Install Cosign (Keyless Signing)
-        uses: sigstore/cosign-installer@v3.5.0
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
 
-      # Simulação de build do software e gera um arquivo de release (ex: tar.gz) para ser assinado
-      - name: Release Build Simulation
+      # Pacote real: o código-fonte da tag (respeita export-ignore do .gitattributes).
+      # O nome da tag vem por env, nunca interpolado direto no script.
+      - name: Package source
+        env:
+          TAG: ${{ github.ref_name }}
         run: |
-          echo " Software release version ${{ github.ref_name }}" > meu-app-${{ github.ref_name }}.txt
-          tar -czvf release-artifact.tar.gz meu-app-${{ github.ref_name }}.txt
+          git archive --format=tar.gz --prefix="elex20-${TAG}/" -o "elex20-${TAG}.tar.gz" HEAD
+          sha256sum "elex20-${TAG}.tar.gz" > "elex20-${TAG}.tar.gz.sha256"
 
-      # Assina o arquivo
-      - name: Sign the release artifacts
+      # Assina o arquivo. O bundle reúne assinatura, certificado e entrada no Rekor,
+      # tudo o que a verificação keyless precisa.
+      - name: Sign the release artifact
+        env:
+          TAG: ${{ github.ref_name }}
         run: |
-          cosign sign-blob --yes --output-signature release-artifact.tar.gz.sig release-artifact.tar.gz
+          cosign sign-blob --yes --bundle "elex20-${TAG}.tar.gz.sigstore.json" "elex20-${TAG}.tar.gz"
 
-      # Cria a página de Release no GitHub e anexa o arquivo junto com a assinatura dele
+      # Cria a página de Release no GitHub e anexa o arquivo, o hash e a assinatura
       - name: Create GitHub Release and Upload Artifacts
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
           files: |
-            release-artifact.tar.gz
-            release-artifact.tar.gz.sig
+            elex20-${{ github.ref_name }}.tar.gz
+            elex20-${{ github.ref_name }}.tar.gz.sha256
+            elex20-${{ github.ref_name }}.tar.gz.sigstore.json
           body: |
-            Automated release generated via GitHub Actions.
-            
-            **Check the integrity of this file:**
+            Automated release generated via GitHub Actions (source archive of this tag).
+
+            **Verify the integrity and origin of the archive:**
             ```bash
-            cosign verify-blob --certificate-identity-regexp "https://github.com" --oidc-issuer https://githubusercontent.com --signature release-artifact.tar.gz.sig release-artifact.tar.gz
+            cosign verify-blob \
+              --bundle elex20-${{ github.ref_name }}.tar.gz.sigstore.json \
+              --certificate-identity "https://github.com/${{ github.repository }}/.github/workflows/release.yml@refs/tags/${{ github.ref_name }}" \
+              --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+              elex20-${{ github.ref_name }}.tar.gz
             ```

@@ -3,8 +3,8 @@
     "name": "Hermes",
     "prompt_profile": "default",
     "telemetry": {
-      "enabled": false
-    }
+      "enabled": false,
+    },
   },
   "llm": {
     "provider": "openrouter",
@@ -21,59 +21,55 @@
         // "llama3.2:3b"       — conversa geral
         // "phi4-mini"         — raciocínio lógico
         // "gemma3:4b"         — mais potente, mais pesado
-        "model": "qwen3:3b"
-      }
-    }
+        "model": "qwen3:3b",
+      },
+    },
   },
+  // Backend local: comandos rodam dentro do container do Hermes. O backend "docker"
+  // exigiria montar o socket do Docker (controle total do host) e foi removido.
   "terminal": {
-    "backend": "docker",
-    "docker": {
-      "image": "python:3.11-slim",
-      "network": "monitoring",
-      "workdir": "/workspace"
-    }
+    "backend": "local",
   },
   "browser": {
     "provider": "lightpanda",
     "lightpanda": {
-      "cdp_url": "ws://lightpanda:9222"
-    }
+      "cdp_url": "ws://lightpanda:9222",
+    },
   },
   "search": {
     "provider": "duckduckgo",
-    "auto_extract_content": true
+    "auto_extract_content": true,
   },
   "tts": {
     "provider": "edge",
-    "voice": "default"
+    "voice": "default",
   },
   "image_generation": {
-    "provider": "none"
+    "provider": "none",
   },
   "gateways": {
     "discord": {
       "enabled": true,
-      "bot_token_env": "DISCORD_BOT_TOKEN"
+      "bot_token_env": "DISCORD_BOT_TOKEN",
     },
     "telegram": {
       "enabled": true,
-      "bot_token_env": "TELEGRAM_BOT_TOKEN"
+      "bot_token_env": "TELEGRAM_BOT_TOKEN",
     },
     "email": {
-      "enabled": true,
+      "enabled": false,
       "smtp_host_env": "SMTP_HOST",
       "smtp_port_env": "SMTP_PORT",
       "smtp_user_env": "SMTP_USER",
       "smtp_pass_env": "SMTP_PASS",
-      "imap_host_env": "IMAP_HOST"
-    }
+      "imap_host_env": "IMAP_HOST",
+    },
   },
   "tools": [
     "duckduckgo_search",
     "browser_automation",
-    "docker_terminal",
     "discord_tools",
     "telegram_tools",
-    "edge_tts"
-  ]
+    "edge_tts",
+  ],
 }

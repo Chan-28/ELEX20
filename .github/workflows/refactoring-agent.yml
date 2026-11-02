@@ -12,6 +12,7 @@ jobs:
       contains(github.event.comment.body, '/cs-agent') &&
       contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)
     runs-on: ubuntu-latest
+    environment: refactoring-agent-approval
 
     permissions:
       contents: write
