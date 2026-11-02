@@ -1,46 +1,47 @@
-name: Automated Release & Signing Process
+name: Gerar e Assinar Release Automatizada
 
 on:
   push:
     tags:
-      - 'v*' # Dispara o processo sempre que enviar uma tag começando com 'v' (ex: v1.0.0)
+      - 'v*' # Dispara o processo sempre que você enviar uma tag começando com 'v' (ex: v1.0.0)
 
 jobs:
   release:
     runs-on: ubuntu-latest
     permissions:
-      contents: write    
+      contents: write    # Necessário para criar a release no GitHub
       id-token: write    # Obrigatório para a assinatura Keyless (OIDC) funcionar
 
     steps:
-      - name: Checkout
+      - name: Checkout do código
         uses: actions/checkout@v4
 
-      - name: Install Cosign (Keyless Signing)
+      # 1. Instala a ferramenta de assinatura oficial da Sigstore
+      - name: Instalar Cosign
         uses: sigstore/cosign-installer@v3.5.0
 
-      # Simulação de build do software e gera um arquivo de release (ex: tar.gz) para ser assinado
-      - name: Release Build Simulation
+      # 2. Cria alguns arquivos de exemplo para simular seus binários/artefatos
+      - name: Preparar arquivos da Release
         run: |
-          echo " Software release version ${{ github.ref_name }}" > meu-app-${{ github.ref_name }}.txt
-          tar -czvf release-artifact.tar.gz meu-app-${{ github.ref_name }}.txt
+          echo "Conteúdo do software versão ${{ github.ref_name }}" > meu-app-${{ github.ref_name }}.txt
+          tar -czvf release-artefato.tar.gz meu-app-${{ github.ref_name }}.txt
 
-      # Assina o arquivo
-      - name: Sign the release artifacts
+      # 3. Assina o arquivo digitalmente (Sem precisar de senhas ou chaves secretas)
+      - name: Assinar os artefatos da Release
         run: |
-          cosign sign-blob --yes --output-signature release-artifact.tar.gz.sig release-artifact.tar.gz
+          cosign sign-blob --yes --output-signature release-artefato.tar.gz.sig release-artefato.tar.gz
 
-      # Cria a página de Release no GitHub e anexa o arquivo junto com a assinatura dele
-      - name: Create GitHub Release and Upload Artifacts
+      # 4. Cria a página de Release no GitHub e anexa o arquivo junto com a assinatura dele
+      - name: Criar Release e Fazer Upload dos Assets
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            release-artifact.tar.gz
-            release-artifact.tar.gz.sig
+            release-artefato.tar.gz
+            release-artefato.tar.gz.sig
           body: |
-            Automated release generated via GitHub Actions.
+            Release automatizada gerada via GitHub Actions.
             
-            **Check the integrity of this file:**
+            **Como verificar a integridade deste arquivo:**
             ```bash
-            cosign verify-blob --certificate-identity-regexp "https://github.com" --oidc-issuer https://githubusercontent.com --signature release-artifact.tar.gz.sig release-artifact.tar.gz
+            cosign verify-blob --certificate-identity-regexp "https://github.com" --oidc-issuer https://githubusercontent.com --signature release-artefato.tar.gz.sig release-artefato.tar.gz
             ```

@@ -3,5 +3,3 @@ node_modules/
 .env
 .env.local
 .env.*.local
-release.yml
-__pycache__/
