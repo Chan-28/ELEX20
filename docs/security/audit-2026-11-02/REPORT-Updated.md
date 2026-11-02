@@ -1,6 +1,6 @@
 # Auditoria de segurança — ELEX20 (atualizado após as correções)
 
-**Data:** 2026-11-02 · **Base:** `main` em `19286d3d` com os PRs #24 e #25 mergeados, mais o PR #31 (aberto, com CI verde) · **Relatório original:** [REPORT.md](REPORT.md)
+**Data:** 2026-11-02 · **Base:** `main` em `fb922f2f`, com os PRs #24, #25 e #31 mergeados · **Relatório original:** [REPORT.md](REPORT.md)
 
 **Como verifiquei:** reli o código atual e executei os controles, não só o diff. O smoke de infraestrutura (`scripts/infra-smoke.sh`) passou **23/23 aqui e no CI**. O Alloy real redigiu segredos de um log de exemplo. O Hermes v0.22.5 subiu com a configuração nova, sem socket do Docker. Passada de um único revisor, sem revisão independente.
 
@@ -10,7 +10,7 @@
 | ---- | ------------- | ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | F-01 | Média         | **Corrigido** (#24)    | Mosquitto exige usuário e ACL (`device` publica, `n8n` só lê); porta 1883 em `MQTT_BIND` (padrão loopback). Sobra: sem TLS, o tráfego e as senhas MQTT seguem em claro na LAN.                                                                                             |
 | F-02 | Média         | **Corrigido** (#24)    | Datasource do Grafana e n8n usam `grafana_ro` e `n8n_app`, sem superusuário. Sobra: o backend do Grafana e o `db-init` ainda usam `postgres`, mas um Editor do Grafana não alcança essas conexões.                                                                         |
-| F-03 | Média         | **Eliminado** (#31)    | Primeiro, detecção por `ast` e instalação só com `--install` (#24); agora o `dependencies.py` foi removido (#31, aberto).                                                                                                                                                  |
+| F-03 | Média         | **Eliminado** (#31)    | Primeiro, detecção por `ast` e instalação só com `--install` (#24); agora o `dependencies.py` foi removido (#31).                                                                                                                                                          |
 | F-04 | Média         | **Corrigido** (#24)    | Imagens do compose fixadas por versão e digest. Sobra no CI: `trivy-action@master` e o ZAP `:stable`.                                                                                                                                                                      |
 | F-05 | Média         | **Aberto**             | `admin`/`password` continuam nos exemplos do Grafana, Hermes e Postgres (as senhas novas do MQTT e dos papéis do banco não têm padrão).                                                                                                                                    |
 | F-06 | Baixa         | **Corrigido** (#25)    | Release empacota o código-fonte real, assina com bundle do cosign e traz verificação correta; actions por SHA. Nunca rodou numa tag real.                                                                                                                                  |
