@@ -1,4 +1,4 @@
-name: Zizmor (segurança dos workflows)
+name: Zizmor (workflow security linter)
 
 # Análise estática dos próprios workflows do GitHub Actions: injeção via
 # expressões, permissões excessivas, actions sem versão fixa, uso inseguro de
