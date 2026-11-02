@@ -14,10 +14,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Install Cosign (Keyless Signing)
-        uses: sigstore/cosign-installer@v3.5.0
+        uses: sigstore/cosign-installer@v4.1.2
 
       # Simulação de build do software e gera um arquivo de release (ex: tar.gz) para ser assinado
       - name: Release Build Simulation
@@ -32,7 +32,7 @@ jobs:
 
       # Cria a página de Release no GitHub e anexa o arquivo junto com a assinatura dele
       - name: Create GitHub Release and Upload Artifacts
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: |
             release-artifact.tar.gz
