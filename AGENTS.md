@@ -52,7 +52,7 @@ Documentação e arquivos `.md/.json/.yaml` não exigem build. O Prettier format
 - Imagens são fixadas por versão e digest; atualize pelo Dependabot, não volte para `latest`.
 - Tópicos MQTT: `sound/inference` e `sound/status` no firmware; o schema documenta `sound/inference/<device_id>`. Mudou um, confira os outros.
 - `AUDIO_SAMPLE_RATE` (16000) e `AUDIO_WINDOW_MS` precisam coincidir com a janela do projeto Edge Impulse.
-- Credenciais do firmware entram por `sysenv` (`firmware/.env` ou secrets do CI), nunca no código.
+- Credenciais do firmware entram pelo `firmware/load_env.py` (ambiente ou `firmware/.env`; secrets do CI), nunca no código; o build falha se alguma estiver vazia.
 
 ## Convenções de código
 
