@@ -257,3 +257,68 @@ def test_sync_fails_without_uv(mgr):
     mgr.uv_available = False
     ok = mgr.sync()
     assert ok is False
+
+
+# ── detecção segura (regressão: texto não pode virar pacote) ──────────────────
+
+
+def _manager_in(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nname = "t"\nversion = "0.1.0"\ndependencies = []\n',
+        encoding="utf-8",
+    )
+    m = UVDependencyManager()
+    m.uv_available = True
+    return m
+
+
+def test_detect_ignores_imports_in_strings_and_docstrings(tmp_path, monkeypatch):
+    (tmp_path / "s.py").write_text(
+        '"""Lê os dados from users and import the results."""\n'
+        "# import commented_pkg\n"
+        'x = "import evilpkg\\nfrom otherpkg import y"\n'
+        "import numpy\n"
+    )
+    imports, _ = _manager_in(tmp_path, monkeypatch).detect_python_files()
+    assert imports == {"numpy"}
+
+
+def test_detect_skips_local_modules_and_relative_imports(tmp_path, monkeypatch):
+    (tmp_path / "helper.py").write_text("X = 1\n")
+    (tmp_path / "main.py").write_text("import helper\nfrom . import sibling\nimport numpy\n")
+    imports, _ = _manager_in(tmp_path, monkeypatch).detect_python_files()
+    assert imports == {"numpy"}
+
+
+def test_detect_survives_files_with_syntax_errors(tmp_path, monkeypatch):
+    (tmp_path / "broken.py").write_text("def (:\n")
+    (tmp_path / "ok.py").write_text("import pandas\n")
+    imports, _ = _manager_in(tmp_path, monkeypatch).detect_python_files()
+    assert imports == {"pandas"}
+
+
+def test_run_does_not_install_by_default(mgr):
+    with (
+        patch.object(mgr, "verify_environment"),
+        patch.object(mgr, "clean_environment"),
+        patch.object(mgr, "get_installed_packages"),
+        patch.object(mgr, "detect_python_files", return_value=({"missingpkg"}, set())),
+        patch.object(mgr, "check_lock"),
+        patch.object(mgr, "install_packages") as install,
+    ):
+        mgr.run()
+    install.assert_not_called()
+
+
+def test_run_installs_only_when_requested(mgr):
+    with (
+        patch.object(mgr, "verify_environment"),
+        patch.object(mgr, "clean_environment"),
+        patch.object(mgr, "get_installed_packages"),
+        patch.object(mgr, "detect_python_files", return_value=({"missingpkg"}, set())),
+        patch.object(mgr, "check_lock"),
+        patch.object(mgr, "install_packages") as install,
+    ):
+        mgr.run(auto_install=True)
+    install.assert_called_once()

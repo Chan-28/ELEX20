@@ -12,6 +12,7 @@ Fonte única de verdade: pyproject.toml + uv.lock
 Não lê nem gera requirements.txt.
 """
 
+import ast
 import re
 import shutil
 import subprocess
@@ -179,73 +180,13 @@ class UVDependencyManager:
         return deps
 
     def detect_python_files(self) -> tuple[set[str], set[str]]:
-        """Detecta imports externos nos arquivos .py do projeto."""
+        """Detecta imports externos nos arquivos .py do projeto (via ast, só imports reais)."""
         self._section("🔍 DETECÇÃO DE IMPORTS")
 
-        stdlib = {
-            "os",
-            "sys",
-            "json",
-            "csv",
-            "re",
-            "math",
-            "random",
-            "datetime",
-            "collections",
-            "itertools",
-            "functools",
-            "operator",
-            "pathlib",
-            "subprocess",
-            "shutil",
-            "tempfile",
-            "glob",
-            "io",
-            "time",
-            "hashlib",
-            "hmac",
-            "secrets",
-            "struct",
-            "codecs",
-            "string",
-            "urllib",
-            "http",
-            "socket",
-            "ssl",
-            "asyncio",
-            "threading",
-            "multiprocessing",
-            "logging",
-            "traceback",
-            "warnings",
-            "inspect",
-            "copy",
-            "pprint",
-            "enum",
-            "types",
-            "numbers",
-            "decimal",
-            "statistics",
-            "sqlite3",
-            "pickle",
-            "zipfile",
-            "tarfile",
-            "configparser",
-            "email",
-            "mimetypes",
-            "base64",
-            "binascii",
-            "html",
-            "xml",
-            "unittest",
-            "doctest",
-            "pdb",
-            "gc",
-            "abc",
-            "argparse",
-            "tomllib",
-            "toml",
-            "typing",
+        stdlib = set(sys.stdlib_module_names)
+        # Módulos do próprio projeto não são pacotes do PyPI
+        local = {p.stem for p in self.project_root.glob("*.py")} | {
+            d.name for d in self.project_root.iterdir() if (d / "__init__.py").exists()
         }
 
         imports: set[str] = set()
@@ -261,15 +202,20 @@ class UVDependencyManager:
 
         for py_file in py_files:
             try:
-                content = py_file.read_text(encoding="utf-8", errors="ignore")
-                found = re.findall(r"from\s+([a-zA-Z_][a-zA-Z0-9_.]*)", content)
-                found += re.findall(r"import\s+([a-zA-Z_][a-zA-Z0-9_., \t]*)", content)
-                for imp in found:
-                    root = imp.split(".")[0].split(",")[0].strip()
-                    if not root or root.startswith("_"):
+                tree = ast.parse(py_file.read_text(encoding="utf-8", errors="ignore"), filename=str(py_file))
+                for node in ast.walk(tree):
+                    if isinstance(node, ast.Import):
+                        names = [alias.name for alias in node.names]
+                    elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+                        names = [node.module]
+                    else:
                         continue
-                    (std if root in stdlib else imports).add(root)
-            except Exception as e:
+                    for name in names:
+                        root = name.split(".")[0]
+                        if root.startswith("_") or root in local:
+                            continue
+                        (std if root in stdlib else imports).add(root)
+            except (SyntaxError, ValueError, OSError) as e:
                 self._log(f"Erro ao ler {py_file}: {e}", "WARNING")
 
         return imports, std
@@ -345,7 +291,7 @@ class UVDependencyManager:
 
     # ──────────────────────────────── pipeline ───────────────────────────────
 
-    def run(self, auto_install: bool = True) -> None:
+    def run(self, auto_install: bool = False) -> None:
         print(f"\n{Colors.BOLD}{Colors.MAGENTA}🚀 GERENCIADOR DE DEPENDÊNCIAS — UV{Colors.RESET}\n")
 
         self.verify_environment()
@@ -380,7 +326,8 @@ def main() -> None:
     import argparse
 
     parser = argparse.ArgumentParser(description="Gerenciador de dependências UV — ELEX20")
-    parser.add_argument("--no-install", action="store_true", help="Detecta sem instalar")
+    parser.add_argument("--install", action="store_true", help="Instala pacotes faltantes (fora do uv.lock)")
+    parser.add_argument("--no-install", action="store_true", help="Obsoleto: detectar sem instalar já é o padrão")
     parser.add_argument("--version", action="store_true", help="Exibe versão do UV")
     parser.add_argument("--sync", action="store_true", help="Executa apenas uv sync --frozen")
     parser.add_argument("--lock-check", action="store_true", help="Verifica consistência do uv.lock")
@@ -401,7 +348,7 @@ def main() -> None:
     if args.lock_check:
         sys.exit(0 if mgr.check_lock() else 1)
 
-    mgr.run(auto_install=not args.no_install)
+    mgr.run(auto_install=args.install and not args.no_install)
 
 
 if __name__ == "__main__":
