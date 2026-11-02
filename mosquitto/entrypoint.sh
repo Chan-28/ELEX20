@@ -13,4 +13,10 @@ mosquitto_passwd -b "$PASSWD" n8n "$MQTT_N8N_PASS"
 chown mosquitto:mosquitto "$PASSWD"
 chmod 0600 "$PASSWD"
 
+# ACLs montadas do host chegam com dono/permissão do host; o broker (usuário "mosquitto")
+# recusará arquivos legíveis por todos em versões futuras. Copia com dono e 0600.
+for f in acl acl-health; do
+  install -m 0600 -o mosquitto -g mosquitto "/mosquitto/acl-src/$f" "/mosquitto/config/$f"
+done
+
 exec /docker-entrypoint.sh mosquitto -c /mosquitto/config/mosquitto.conf

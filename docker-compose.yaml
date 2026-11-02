@@ -239,8 +239,8 @@ services:
     volumes:
       - ./mosquitto/entrypoint.sh:/entrypoint.sh:ro
       - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
-      - ./mosquitto/acl:/mosquitto/config/acl:ro
-      - ./mosquitto/acl-health:/mosquitto/config/acl-health:ro
+      - ./mosquitto/acl:/mosquitto/acl-src/acl:ro
+      - ./mosquitto/acl-health:/mosquitto/acl-src/acl-health:ro
       - mosquitto_data:/mosquitto/data
       - mosquitto_log:/mosquitto/log
     healthcheck:
