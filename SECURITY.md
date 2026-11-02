@@ -26,7 +26,7 @@ Teste apenas a sua própria instância. Não acesse nem altere dados de terceiro
 
 ## Práticas do projeto
 
-- **Segredos:** `.env`, tokens e senhas nunca são commitados (use `.env.example`). Credenciais do firmware entram por `sysenv`. Segredo vazado deve ser revogado, não só apagado do histórico.
+- **Segredos:** `.env`, tokens e senhas nunca são commitados (use `.env.example`). Credenciais do firmware entram pelo ambiente ou `firmware/.env` (`firmware/load_env.py`). Segredo vazado deve ser revogado, não só apagado do histórico.
 - **Rede:** o TimescaleDB não publica porta; n8n, Grafana e painel do Hermes escutam só em `127.0.0.1`. O Mosquitto exige usuário e senha (`device` publica em `sound/*`, `n8n` só lê) e só publica a porta 1883 no IP de `MQTT_BIND` (padrão `127.0.0.1`; para o ESP32, use o IP do host na LAN, nunca `0.0.0.0`). Não há TLS no MQTT nem no banco: use só em LAN confiável ou coloque TLS na frente antes de expor.
 - **Privilégios:** o Grafana lê o banco com o papel `grafana_ro` e o n8n usa `n8n_app`; nenhum é superusuário. O socket do Docker não é montado em nenhum container, e o Hermes só aceita usuários listados em `TELEGRAM_ALLOWED_USERS` e `DISCORD_ALLOWED_USERS`. Nunca use `GATEWAY_ALLOW_ALL_USERS` num agente que executa comandos.
 - **Dados:** o banco rejeita leituras com `label`, `device_id`, `location` ou `raw_json` fora do formato ou tamanho, e o broker limita as mensagens a 2 KB.
