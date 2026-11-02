@@ -6,8 +6,13 @@ on:
 
 jobs:
   refactor:
-    if: github.event.issue.pull_request != null && contains(github.event.comment.body, '/cs-agent')
+    # Só quem tem acesso ao repositório pode acionar o agente (escreve no PR e usa secrets).
+    if: >-
+      github.event.issue.pull_request != null &&
+      contains(github.event.comment.body, '/cs-agent') &&
+      contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)
     runs-on: ubuntu-latest
+    environment: refactoring-agent-approval
 
     permissions:
       contents: write
@@ -15,7 +20,7 @@ jobs:
       issues: write
 
     steps:
-      - uses: codescene-oss/pr-refactoring-agent@v1.1.9
+      - uses: codescene-oss/pr-refactoring-agent@449879a10a469bf80a9bf202e64ffc860679d2b4 # v1.1.9
         with:
           pr_number: ${{ github.event.issue.number }}
           command: ${{ github.event.comment.body }}

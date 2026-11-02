@@ -1,0 +1,41 @@
+version: 2
+
+updates:
+  # Python (pyproject.toml, uv.lock)
+  - package-ecosystem: "uv"
+    directory: "/"
+    schedule:
+      interval: "daily"
+      time: "12:00"
+    ignore:
+      # Major updates costumam exigir intervenção manual
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+
+  # JS (commitlint, Husky, ESLint, Prettier)
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "daily"
+      time: "12:00"
+    groups:
+      dev-dependencies:
+        dependency-type: "development"
+        update-types: ["minor", "patch"]
+
+  # Actions em .github/workflows/
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "daily"
+      time: "12:00"
+    groups:
+      all-actions:
+        patterns: ["*"]
+
+  # Imagens do docker-compose.yaml
+  - package-ecosystem: "docker-compose"
+    directory: "/"
+    schedule:
+      interval: "daily"
+      time: "12:00"
