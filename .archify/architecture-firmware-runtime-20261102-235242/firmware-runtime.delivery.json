@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "receiptId": "954fa628-13f2-432f-858e-ba91a5b2659f",
+  "status": "current",
+  "command": "deliver",
+  "type": "architecture",
+  "input": "/home/usuario/GitHub/ELEX20/.claude/worktrees/platform-io-firmware-a00022/.archify/architecture-firmware-runtime-20261102-235242/candidate.json",
+  "output": "/home/usuario/GitHub/ELEX20/.claude/worktrees/platform-io-firmware-a00022/.archify/architecture-firmware-runtime-20261102-235242/firmware-runtime.html",
+  "specification": {
+    "sha256": "d4bb1c4806b7b47b141ddc44a745345550a8e2e3db1bafe24f32ecefb0deb721",
+    "bytes": 4453
+  },
+  "artifact": {
+    "sha256": "ba44f55ef7f947a3123b38896bbdfd2ea8e403f3603d494561564dd7b1b77ece",
+    "bytes": 855837
+  }
+}

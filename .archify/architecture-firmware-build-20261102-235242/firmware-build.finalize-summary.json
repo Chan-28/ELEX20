@@ -1,0 +1,67 @@
+{
+  "schemaVersion": 1,
+  "ok": false,
+  "command": "finalize",
+  "status": "skipped",
+  "type": "architecture",
+  "quality": "showcase",
+  "specification": {
+    "path": "/home/usuario/GitHub/ELEX20/.claude/worktrees/platform-io-firmware-a00022/.archify/architecture-firmware-build-20261102-235242/candidate.json",
+    "sha256": "35df58e8ae7506c6f7086296e6a76175f19e7e8fa2d0cc4615415cf93e578ecd",
+    "bytes": 3000
+  },
+  "artifact": {
+    "path": "/home/usuario/GitHub/ELEX20/.claude/worktrees/platform-io-firmware-a00022/.archify/architecture-firmware-build-20261102-235242/firmware-build.html",
+    "sha256": "3211e6d794a72d6b2e181587bc4ac4f6721841c914c6ddfd68b740cab04a0dcc",
+    "bytes": 845927
+  },
+  "gates": {
+    "validate": "pass",
+    "deliver": "pass",
+    "check": "pass",
+    "browser-check": "skipped"
+  },
+  "failedStage": "browser-check",
+  "diagnostics": [
+    {
+      "code": "viewer/chrome-unavailable",
+      "severity": "warning",
+      "message": "No supported browser found. Install Chrome/Chromium (or Microsoft Edge), or set ARCHIFY_CHROME to its executable path.",
+      "subject": {
+        "artifact": "/home/usuario/GitHub/ELEX20/.claude/worktrees/platform-io-firmware-a00022/.archify/architecture-firmware-build-20261102-235242/firmware-build.html"
+      },
+      "evidence": {
+        "executable": null
+      },
+      "supportedFixes": [
+        "set ARCHIFY_CHROME to a Chrome/Chromium executable (or Microsoft Edge) and rerun browser-check"
+      ]
+    }
+  ],
+  "diagnosticSummary": {
+    "total": 1,
+    "shown": 1,
+    "truncated": false
+  },
+  "evidence": {
+    "receipt": "/home/usuario/GitHub/ELEX20/.claude/worktrees/platform-io-firmware-a00022/.archify/architecture-firmware-build-20261102-235242/firmware-build.finalize.json",
+    "summaryReceipt": "/home/usuario/GitHub/ELEX20/.claude/worktrees/platform-io-firmware-a00022/.archify/architecture-firmware-build-20261102-235242/firmware-build.finalize-summary.json",
+    "browserCheckReceipt": "/home/usuario/GitHub/ELEX20/.claude/worktrees/platform-io-firmware-a00022/.archify/architecture-firmware-build-20261102-235242/firmware-build.browser-check.json"
+  },
+  "update": {
+    "status": "current",
+    "installedVersion": "3.2.0",
+    "availableVersion": "3.2.0",
+    "releaseNotes": null,
+    "checkedAt": "2026-11-03T02:53:19.776Z",
+    "source": "network",
+    "noticeRequired": false,
+    "noticeText": null
+  },
+  "visualReview": "not-requested",
+  "durationMs": 1156,
+  "browserCheck": {
+    "requested": true,
+    "ran": false
+  }
+}

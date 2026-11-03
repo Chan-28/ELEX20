@@ -1,0 +1,404 @@
+{
+  "schemaVersion": 1,
+  "ok": false,
+  "command": "finalize",
+  "status": "fail",
+  "type": "architecture",
+  "quality": "showcase",
+  "startedAt": "2026-11-03T03:03:33.383Z",
+  "specification": {
+    "path": "/home/usuario/GitHub/ELEX20/.claude/worktrees/platform-io-firmware-a00022/.archify/architecture-firmware-runtime-20261102-235242/candidate.json",
+    "sha256": "d4bb1c4806b7b47b141ddc44a745345550a8e2e3db1bafe24f32ecefb0deb721",
+    "bytes": 4453
+  },
+  "artifact": {
+    "path": "/home/usuario/GitHub/ELEX20/.claude/worktrees/platform-io-firmware-a00022/.archify/architecture-firmware-runtime-20261102-235242/firmware-runtime.html",
+    "sha256": "ba44f55ef7f947a3123b38896bbdfd2ea8e403f3603d494561564dd7b1b77ece",
+    "bytes": 855837
+  },
+  "stages": {
+    "validate": {
+      "status": "pass",
+      "exitCode": 0,
+      "durationMs": null,
+      "execution": "embedded-in-deliver",
+      "command": [
+        "/home/linuxbrew/.linuxbrew/Cellar/node/26.10.0_1/bin/node",
+        "/home/usuario/.claude/skills/archify/bin/archify.mjs",
+        "deliver",
+        "architecture",
+        "/home/usuario/GitHub/ELEX20/.claude/worktrees/platform-io-firmware-a00022/.archify/architecture-firmware-runtime-20261102-235242/candidate.json",
+        "/home/usuario/GitHub/ELEX20/.claude/worktrees/platform-io-firmware-a00022/.archify/architecture-firmware-runtime-20261102-235242/firmware-runtime.html",
+        "--quality",
+        "showcase",
+        "--json"
+      ],
+      "receipt": {
+        "schemaVersion": 1,
+        "ok": true,
+        "command": "validate",
+        "specification": {
+          "sha256": "d4bb1c4806b7b47b141ddc44a745345550a8e2e3db1bafe24f32ecefb0deb721",
+          "bytes": 4453
+        },
+        "validation": {
+          "checksPassed": 9,
+          "checkCount": 9,
+          "compositionProfile": "showcase",
+          "compositionStatus": "pass",
+          "errors": 0,
+          "warnings": 0
+        }
+      }
+    },
+    "deliver": {
+      "status": "pass",
+      "exitCode": 0,
+      "durationMs": 397,
+      "command": [
+        "/home/linuxbrew/.linuxbrew/Cellar/node/26.10.0_1/bin/node",
+        "/home/usuario/.claude/skills/archify/bin/archify.mjs",
+        "deliver",
+        "architecture",
+        "/home/usuario/GitHub/ELEX20/.claude/worktrees/platform-io-firmware-a00022/.archify/architecture-firmware-runtime-20261102-235242/candidate.json",
+        "/home/usuario/GitHub/ELEX20/.claude/worktrees/platform-io-firmware-a00022/.archify/architecture-firmware-runtime-20261102-235242/firmware-runtime.html",
+        "--quality",
+        "showcase",
+        "--json"
+      ],
+      "receipt": {
+        "schemaVersion": 1,
+        "receiptId": "f9ef6797-fb24-4e0c-84c6-1e8fb66ff5d9",
+        "ok": true,
+        "command": "deliver",
+        "type": "architecture",
+        "input": "/home/usuario/GitHub/ELEX20/.claude/worktrees/platform-io-firmware-a00022/.archify/architecture-firmware-runtime-20261102-235242/candidate.json",
+        "output": "/home/usuario/GitHub/ELEX20/.claude/worktrees/platform-io-firmware-a00022/.archify/architecture-firmware-runtime-20261102-235242/firmware-runtime.html",
+        "specification": {
+          "sha256": "d4bb1c4806b7b47b141ddc44a745345550a8e2e3db1bafe24f32ecefb0deb721",
+          "bytes": 4453
+        },
+        "artifact": {
+          "sha256": "ba44f55ef7f947a3123b38896bbdfd2ea8e403f3603d494561564dd7b1b77ece",
+          "bytes": 855837
+        },
+        "validation": {
+          "checksPassed": 9,
+          "checkCount": 9,
+          "compositionProfile": "showcase",
+          "compositionStatus": "pass",
+          "errors": 0,
+          "warnings": 0
+        },
+        "diagnostics": [
+          {
+            "code": "i18n/locale-fallback",
+            "severity": "warning",
+            "message": "meta.locale \"pt-BR\" has no bundled catalog and no usable meta.translations; the Viewer chrome and <html lang> fall back to English.",
+            "subject": {
+              "diagramType": "architecture",
+              "path": "/meta/locale"
+            },
+            "evidence": {
+              "locale": "pt-BR",
+              "bundledLocales": [
+                "en",
+                "zh-CN",
+                "zh-TW",
+                "es",
+                "ko",
+                "ar"
+              ]
+            },
+            "supportedFixes": [
+              "Supply meta.translations for this locale.",
+              "Use a bundled locale: en, zh-CN, zh-TW, es, ko, ar."
+            ]
+          }
+        ],
+        "update": {
+          "status": "unavailable",
+          "installedVersion": null,
+          "availableVersion": null,
+          "releaseNotes": null,
+          "checkedAt": null,
+          "source": null,
+          "noticeRequired": false,
+          "noticeText": null,
+          "reason": "disabled"
+        }
+      },
+      "stderr": "archify: meta.locale \"pt-BR\" has no bundled catalog and no usable meta.translations; the Viewer chrome and <html lang> fall back to English."
+    },
+    "check": {
+      "status": "pass",
+      "exitCode": 0,
+      "durationMs": 187,
+      "command": [
+        "/home/linuxbrew/.linuxbrew/Cellar/node/26.10.0_1/bin/node",
+        "/home/usuario/.claude/skills/archify/bin/archify.mjs",
+        "check",
+        "/home/usuario/GitHub/ELEX20/.claude/worktrees/platform-io-firmware-a00022/.archify/architecture-firmware-runtime-20261102-235242/firmware-runtime.html",
+        "--require-provenance"
+      ],
+      "receipt": {
+        "ok": true,
+        "file": "/home/usuario/GitHub/ELEX20/.claude/worktrees/platform-io-firmware-a00022/.archify/architecture-firmware-runtime-20261102-235242/firmware-runtime.html",
+        "artifact": {
+          "sha256": "ba44f55ef7f947a3123b38896bbdfd2ea8e403f3603d494561564dd7b1b77ece",
+          "bytes": 855837
+        },
+        "checks": [
+          {
+            "name": "single_svg",
+            "ok": true,
+            "details": [
+              "found 1 <svg> block(s)"
+            ]
+          },
+          {
+            "name": "finite_svg",
+            "ok": true,
+            "details": []
+          },
+          {
+            "name": "orthogonal_arrows",
+            "ok": true,
+            "details": []
+          },
+          {
+            "name": "label_route_clearance",
+            "ok": true,
+            "details": []
+          },
+          {
+            "name": "relationship_crossings",
+            "ok": true,
+            "details": []
+          },
+          {
+            "name": "relationship_corridors",
+            "ok": true,
+            "details": []
+          },
+          {
+            "name": "container_border_runs",
+            "ok": true,
+            "details": []
+          },
+          {
+            "name": "route_rhythm",
+            "ok": true,
+            "details": []
+          },
+          {
+            "name": "legend_clearance",
+            "ok": true,
+            "details": []
+          }
+        ],
+        "composition": {
+          "schemaVersion": 1,
+          "profile": "showcase",
+          "status": "pass",
+          "summary": {
+            "errors": 0,
+            "warnings": 0
+          },
+          "metrics": {
+            "properCrossings": 0,
+            "resolvedCrossovers": 0,
+            "ambiguousCorridors": 0,
+            "arrowheadCollisions": 0,
+            "containerBorderRuns": 0,
+            "labelRouteClearanceIssues": 0,
+            "labelCanvasOverflowIssues": 0,
+            "minLabelRouteClearance": 72.1,
+            "desktopReadabilityIssues": 0,
+            "viewportHeightIssues": 0,
+            "minProjectedNodeTextPx": 7.5,
+            "maxBends": 0,
+            "routesOverSuggestedBends": 0,
+            "maxStretch": 1,
+            "routesOverSuggestedStretch": 0,
+            "minSegmentPx": 90,
+            "minInteriorSegmentPx": null,
+            "shortSegmentCount": 0,
+            "shortEndpointSegmentCount": 0,
+            "shortInteriorSegmentCount": 0,
+            "microSegmentCount": 0
+          },
+          "suggestedLimits": {
+            "bendsPerRelationship": 2,
+            "stretch": 1.35,
+            "segmentPx": 16,
+            "microSegmentPx": 8
+          },
+          "routeReview": {
+            "crossings": [],
+            "detours": []
+          },
+          "leadingSpace": {
+            "measured": true,
+            "emptyTopPx": 30,
+            "emptyTopRatio": 0.039,
+            "occupiedTop": 30,
+            "viewBoxTop": 0,
+            "canvasHeight": 778,
+            "typicalNodeHeight": 60,
+            "reviewSuggested": false
+          },
+          "desktopReadability": {
+            "budgetBasis": "recognized-declared-wide",
+            "readerContract": "declared-wide-v1",
+            "availableDiagramWidth": 1200,
+            "actualBudgetPx": 1200,
+            "actualReaderWidth": 1230,
+            "desiredReaderWidth": 1230,
+            "viewportCap": 1376,
+            "limit": "source-size",
+            "requestedTargetPx": 7.5,
+            "requestedTargetMet": true,
+            "hardFloorPx": 6,
+            "hardFloorMet": true,
+            "minimumOwner": {
+              "kind": "edge",
+              "id": "mic-to-i2s",
+              "from": "mic",
+              "to": "i2s"
+            },
+            "minimumSourceTextPx": 8,
+            "minimumProjectedTextPx": 7.5,
+            "semanticTextCount": 42
+          },
+          "issues": []
+        },
+        "provenance": "current",
+        "deliveryReceiptId": "f9ef6797-fb24-4e0c-84c6-1e8fb66ff5d9"
+      }
+    },
+    "browser-check": {
+      "status": "fail",
+      "exitCode": 1,
+      "durationMs": 1066,
+      "command": [
+        "/home/linuxbrew/.linuxbrew/Cellar/node/26.10.0_1/bin/node",
+        "/home/usuario/.claude/skills/archify/bin/archify.mjs",
+        "browser-check",
+        "/home/usuario/GitHub/ELEX20/.claude/worktrees/platform-io-firmware-a00022/.archify/architecture-firmware-runtime-20261102-235242/firmware-runtime.html",
+        "--json",
+        "--require-provenance",
+        "--out-dir",
+        "/home/usuario/GitHub/ELEX20/.claude/worktrees/platform-io-firmware-a00022/.archify/architecture-firmware-runtime-20261102-235242/review-2"
+      ],
+      "execution": "in-process",
+      "receipt": {
+        "schemaVersion": 1,
+        "ok": false,
+        "command": "browser-check",
+        "evidenceKind": "automated-browser",
+        "status": "fail",
+        "visualReview": "not-requested",
+        "provenance": "current",
+        "deliveryReceiptId": "f9ef6797-fb24-4e0c-84c6-1e8fb66ff5d9",
+        "artifact": {
+          "path": "/home/usuario/GitHub/ELEX20/.claude/worktrees/platform-io-firmware-a00022/.archify/architecture-firmware-runtime-20261102-235242/firmware-runtime.html",
+          "sha256": "ba44f55ef7f947a3123b38896bbdfd2ea8e403f3603d494561564dd7b1b77ece",
+          "bytes": 855837
+        },
+        "state": {
+          "detail": "read",
+          "motion": "still"
+        },
+        "chrome": {
+          "status": "available",
+          "executable": "/usr/bin/chromium-browser"
+        },
+        "diagnostics": [
+          {
+            "code": "viewer/browser-check-runtime",
+            "severity": "error",
+            "message": "browser-check could not complete its Chrome inspection.",
+            "subject": {
+              "artifact": "/home/usuario/GitHub/ELEX20/.claude/worktrees/platform-io-firmware-a00022/.archify/architecture-firmware-runtime-20261102-235242/firmware-runtime.html"
+            },
+            "evidence": {
+              "reason": "Chrome navigation failed: net::ERR_FILE_NOT_FOUND"
+            },
+            "supportedFixes": [
+              "resolve the reported Chrome inspection error, then rerun browser-check"
+            ]
+          }
+        ],
+        "containment": {
+          "status": "fail",
+          "policy": "fit-or-reader-declared-readable-vertical-scroll",
+          "viewports": []
+        },
+        "themeStates": {
+          "status": "fail",
+          "viewports": []
+        },
+        "readability": {
+          "status": "fail",
+          "minimumProjectedNodeTextPx": 6,
+          "viewports": []
+        },
+        "viewerChrome": {
+          "status": "fail",
+          "viewports": []
+        },
+        "captures": {
+          "status": "not-requested",
+          "screenshots": [],
+          "contactSheet": null
+        },
+        "sidecars": {
+          "directory": "/home/usuario/GitHub/ELEX20/.claude/worktrees/platform-io-firmware-a00022/.archify/architecture-firmware-runtime-20261102-235242/review-2",
+          "receipt": "firmware-runtime.browser-check.json",
+          "files": []
+        },
+        "error": "Chrome navigation failed: net::ERR_FILE_NOT_FOUND"
+      }
+    }
+  },
+  "browserCheck": {
+    "requested": true,
+    "ran": false
+  },
+  "diagnostics": [
+    {
+      "code": "viewer/browser-check-runtime",
+      "severity": "error",
+      "message": "browser-check could not complete its Chrome inspection.",
+      "subject": {
+        "artifact": "/home/usuario/GitHub/ELEX20/.claude/worktrees/platform-io-firmware-a00022/.archify/architecture-firmware-runtime-20261102-235242/firmware-runtime.html"
+      },
+      "evidence": {
+        "reason": "Chrome navigation failed: net::ERR_FILE_NOT_FOUND"
+      },
+      "supportedFixes": [
+        "resolve the reported Chrome inspection error, then rerun browser-check"
+      ]
+    }
+  ],
+  "evidence": {
+    "receipt": "/home/usuario/GitHub/ELEX20/.claude/worktrees/platform-io-firmware-a00022/.archify/architecture-firmware-runtime-20261102-235242/review-2/firmware-runtime.finalize.json",
+    "summaryReceipt": "/home/usuario/GitHub/ELEX20/.claude/worktrees/platform-io-firmware-a00022/.archify/architecture-firmware-runtime-20261102-235242/review-2/firmware-runtime.finalize-summary.json",
+    "browserCheckReceipt": "/home/usuario/GitHub/ELEX20/.claude/worktrees/platform-io-firmware-a00022/.archify/architecture-firmware-runtime-20261102-235242/review-2/firmware-runtime.browser-check.json"
+  },
+  "visualReview": "not-requested",
+  "failedStage": "browser-check",
+  "finishedAt": "2026-11-03T03:03:35.155Z",
+  "durationMs": 1771,
+  "update": {
+    "status": "current",
+    "installedVersion": "3.2.0",
+    "availableVersion": "3.2.0",
+    "releaseNotes": null,
+    "checkedAt": "2026-11-03T02:53:19.776Z",
+    "source": "cache",
+    "noticeRequired": false,
+    "noticeText": null
+  }
+}
