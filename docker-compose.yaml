@@ -111,8 +111,6 @@ services:
       - "127.0.0.1:9119:9119"
     environment:
       - HERMES_TELEMETRY_ENABLED=false
-      - LLM_PROVIDER=ollama
-      - OLLAMA_BASE_URL=http://ollama:11434
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
       - DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN:-}
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
@@ -133,7 +131,7 @@ services:
     # com backend "local", dentro deste container sem privilégios.
     volumes:
       - ./hermes_data:/opt/data
-      - ./hermes/config.jsonc:/opt/data/config.json:ro
+      - ./hermes/config.yaml:/opt/data/config.yaml:ro
     networks:
       - monitoring
     depends_on:

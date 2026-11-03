@@ -1,0 +1,27 @@
+# Configuração do Hermes (montada em /opt/data/config.yaml).
+# O Hermes v0.22.5 lê só este arquivo (HERMES_HOME=/opt/data); o antigo
+# config.jsonc nunca era lido. Segredos e allowlists vêm do ambiente (.env),
+# não daqui.
+
+model:
+  # OpenRouter como principal; a chave vem de OPENROUTER_API_KEY
+  default: "openai/gpt-4o-mini"
+  provider: "openrouter"
+
+# Reserva local quando o OpenRouter falhar ou estiver sem chave.
+# Baixe o modelo antes: docker compose exec ollama ollama pull qwen2.5:3b
+fallback_providers:
+  - provider: "custom"
+    model: "qwen2.5:3b"
+    base_url: "http://ollama:11434/v1"
+
+# Comandos rodam dentro do container do Hermes. O backend "docker" exigiria
+# montar o socket do Docker (controle total do host) e não deve ser usado.
+terminal:
+  backend: "local"
+
+browser:
+  cdp_url: "ws://lightpanda:9222"
+
+telemetry:
+  enabled: false
