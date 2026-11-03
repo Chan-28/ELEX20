@@ -8,3 +8,6 @@ __pycache__/
 .pio/
 hermes_data/
 dependency_manager.log
+
+# Rascunho de handoff entre sessões do Claude Code
+HANDOFF.md
