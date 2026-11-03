@@ -27,7 +27,7 @@ def arquivos_embutidos():
 a = Analysis(  # noqa: F821
     [str(pasta_do_spec / "elex_installer.py")],
     pathex=[str(pasta_do_spec)],
-    datas=list(arquivos_embutidos()),
+    datas=[*arquivos_embutidos(), (str(pasta_do_spec / "versao.txt"), ".")],
     excludes=["tkinter", "unittest", "pydoc", "test"],
 )
 pyz = PYZ(a.pure)  # noqa: F821

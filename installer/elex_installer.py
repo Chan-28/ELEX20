@@ -31,7 +31,17 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-VERSAO = "1.0.0"
+
+def ler_versao() -> str:
+    """Versão gravada pelo CI (versao.txt, a partir da tag); '0.0.0-dev' fora de um build de release."""
+    pasta = Path(sys._MEIPASS) if getattr(sys, "frozen", False) else Path(__file__).resolve().parent  # type: ignore[attr-defined]  # noqa: SLF001
+    try:
+        return (pasta / "versao.txt").read_text(encoding="utf-8").strip() or "dev"
+    except OSError:
+        return "dev"
+
+
+VERSAO = ler_versao()
 
 # Sem valor padrão no .env.example: o instalador gera um valor aleatório para cada uma
 SEGREDOS_OBRIGATORIOS = (

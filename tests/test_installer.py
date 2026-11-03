@@ -162,3 +162,10 @@ def test_copiar_projeto_normaliza_crlf(tmp_path):
 def test_main_recusa_set_mal_formado():
     with pytest.raises(SystemExit):
         inst.main(["--set", "SEM_IGUAL", "--dry-run"])
+
+
+def test_versao_vem_do_arquivo_versao_txt():
+    esperado = (RAIZ / "installer" / "versao.txt").read_text(encoding="utf-8").strip()
+    assert esperado
+    assert inst.ler_versao() == esperado
+    assert inst.VERSAO == esperado
