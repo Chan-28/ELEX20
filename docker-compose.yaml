@@ -103,9 +103,12 @@ services:
     image: busybox:1.38.0@sha256:a46257e06c82ad85242d0d38077d0a52d9896389ca60a1a59d3463db586e5fa4
     container_name: hermes-init
     user: root
-    command: sh -c "mkdir -p /opt/data && chown -R 10000:10000 /opt/data && chmod 750 /opt/data"
+    # Copia a configuração para dentro de /opt/data a cada `up` (o arquivo do repositório
+    # manda). Montá-la direto sobre /opt/data, que já é um bind mount, falha no Docker Desktop.
+    command: sh -c "mkdir -p /opt/data && cp /seed/config.yaml /opt/data/config.yaml && chown -R 10000:10000 /opt/data && chmod 750 /opt/data"
     volumes:
       - ./hermes_data:/opt/data
+      - ./hermes/config.yaml:/seed/config.yaml:ro
     restart: "no"
 
   hermes-agent:
@@ -148,7 +151,6 @@ services:
     # com backend "local", dentro deste container sem privilégios.
     volumes:
       - ./hermes_data:/opt/data
-      - ./hermes/config.yaml:/opt/data/config.yaml:ro
       - ./hermes/mcp:/opt/elex/mcp:ro
     networks:
       - monitoring

@@ -1,4 +1,4 @@
-# Configuração do Hermes (montada em /opt/data/config.yaml).
+# Configuração do Hermes (o hermes-init a copia para /opt/data/config.yaml a cada `up`).
 # O Hermes v0.22.5 lê só este arquivo (HERMES_HOME=/opt/data); o antigo
 # config.jsonc nunca era lido. Segredos e allowlists vêm do ambiente (.env),
 # não daqui.
