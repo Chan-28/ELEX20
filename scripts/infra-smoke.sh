@@ -2,7 +2,8 @@
 # Teste de infraestrutura: valida os controles de segurança do banco e do MQTT.
 #   - papéis do banco: grafana_ro só lê; n8n_app só insere; nenhum é superusuário;
 #     restrições de tamanho/formato de sound_events
-#   - Mosquitto: cliente anônimo recusado; "device" só publica em sound/*; "n8n" só lê
+#   - Mosquitto: cliente anônimo recusado; "device" só publica em sound/* e lê só o próprio
+#     sound/cmd/<id>; "n8n" lê sound/# e só ele escreve em sound/cmd/*
 # Sobe containers num projeto descartável (elexsmoke) com senhas de teste e remove
 # os próprios volumes ao terminar. Usado localmente e em .github/workflows/infra-smoke.yml.
 set -uo pipefail
@@ -11,6 +12,7 @@ cd "$(dirname "$0")/.." || exit 1
 
 PROJECT=elexsmoke
 export GRAFANA_RO_PASSWORD=smoke-ro N8N_DB_PASSWORD=smoke-n8n HERMES_RO_PASSWORD=smoke-hermes
+export HERMES_WEBHOOK_SECRET=smoke-webhook N8N_COMMAND_TOKEN=smoke-token
 export MQTT_DEVICE_PASS=smoke-device MQTT_N8N_PASS=smoke-n8n-mqtt
 
 dc() { docker compose -p "$PROJECT" --env-file .env.example "$@"; }
@@ -100,6 +102,18 @@ mpub -u device -P "$MQTT_DEVICE_PASS" -i esp -r -q 1 -t other/topic -m fora >/de
 mpub -u n8n -P "$MQTT_N8N_PASS" -i n8n -r -q 1 -t sound/inference/forjado -m forjado >/dev/null 2>&1
 [ -z "$(msub -u n8n -P "$MQTT_N8N_PASS" -t 'sound/inference/forjado' -C 1 -W 2 2>/dev/null)" ] \
   && ok "n8n não consegue publicar" || bad "n8n não consegue publicar"
+# Comandos ao dispositivo: só o n8n escreve em sound/cmd/*, cada device lê só o seu (client id)
+expect_ok   "n8n publica comando em sound/cmd/<id>"    mpub -u n8n -P "$MQTT_N8N_PASS" -i n8n -r -q 1 -t sound/cmd/esp -m '{"key":"threshold","value":0.7}'
+[ "$(msub -u device -P "$MQTT_DEVICE_PASS" -i esp -t sound/cmd/esp -C 1 -W 5 2>/dev/null)" = '{"key":"threshold","value":0.7}' ] \
+  && ok "device recebe o próprio comando" || bad "device recebe o próprio comando"
+mpub -u n8n -P "$MQTT_N8N_PASS" -i n8n -r -q 1 -t sound/cmd/outro -m '{"key":"threshold","value":0.5}' >/dev/null 2>&1
+[ -z "$(msub -u device -P "$MQTT_DEVICE_PASS" -i esp -t sound/cmd/outro -C 1 -W 2 2>/dev/null)" ] \
+  && ok "device não lê comando de outro device" || bad "device não lê comando de outro device"
+mpub -u device -P "$MQTT_DEVICE_PASS" -i esp -r -q 1 -t sound/cmd/forjado -m '{"key":"threshold","value":0.3}' >/dev/null 2>&1
+[ -z "$(msub -u n8n -P "$MQTT_N8N_PASS" -t 'sound/cmd/forjado' -C 1 -W 2 2>/dev/null)" ] \
+  && ok "device não publica em sound/cmd" || bad "device não publica em sound/cmd"
+mpub -u n8n -P "$MQTT_N8N_PASS" -i n8n -r -n -t sound/cmd/esp >/dev/null 2>&1
+mpub -u n8n -P "$MQTT_N8N_PASS" -i n8n -r -n -t sound/cmd/outro >/dev/null 2>&1
 expect_ok   "healthcheck anônimo funciona no listener 1884 (loopback)" mpub -p 1884 -t health -m ping -q 1
 mpub -p 1884 -r -q 1 -t sound/inference/anonimo -m anonimo >/dev/null 2>&1
 [ -z "$(msub -u n8n -P "$MQTT_N8N_PASS" -t 'sound/inference/anonimo' -C 1 -W 2 2>/dev/null)" ] \

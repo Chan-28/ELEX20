@@ -6,6 +6,14 @@ user device
 topic write sound/inference/+
 topic write sound/status/+
 
-# Consumidor (n8n): somente leitura
+# Consumidor (n8n): lê tudo em sound/ e é o único que envia comandos aos
+# dispositivos (sound/cmd/<DEVICE_ID>). O Hermes não tem usuário MQTT: pede ao
+# n8n, que valida chave e faixa antes de publicar.
 user n8n
 topic read sound/#
+topic write sound/cmd/+
+
+# Cada dispositivo lê só o próprio tópico de comandos: o client id do firmware é o
+# DEVICE_ID. "pattern" vale para todos os usuários, mas só casa com o client id
+# de quem conecta.
+pattern read sound/cmd/%c
