@@ -218,9 +218,11 @@ services:
     container_name: alloy
     restart: unless-stopped
     # Porta não exposta ao host — acesso apenas pela rede interna
-    # Nota: /var/log e /var/lib/docker/containers são caminhos do host Linux/macOS.
-    # No Windows com Docker Desktop + WSL2 esses caminhos existem dentro do WSL2
-    # e a coleta de logs funciona normalmente.
+    # Só sobe com COMPOSE_PROFILES=logs (padrão do .env.example): /var/log e
+    # /var/lib/docker/containers são caminhos do host Linux; no Docker Desktop do
+    # macOS e do Windows eles não existem e o serviço falharia. O instalador
+    # desliga o perfil nesses sistemas.
+    profiles: ["logs"]
     volumes:
       - ./grafana/alloy/config.alloy:/etc/alloy/config.alloy:ro
       - /var/log:/var/log:ro
