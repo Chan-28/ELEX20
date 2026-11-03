@@ -1,0 +1,68 @@
+{
+  "schemaVersion": 1,
+  "ok": false,
+  "command": "browser-check",
+  "evidenceKind": "automated-browser",
+  "status": "fail",
+  "visualReview": "not-requested",
+  "provenance": "current",
+  "deliveryReceiptId": "f9ef6797-fb24-4e0c-84c6-1e8fb66ff5d9",
+  "artifact": {
+    "path": "/home/henrique/GitHub/ELEX20/.claude/worktrees/platform-io-firmware-a00022/.archify/architecture-firmware-runtime-20261102-235242/firmware-runtime.html",
+    "sha256": "ba44f55ef7f947a3123b38896bbdfd2ea8e403f3603d494561564dd7b1b77ece",
+    "bytes": 855837
+  },
+  "state": {
+    "detail": "read",
+    "motion": "still"
+  },
+  "chrome": {
+    "status": "available",
+    "executable": "/usr/bin/chromium-browser"
+  },
+  "diagnostics": [
+    {
+      "code": "viewer/browser-check-runtime",
+      "severity": "error",
+      "message": "browser-check could not complete its Chrome inspection.",
+      "subject": {
+        "artifact": "/home/henrique/GitHub/ELEX20/.claude/worktrees/platform-io-firmware-a00022/.archify/architecture-firmware-runtime-20261102-235242/firmware-runtime.html"
+      },
+      "evidence": {
+        "reason": "Chrome navigation failed: net::ERR_FILE_NOT_FOUND"
+      },
+      "supportedFixes": [
+        "resolve the reported Chrome inspection error, then rerun browser-check"
+      ]
+    }
+  ],
+  "containment": {
+    "status": "fail",
+    "policy": "fit-or-reader-declared-readable-vertical-scroll",
+    "viewports": []
+  },
+  "themeStates": {
+    "status": "fail",
+    "viewports": []
+  },
+  "readability": {
+    "status": "fail",
+    "minimumProjectedNodeTextPx": 6,
+    "viewports": []
+  },
+  "viewerChrome": {
+    "status": "fail",
+    "viewports": []
+  },
+  "captures": {
+    "status": "not-requested",
+    "screenshots": [],
+    "contactSheet": null
+  },
+  "sidecars": {
+    "directory": "/home/henrique/GitHub/ELEX20/.claude/worktrees/platform-io-firmware-a00022/.archify/architecture-firmware-runtime-20261102-235242/review-2",
+    "receipt": "firmware-runtime.browser-check.json",
+    "files": []
+  },
+  "error": "Chrome navigation failed: net::ERR_FILE_NOT_FOUND"
+}

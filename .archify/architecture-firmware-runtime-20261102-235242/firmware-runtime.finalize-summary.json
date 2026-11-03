@@ -1,0 +1,70 @@
+{
+  "schemaVersion": 1,
+  "ok": false,
+  "command": "finalize",
+  "status": "fail",
+  "type": "architecture",
+  "quality": "showcase",
+  "specification": {
+    "path": "/home/henrique/GitHub/ELEX20/.claude/worktrees/platform-io-firmware-a00022/.archify/architecture-firmware-runtime-20261102-235242/candidate.json",
+    "sha256": "d4bb1c4806b7b47b141ddc44a745345550a8e2e3db1bafe24f32ecefb0deb721",
+    "bytes": 4453
+  },
+  "artifact": {
+    "path": "/home/henrique/GitHub/ELEX20/.claude/worktrees/platform-io-firmware-a00022/.archify/architecture-firmware-runtime-20261102-235242/firmware-runtime.html",
+    "sha256": "ba44f55ef7f947a3123b38896bbdfd2ea8e403f3603d494561564dd7b1b77ece",
+    "bytes": 855837
+  },
+  "gates": {
+    "validate": "pass",
+    "deliver": "pass",
+    "check": "pass",
+    "browser-check": "fail"
+  },
+  "failedStage": "browser-check",
+  "diagnostics": [
+    {
+      "code": "viewer/evidence-path-conflict",
+      "severity": "error",
+      "message": "browser-check will not replace the existing unowned evidence path \"/home/henrique/GitHub/ELEX20/.claude/worktrees/platform-io-firmware-a00022/.archify/architecture-firmware-runtime-20261102-235242/firmware-runtime.browser-check.json\".",
+      "subject": {
+        "artifact": "/home/henrique/GitHub/ELEX20/.claude/worktrees/platform-io-firmware-a00022/.archify/architecture-firmware-runtime-20261102-235242/firmware-runtime.html",
+        "evidencePath": "/home/henrique/GitHub/ELEX20/.claude/worktrees/platform-io-firmware-a00022/.archify/architecture-firmware-runtime-20261102-235242/firmware-runtime.browser-check.json"
+      },
+      "evidence": {
+        "reason": {
+          "code": "ownership-artifact-mismatch"
+        }
+      },
+      "supportedFixes": [
+        "move the conflicting file aside, or choose a separate --out-dir, then rerun browser-check"
+      ]
+    }
+  ],
+  "diagnosticSummary": {
+    "total": 1,
+    "shown": 1,
+    "truncated": false
+  },
+  "evidence": {
+    "receipt": "/home/henrique/GitHub/ELEX20/.claude/worktrees/platform-io-firmware-a00022/.archify/architecture-firmware-runtime-20261102-235242/firmware-runtime.finalize.json",
+    "summaryReceipt": "/home/henrique/GitHub/ELEX20/.claude/worktrees/platform-io-firmware-a00022/.archify/architecture-firmware-runtime-20261102-235242/firmware-runtime.finalize-summary.json",
+    "browserCheckReceipt": "/home/henrique/GitHub/ELEX20/.claude/worktrees/platform-io-firmware-a00022/.archify/architecture-firmware-runtime-20261102-235242/firmware-runtime.browser-check.json"
+  },
+  "update": {
+    "status": "current",
+    "installedVersion": "3.2.0",
+    "availableVersion": "3.2.0",
+    "releaseNotes": null,
+    "checkedAt": "2026-11-03T02:53:19.776Z",
+    "source": "cache",
+    "noticeRequired": false,
+    "noticeText": null
+  },
+  "visualReview": "not-requested",
+  "durationMs": 1223,
+  "browserCheck": {
+    "requested": true,
+    "ran": false
+  }
+}
