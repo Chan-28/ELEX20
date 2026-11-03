@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Firmware ELEX20: do .env ao ESP32-S3",
+    "output": ".archify/architecture-firmware-build-20261102-235242/firmware-build.html",
+    "quality_profile": "showcase",
+    "locale": "pt-BR"
+  },
+  "components": [
+    { "id": "envfile", "type": "external", "label": "firmware/.env", "sublabel": "WIFI_* MQTT_*", "pos": [40, 230], "size": [120, 60] },
+    { "id": "cisecrets", "type": "external", "label": "Secrets do CI", "sublabel": "valores CI_DUMMY", "pos": [40, 370], "size": [120, 60] },
+    { "id": "sysenv", "type": "security", "label": "sysenv", "sublabel": "ambiente do shell", "pos": [250, 300], "size": [120, 60] },
+    { "id": "ini", "type": "backend", "label": "platformio.ini", "sublabel": "build_flags -D", "pos": [460, 300], "size": [120, 60] },
+    { "id": "build", "type": "backend", "label": "pio run", "sublabel": "env esp32s3", "pos": [670, 300], "size": [120, 60] },
+    { "id": "mainc", "type": "frontend", "label": "main.cpp", "sublabel": "firmware/src/", "pos": [670, 150], "size": [120, 60] },
+    { "id": "libs", "type": "cloud", "label": "Bibliotecas", "sublabel": "lib_deps + ei-model", "pos": [670, 450], "size": [120, 60] },
+    { "id": "bin", "type": "database", "label": "firmware.bin", "sublabel": "creds embutidas", "pos": [880, 300], "size": [120, 60] },
+    { "id": "artifact", "type": "cloud", "label": "Artefato CI", "sublabel": "retido 30 dias", "pos": [880, 450], "size": [120, 60] },
+    { "id": "esp", "type": "external", "label": "ESP32-S3", "sublabel": "DevKitC-1", "pos": [1090, 300], "size": [120, 60] }
+  ],
+  "connections": [
+    { "id": "env-to-sysenv", "from": "envfile", "to": "sysenv", "label": "export" },
+    { "id": "ci-to-sysenv", "from": "cisecrets", "to": "sysenv", "label": "env:" },
+    { "id": "sysenv-to-ini", "from": "sysenv", "to": "ini", "label": "${sysenv}", "variant": "security" },
+    { "id": "ini-to-build", "from": "ini", "to": "build", "label": "-D" },
+    { "id": "main-to-build", "from": "mainc", "to": "build", "label": "fonte" },
+    { "id": "libs-to-build", "from": "libs", "to": "build", "label": "lib_deps" },
+    { "id": "build-to-bin", "from": "build", "to": "bin", "variant": "emphasis" },
+    { "id": "bin-to-artifact", "from": "bin", "to": "artifact", "label": "só main", "variant": "dashed" },
+    { "id": "bin-to-esp", "from": "bin", "to": "esp", "label": "upload", "variant": "emphasis" }
+  ],
+  "cards": [
+    { "dot": "rose", "title": "Credenciais", "items": ["WIFI_SSID, WIFI_PASS, MQTT_HOST, MQTT_USER e MQTT_PASS entram como -D", "Ficam como texto no firmware.bin"] },
+    { "dot": "cyan", "title": "Atenção (main)", "items": ["${sysenv.*} lê só o shell; o firmware/.env não é lido sozinho", "Variável ausente não falha o build (o PR #33 corrige)"] },
+    { "dot": "emerald", "title": "Ambientes", "items": ["esp32s3: produção, só heartbeat até ativar o modelo", "esp32s3_debug: liga ELEX_MOCK_INFERENCE"] }
+  ]
+}
