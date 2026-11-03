@@ -12,6 +12,13 @@ model:
 # Baixe o modelo antes: docker compose exec ollama ollama pull qwen2.5:3b
 fallback_providers:
   - provider: "custom"
+    # Opções de modelo local (escolha um e baixe com `ollama pull <modelo>`):
+    #   "qwen2.5:3b"        — equilibrado, bom para código e conversa
+    #   "qwen2.5-coder:3b"  — especializado em código
+    #   "llama3.2:3b"       — conversa geral
+    #   "phi4-mini"         — raciocínio lógico
+    #   "gemma3:4b"         — mais potente, mais pesado
+    # (o config.jsonc antigo usava "qwen3:3b", que não existe no Ollama)
     model: "qwen2.5:3b"
     base_url: "http://ollama:11434/v1"
 
