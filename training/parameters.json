@@ -1,0 +1,40 @@
+{
+  "version": 1,
+  "type": "machine-learning",
+  "info": {
+    "name": "Deep-Learning",
+    "description": "Reconhecimento de áudio em ruas urbanas",
+    "operatesOn": "audio",
+    "indRequiresGpu": false
+  },
+  "parameters": [
+    {
+      "name": "Head architecture",
+      "type": "string",
+      "param": "head",
+      "value": "dense",
+      "help": "Arquitetura da cabeça: dense (pool médio, sons estacionários), conv1d (sequência temporal, fala/alarme/música) ou both (exporta as duas)"
+    },
+    {
+      "name": "Epochs",
+      "type": "int",
+      "param": "epochs",
+      "value": 30,
+      "help": "Número de épocas de treinamento"
+    },
+    {
+      "name": "Learning rate",
+      "type": "float",
+      "param": "learning-rate",
+      "value": 0.001,
+      "help": "Taxa de aprendizado do otimizador Adam"
+    },
+    {
+      "name": "Batch size",
+      "type": "int",
+      "param": "batch-size",
+      "value": 32,
+      "help": "Tamanho do lote de treinamento"
+    }
+  ]
+}
