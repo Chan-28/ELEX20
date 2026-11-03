@@ -1,0 +1,97 @@
+name: Instalador (Windows, macOS e Linux)
+
+# Compila o instalador num executável em cada sistema e roda a simulação dele
+# (cria a pasta e o .env, sem chamar o Docker). Garante que o empacotamento e a
+# cópia dos arquivos da stack funcionam em todos os sistemas antes do release.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "installer/**"
+      - "docker-compose.yaml"
+      - ".env.example"
+      - "grafana/**"
+      - "hermes/**"
+      - "mosquitto/**"
+      - "n8n/**"
+      - "timescaledb/**"
+      - ".github/workflows/installer.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "installer/**"
+      - "docker-compose.yaml"
+      - ".env.example"
+      - "grafana/**"
+      - "hermes/**"
+      - "mosquitto/**"
+      - "n8n/**"
+      - "timescaledb/**"
+      - ".github/workflows/installer.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Executável (${{ matrix.asset }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # glibc antigo: o binário roda em Ubuntu, Debian, Mint, Fedora, Arch, openSUSE...
+          - runner: ubuntu-22.04
+            asset: elex-instalador-linux-x86_64
+          - runner: ubuntu-22.04-arm
+            asset: elex-instalador-linux-arm64
+          - runner: windows-latest
+            asset: elex-instalador-windows-x86_64.exe
+          - runner: macos-latest
+            asset: elex-instalador-macos-arm64
+          - runner: macos-15-intel
+            asset: elex-instalador-macos-x86_64
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version-file: ".python-version"
+
+      - name: Build executable
+        shell: bash
+        env:
+          ASSET: ${{ matrix.asset }}
+        run: |
+          uvx --from "pyinstaller>=6.11" pyinstaller installer/elex_instalador.spec --noconfirm
+          if [ -f dist/elex-instalador.exe ]; then mv dist/elex-instalador.exe "dist/${ASSET}"; else mv dist/elex-instalador "dist/${ASSET}"; fi
+          ls -la dist
+
+      - name: Smoke (versão e simulação de instalação)
+        shell: bash
+        env:
+          ASSET: ${{ matrix.asset }}
+        run: |
+          "./dist/${ASSET}" --versao
+          "./dist/${ASSET}" --dry-run -y --sem-modelo --dir "${RUNNER_TEMP}/ELEX20"
+          test -f "${RUNNER_TEMP}/ELEX20/.env"
+          test -f "${RUNNER_TEMP}/ELEX20/docker-compose.yaml"
+          test -f "${RUNNER_TEMP}/ELEX20/n8n/workflows/ingestao-mqtt.json"
+          # Scripts montados em containers Linux não podem ter CRLF (o checkout no Windows poderia trazê-lo)
+          if grep -l $'\r' "${RUNNER_TEMP}/ELEX20/mosquitto/entrypoint.sh" "${RUNNER_TEMP}/ELEX20/timescaledb/db-init.sh"; then
+            echo "::error ::CRLF em script copiado pelo instalador"; exit 1
+          fi
+
+      - name: Upload executable
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ${{ matrix.asset }}
+          path: dist/${{ matrix.asset }}
+          retention-days: 7
