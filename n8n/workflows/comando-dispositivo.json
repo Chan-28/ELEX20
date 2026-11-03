@@ -1,4 +1,5 @@
 {
+  "id": "elex-comando-dispositivo",
   "name": "ELEX20 - Comando ao dispositivo",
   "nodes": [
     {

@@ -1,4 +1,5 @@
 {
+  "id": "elex-ingestao-mqtt",
   "name": "ELEX20 - Ingestão MQTT",
   "nodes": [
     {
