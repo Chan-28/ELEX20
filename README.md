@@ -136,6 +136,22 @@ O n8n exige a criação de uma conta **apenas na primeira abertura**:
 
 ---
 
+#### Ponte n8n ↔ Hermes (alertas, consultas e comandos)
+
+Passos uma única vez, depois de preencher no `.env` `HERMES_RO_PASSWORD`, `HERMES_WEBHOOK_SECRET` e `N8N_COMMAND_TOKEN` (gere com `openssl rand -hex 24`) e, para receber alertas, `TELEGRAM_HOME_CHANNEL` e/ou `DISCORD_HOME_CHANNEL`:
+
+1. No n8n, crie as credenciais **Postgres** `TimescaleDB (n8n_app)` (host `timescaledb`, banco `POSTGRES_DB`, usuário `n8n_app`, senha `N8N_DB_PASSWORD`) e **MQTT** `Mosquitto (usuário n8n)` (host `mosquitto`, porta 1883, usuário `n8n`, senha `MQTT_N8N_PASS`).
+2. Importe os workflows e abra cada um para ligar as credenciais e ativá-lo:
+
+   ```bash
+   docker compose exec n8n n8n import:workflow --separate --input=/workflows
+   ```
+
+3. O Hermes passa a ter as ferramentas `sensores_status`, `eventos_recentes`, `resumo_sons`, `direcao_predominante`, `classes_urgencia` e `enviar_comando` (servidor MCP em `hermes/mcp/`). Ele lê o banco só com o papel `hermes_ro` e nunca fala com o MQTT: os comandos passam pelo n8n, que valida chave e faixa.
+4. A reserva local do Hermes usa o modelo `qwen2.5:3b`; baixe-o com `docker compose exec ollama ollama pull qwen2.5:3b`.
+
+Os rótulos da urgência (`sound_classes`) são uma proposta inicial; ajuste com `UPDATE` e mantenha a mesma tabela em `firmware/lib/elex_core/settings.cpp`.
+
 ### Parar e reiniciar os serviços
 
 ```bash
