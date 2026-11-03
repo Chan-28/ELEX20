@@ -10,7 +10,7 @@ set -uo pipefail
 cd "$(dirname "$0")/.." || exit 1
 
 PROJECT=elexsmoke
-export GRAFANA_RO_PASSWORD=smoke-ro N8N_DB_PASSWORD=smoke-n8n
+export GRAFANA_RO_PASSWORD=smoke-ro N8N_DB_PASSWORD=smoke-n8n HERMES_RO_PASSWORD=smoke-hermes
 export MQTT_DEVICE_PASS=smoke-device MQTT_N8N_PASS=smoke-n8n-mqtt
 
 dc() { docker compose -p "$PROJECT" --env-file .env.example "$@"; }
@@ -70,6 +70,23 @@ expect_ok   "n8n_app cria tabelas no próprio banco"    sql n8n_app "$N8N_DB_PAS
 expect_fail "label com 100 caracteres é rejeitado"     sql n8n_app "$N8N_DB_PASSWORD" "$DB" "insert into sound_events(device_id,label,confidence) values('esp32-01',repeat('x',100),0.9)"
 expect_fail "device_id inválido é rejeitado"           sql n8n_app "$N8N_DB_PASSWORD" "$DB" "insert into sound_events(device_id,label,confidence) values('a b;--','chuva',0.9)"
 expect_fail "raw_json acima de 4 KB é rejeitado"       sql n8n_app "$N8N_DB_PASSWORD" "$DB" "insert into sound_events(device_id,label,confidence,raw_json) values('d','l',0.5,jsonb_build_object('k',repeat('x',5000)))"
+expect_ok   "n8n_app insere direção e urgência válidas" sql n8n_app "$N8N_DB_PASSWORD" "$DB" "insert into sound_events(device_id,label,confidence,direction_deg,sector,doa_confidence,urgency) values('esp32-01','siren',0.9,90,'E',0.8,3)"
+expect_fail "setor inválido é rejeitado"               sql n8n_app "$N8N_DB_PASSWORD" "$DB" "insert into sound_events(device_id,label,confidence,sector) values('esp32-01','siren',0.9,'X')"
+expect_fail "direção fora de 0-359 é rejeitada"        sql n8n_app "$N8N_DB_PASSWORD" "$DB" "insert into sound_events(device_id,label,confidence,direction_deg) values('esp32-01','siren',0.9,360)"
+expect_ok   "n8n_app grava heartbeat em device_status" sql n8n_app "$N8N_DB_PASSWORD" "$DB" "insert into device_status(device_id,uptime_s,heap,rssi) values('esp32-01',60,200000,-52)"
+expect_fail "rssi positivo é rejeitado"                sql n8n_app "$N8N_DB_PASSWORD" "$DB" "insert into device_status(device_id,rssi) values('esp32-01',10)"
+expect_fail "n8n_app não altera sound_classes"         sql n8n_app "$N8N_DB_PASSWORD" "$DB" "update sound_classes set urgency=0"
+expect_ok   "grafana_ro lê device_last_status"         sql grafana_ro "$GRAFANA_RO_PASSWORD" "$DB" "select count(*) from device_last_status"
+[ "$(sql hermes_ro "$HERMES_RO_PASSWORD" "$DB" "select current_setting('is_superuser')" 2>/dev/null)" = "off" ] \
+  && ok "hermes_ro não é superusuário" || bad "hermes_ro não é superusuário"
+expect_ok   "hermes_ro lê sound_events_public"        sql hermes_ro "$HERMES_RO_PASSWORD" "$DB" "select time,device_id,label,confidence,direction_deg,sector,urgency from sound_events_public limit 1"
+expect_fail "hermes_ro não lê raw_json"                sql hermes_ro "$HERMES_RO_PASSWORD" "$DB" "select raw_json from sound_events limit 1"
+expect_fail "hermes_ro não lê a tabela sound_events"   sql hermes_ro "$HERMES_RO_PASSWORD" "$DB" "select * from sound_events limit 1"
+expect_ok   "hermes_ro lê device_last_status"          sql hermes_ro "$HERMES_RO_PASSWORD" "$DB" "select count(*) from device_last_status"
+expect_ok   "hermes_ro lê sound_classes"               sql hermes_ro "$HERMES_RO_PASSWORD" "$DB" "select count(*) from sound_classes"
+expect_fail "hermes_ro não escreve"                    sql hermes_ro "$HERMES_RO_PASSWORD" "$DB" "insert into device_status(device_id) values('x')"
+expect_fail "hermes_ro não lê tabelas fora da lista"   sql hermes_ro "$HERMES_RO_PASSWORD" "$DB" "select * from segredo_interno"
+expect_fail "hermes_ro não executa COPY PROGRAM"       sql hermes_ro "$HERMES_RO_PASSWORD" "$DB" "copy (select 1) to program 'id'"
 
 echo; echo "MQTT (Mosquitto)"
 expect_fail "cliente anônimo é recusado"               mpub -t sound/inference/x -m a

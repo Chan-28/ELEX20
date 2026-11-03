@@ -18,4 +18,5 @@ exec psql -v ON_ERROR_STOP=1 \
   -v n8n_db="$N8N_DB" \
   -v ro_pass="$GRAFANA_RO_PASSWORD" \
   -v n8n_pass="$N8N_DB_PASSWORD" \
+  -v hermes_pass="$HERMES_RO_PASSWORD" \
   -f /db-init.sql

@@ -33,6 +33,7 @@ services:
       - N8N_DB=${N8N_DB:-n8n}
       - GRAFANA_RO_PASSWORD=${GRAFANA_RO_PASSWORD:?defina GRAFANA_RO_PASSWORD no .env}
       - N8N_DB_PASSWORD=${N8N_DB_PASSWORD:?defina N8N_DB_PASSWORD no .env}
+      - HERMES_RO_PASSWORD=${HERMES_RO_PASSWORD:?defina HERMES_RO_PASSWORD no .env}
     entrypoint: ["/bin/sh", "/db-init.sh"]
     volumes:
       - ./timescaledb/db-init.sh:/db-init.sh:ro
