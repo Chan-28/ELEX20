@@ -38,6 +38,8 @@ jobs:
           MQTT_DEVICE_PASS: ci-dummy
           MQTT_N8N_PASS: ci-dummy
           HERMES_RO_PASSWORD: ci-dummy
+          HERMES_WEBHOOK_SECRET: ci-dummy
+          N8N_COMMAND_TOKEN: ci-dummy
         run: docker compose --env-file .env.example -f docker-compose.yaml config --quiet
 
       - name: Check for required env vars
@@ -192,6 +194,8 @@ jobs:
           MQTT_DEVICE_PASS: ci-dummy
           MQTT_N8N_PASS: ci-dummy
           HERMES_RO_PASSWORD: ci-dummy
+          HERMES_WEBHOOK_SECRET: ci-dummy
+          N8N_COMMAND_TOKEN: ci-dummy
         run: |
           cp .env.example .env
           docker compose up -d --wait timescaledb ${{ matrix.alias }}
@@ -235,6 +239,8 @@ jobs:
           MQTT_DEVICE_PASS: ci-dummy
           MQTT_N8N_PASS: ci-dummy
           HERMES_RO_PASSWORD: ci-dummy
+          HERMES_WEBHOOK_SECRET: ci-dummy
+          N8N_COMMAND_TOKEN: ci-dummy
         run: docker compose down
 
   # 6. Resumo final

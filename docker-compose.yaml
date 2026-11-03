@@ -62,8 +62,17 @@ services:
       - DB_POSTGRESDB_USER=n8n_app
       - DB_POSTGRESDB_PASSWORD=${N8N_DB_PASSWORD:?defina N8N_DB_PASSWORD no .env}
       - N8N_WEBHOOK_URL=${N8N_WEBHOOK_URL:-http://localhost:5678/}
+      # Os workflows em n8n/workflows/ assinam o alerta ao Hermes (crypto) e validam o
+      # token dos comandos. O n8n bloqueia $env por padrão; liberar expõe as variáveis
+      # deste container aos workflows (aceitável: instância local, só do dono).
+      - NODE_FUNCTION_ALLOW_BUILTIN=crypto
+      - N8N_BLOCK_ENV_ACCESS_IN_NODE=false
+      - HERMES_WEBHOOK_SECRET=${HERMES_WEBHOOK_SECRET:?defina HERMES_WEBHOOK_SECRET no .env}
+      - N8N_COMMAND_TOKEN=${N8N_COMMAND_TOKEN:?defina N8N_COMMAND_TOKEN no .env}
     volumes:
       - n8n_data:/home/node/.n8n
+      # Importar: docker compose exec n8n n8n import:workflow --separate --input=/workflows
+      - ./n8n/workflows:/workflows:ro
     networks:
       - monitoring
     depends_on:
@@ -127,16 +136,26 @@ services:
       - HERMES_DASHBOARD=true
       - HERMES_DASHBOARD_BASIC_AUTH_USERNAME=${HERMES_DASHBOARD_USER:-admin}
       - HERMES_DASHBOARD_BASIC_AUTH_PASSWORD=${HERMES_DASHBOARD_PASS}
+      # Ferramentas do ELEX20 (hermes/mcp) e entrada de alertas (hermes/config.yaml)
+      - ELEX_DB_NAME=${POSTGRES_DB}
+      - HERMES_RO_PASSWORD=${HERMES_RO_PASSWORD:?defina HERMES_RO_PASSWORD no .env}
+      - N8N_COMMAND_TOKEN=${N8N_COMMAND_TOKEN:?defina N8N_COMMAND_TOKEN no .env}
+      - HERMES_WEBHOOK_SECRET=${HERMES_WEBHOOK_SECRET:?defina HERMES_WEBHOOK_SECRET no .env}
+      - TELEGRAM_HOME_CHANNEL=${TELEGRAM_HOME_CHANNEL:-}
+      - DISCORD_HOME_CHANNEL=${DISCORD_HOME_CHANNEL:-}
     # O socket do Docker NÃO é montado: ele daria ao agente (que recebe texto de
     # Discord, Telegram, e-mail e web) controle total do host. O terminal roda
     # com backend "local", dentro deste container sem privilégios.
     volumes:
       - ./hermes_data:/opt/data
       - ./hermes/config.yaml:/opt/data/config.yaml:ro
+      - ./hermes/mcp:/opt/elex/mcp:ro
     networks:
       - monitoring
     depends_on:
       hermes-init:
+        condition: service_completed_successfully
+      db-init:
         condition: service_completed_successfully
       ollama:
         condition: service_started
