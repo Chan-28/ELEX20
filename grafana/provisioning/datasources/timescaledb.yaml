@@ -9,7 +9,7 @@ datasources:
     # Papel somente leitura criado por timescaledb/db-init.sql (nunca o superusuário)
     user: grafana_ro
     secureJsonData:
-      password: ${GRAFANA_RO_PASSWORD}
+      password: $__file{/run/secrets/grafana_ro/value}
     jsonData:
       database: ${POSTGRES_DB}
       # O TimescaleDB não tem TLS e o tráfego não sai da rede interna 'monitoring'

@@ -1,5 +1,9 @@
 name: Automated Release & Signing Process
 
+# Fluxo: tag vX.Y.Z → compila o instalador nos 5 alvos → empacota o código-fonte →
+# assina tudo com cosign (keyless) e confere as assinaturas → cria a release como
+# RASCUNHO com todos os arquivos → só então a publica. Quem baixa nunca vê uma
+# release pela metade.
 on:
   push:
     tags:
@@ -9,8 +13,19 @@ permissions:
   contents: read
 
 jobs:
+  installers:
+    name: Instaladores
+    uses: $/.github/workflows/installer-build.yml
+    with:
+      version: ${{ github.ref_name }}
+    permissions:
+      contents: read
+
   release:
+    name: Assinar e publicar
+    needs: installers
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
       contents: write # criar a release e anexar os arquivos
       id-token: write # obrigatório para a assinatura keyless (OIDC) funcionar
@@ -24,39 +39,82 @@ jobs:
       - name: Install Cosign (Keyless Signing)
         uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
 
+      - name: Download installers
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: elex-instalador-*
+          merge-multiple: true
+          path: dist
+
       # Pacote real: o código-fonte da tag (respeita export-ignore do .gitattributes).
       # O nome da tag vem por env, nunca interpolado direto no script.
       - name: Package source
         env:
           TAG: ${{ github.ref_name }}
-        run: |
-          git archive --format=tar.gz --prefix="elex20-${TAG}/" -o "elex20-${TAG}.tar.gz" HEAD
-          sha256sum "elex20-${TAG}.tar.gz" > "elex20-${TAG}.tar.gz.sha256"
+        run: git archive --format=tar.gz --prefix="elex20-${TAG}/" -o "dist/elex20-${TAG}.tar.gz" HEAD
 
-      # Assina o arquivo. O bundle reúne assinatura, certificado e entrada no Rekor,
-      # tudo o que a verificação keyless precisa.
-      - name: Sign the release artifact
+      # Confere que nenhum alvo ficou de fora antes de assinar qualquer coisa
+      - name: Check expected files
         env:
           TAG: ${{ github.ref_name }}
         run: |
-          cosign sign-blob --yes --bundle "elex20-${TAG}.tar.gz.sigstore.json" "elex20-${TAG}.tar.gz"
+          for f in elex-instalador-linux-x86_64 elex-instalador-linux-arm64 \
+                   elex-instalador-windows-x86_64.exe elex-instalador-macos-arm64 \
+                   elex-instalador-macos-x86_64 "elex20-${TAG}.tar.gz"; do
+            test -s "dist/${f}" || { echo "::error ::arquivo ausente: ${f}"; exit 1; }
+          done
+          ls -la dist
 
-      # Cria a página de Release no GitHub e anexa o arquivo, o hash e a assinatura
-      - name: Create GitHub Release and Upload Artifacts
-        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
-        with:
-          files: |
-            elex20-${{ github.ref_name }}.tar.gz
-            elex20-${{ github.ref_name }}.tar.gz.sha256
-            elex20-${{ github.ref_name }}.tar.gz.sigstore.json
-          body: |
-            Automated release generated via GitHub Actions (source archive of this tag).
+      # O bundle reúne assinatura, certificado e entrada no Rekor, tudo o que a
+      # verificação keyless precisa.
+      - name: Hash and sign
+        run: |
+          cd dist
+          for f in *; do
+            sha256sum "$f" > "$f.sha256"
+            cosign sign-blob --yes --bundle "$f.sigstore.json" "$f"
+          done
 
-            **Verify the integrity and origin of the archive:**
-            ```bash
-            cosign verify-blob \
-              --bundle elex20-${{ github.ref_name }}.tar.gz.sigstore.json \
-              --certificate-identity "https://github.com/${{ github.repository }}/.github/workflows/release.yml@refs/tags/${{ github.ref_name }}" \
-              --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-              elex20-${{ github.ref_name }}.tar.gz
-            ```
+      - name: Verify signatures
+        env:
+          IDENTITY: https://github.com/${{ github.repository }}/.github/workflows/release.yml@refs/tags/${{ github.ref_name }}
+        run: |
+          cd dist
+          for f in *; do
+            case "$f" in *.sha256|*.sigstore.json) continue ;; esac
+            sha256sum --check "$f.sha256"
+            cosign verify-blob --bundle "$f.sigstore.json" \
+              --certificate-identity "$IDENTITY" \
+              --certificate-oidc-issuer https://token.actions.githubusercontent.com "$f"
+          done
+
+      - name: Write release notes
+        run: |
+          cat > notes.md <<'EOF'
+          Release automática (código-fonte da tag e instaladores para Windows, macOS e Linux).
+
+          **Instalador:** baixe o arquivo `elex-instalador-<sistema>` do seu computador, execute-o e
+          siga as perguntas. Precisa do Docker instalado; o instalador explica como instalar se faltar.
+          Guia completo no README.
+
+          **Verifique a integridade e a origem de qualquer arquivo:**
+          ```bash
+          cosign verify-blob \
+            --bundle <arquivo>.sigstore.json \
+            --certificate-identity "https://github.com/@REPO@/.github/workflows/release.yml@refs/tags/@TAG@" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            <arquivo>
+          ```
+          EOF
+
+      # Rascunho primeiro: a release só fica pública depois de todos os arquivos anexados
+      - name: Create draft release and publish
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}
+        run: |
+          sed -i -e "s|@TAG@|${TAG}|g" -e "s|@REPO@|${REPO}|g" notes.md
+          gh release create "$TAG" dist/* --repo "$REPO" --verify-tag --draft \
+            --title "$TAG" --notes-file notes.md --generate-notes
+          gh release edit "$TAG" --repo "$REPO" --draft=false

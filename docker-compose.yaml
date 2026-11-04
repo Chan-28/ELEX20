@@ -1,18 +1,50 @@
 services:
+  # Gera os segredos internos (senhas dos papéis do banco, do MQTT e tokens n8n↔Hermes) na
+  # primeira subida e os guarda em volumes; cada serviço monta só os que usa. Nada para o
+  # usuário configurar. Para fixar um valor, defina a variável no .env.
+  secrets-init:
+    image: busybox:1.38.0@sha256:a46257e06c82ad85242d0d38077d0a52d9896389ca60a1a59d3463db586e5fa4
+    container_name: secrets-init
+    user: root
+    restart: "no"
+    network_mode: none
+    environment:
+      - GRAFANA_RO_PASSWORD=${GRAFANA_RO_PASSWORD:-}
+      - N8N_DB_PASSWORD=${N8N_DB_PASSWORD:-}
+      - HERMES_RO_PASSWORD=${HERMES_RO_PASSWORD:-}
+      - MQTT_DEVICE_PASS=${MQTT_DEVICE_PASS:-}
+      - MQTT_N8N_PASS=${MQTT_N8N_PASS:-}
+      - HERMES_WEBHOOK_SECRET=${HERMES_WEBHOOK_SECRET:-}
+      - N8N_COMMAND_TOKEN=${N8N_COMMAND_TOKEN:-}
+    entrypoint: ["/bin/sh", "/secrets-init.sh"]
+    volumes:
+      - ./init/secrets-init.sh:/secrets-init.sh:ro
+      - sec_grafana_ro:/secrets/grafana_ro
+      - sec_n8n_db:/secrets/n8n_db
+      - sec_hermes_ro:/secrets/hermes_ro
+      - sec_mqtt_device:/secrets/mqtt_device
+      - sec_mqtt_n8n:/secrets/mqtt_n8n
+      - sec_hermes_webhook:/secrets/hermes_webhook
+      - sec_n8n_command:/secrets/n8n_command
+
   timescaledb:
     image: timescale/timescaledb:2.31.0-pg16
     container_name: timescaledb
     restart: unless-stopped
     # Porta não exposta ao host — acesso apenas pela rede interna 'monitoring'
     environment:
-      - POSTGRES_USER=${POSTGRES_USER}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
-      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_USER=${POSTGRES_USER:-postgres}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-password}
+      - POSTGRES_DB=${POSTGRES_DB:-grafana}
     volumes:
       - timescaledb_data:/var/lib/postgresql/data
       - ./timescaledb/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-grafana}",
+        ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -27,21 +59,24 @@ services:
     restart: "no"
     environment:
       - PGHOST=timescaledb
-      - PGUSER=${POSTGRES_USER}
-      - PGPASSWORD=${POSTGRES_PASSWORD}
-      - PGDATABASE=${POSTGRES_DB}
+      - PGUSER=${POSTGRES_USER:-postgres}
+      - PGPASSWORD=${POSTGRES_PASSWORD:-password}
+      - PGDATABASE=${POSTGRES_DB:-grafana}
       - N8N_DB=${N8N_DB:-n8n}
-      - GRAFANA_RO_PASSWORD=${GRAFANA_RO_PASSWORD:?defina GRAFANA_RO_PASSWORD no .env}
-      - N8N_DB_PASSWORD=${N8N_DB_PASSWORD:?defina N8N_DB_PASSWORD no .env}
     entrypoint: ["/bin/sh", "/db-init.sh"]
     volumes:
       - ./timescaledb/db-init.sh:/db-init.sh:ro
       - ./timescaledb/db-init.sql:/db-init.sql:ro
+      - sec_grafana_ro:/run/secrets/grafana_ro:ro
+      - sec_n8n_db:/run/secrets/n8n_db:ro
+      - sec_hermes_ro:/run/secrets/hermes_ro:ro
     networks:
       - monitoring
     depends_on:
       timescaledb:
         condition: service_healthy
+      secrets-init:
+        condition: service_completed_successfully
 
   n8n:
     image: docker.n8n.io/n8nio/n8n:2.46.3
@@ -59,13 +94,24 @@ services:
       - DB_POSTGRESDB_PORT=5432
       - DB_POSTGRESDB_DATABASE=${N8N_DB:-n8n}
       - DB_POSTGRESDB_USER=n8n_app
-      - DB_POSTGRESDB_PASSWORD=${N8N_DB_PASSWORD:?defina N8N_DB_PASSWORD no .env}
+      - DB_POSTGRESDB_PASSWORD_FILE=/run/secrets/n8n_db/value
       - N8N_WEBHOOK_URL=${N8N_WEBHOOK_URL:-http://localhost:5678/}
+      # Os workflows em n8n/workflows/ leem os segredos dos arquivos montados abaixo
+      # (fs) e assinam o alerta ao Hermes (crypto). $env continua bloqueado para eles.
+      - NODE_FUNCTION_ALLOW_BUILTIN=crypto,fs
     volumes:
       - n8n_data:/home/node/.n8n
+      # Importar: docker compose exec n8n n8n import:workflow --separate --input=/workflows
+      - ./n8n/workflows:/workflows:ro
+      - sec_n8n_db:/run/secrets/n8n_db:ro
+      - sec_mqtt_n8n:/run/secrets/mqtt_n8n:ro
+      - sec_hermes_webhook:/run/secrets/hermes_webhook:ro
+      - sec_n8n_command:/run/secrets/n8n_command:ro
     networks:
       - monitoring
     depends_on:
+      secrets-init:
+        condition: service_completed_successfully
       db-init:
         condition: service_completed_successfully
       mosquitto:
@@ -93,16 +139,30 @@ services:
     image: busybox:1.38.0@sha256:a46257e06c82ad85242d0d38077d0a52d9896389ca60a1a59d3463db586e5fa4
     container_name: hermes-init
     user: root
-    command: sh -c "mkdir -p /opt/data && chown -R 10000:10000 /opt/data && chmod 750 /opt/data"
+    # Copia a configuração para dentro de /opt/data a cada `up` (o arquivo do repositório
+    # manda). Montá-la direto sobre /opt/data, que já é um bind mount, falha no Docker Desktop.
+    command: sh -c "mkdir -p /opt/data && cp /seed/config.yaml /opt/data/config.yaml && chown -R 10000:10000 /opt/data && chmod 750 /opt/data"
     volumes:
       - ./hermes_data:/opt/data
+      - ./hermes/config.yaml:/seed/config.yaml:ro
     restart: "no"
 
   hermes-agent:
     image: nousresearch/hermes-agent:v0.22.5@sha256:9c5561579f3ffdf333401797094ac3a743738d6c25d40f4331c7bf77b694238d
     container_name: hermes-agent
     restart: unless-stopped
-    command: gateway run
+    # Os segredos vêm de arquivos (volumes do secrets-init) e viram variáveis de ambiente só
+    # aqui, para o config.yaml interpolá-las; depois entrega o controle ao entrypoint original.
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        export HERMES_RO_PASSWORD="$$(cat /run/secrets/hermes_ro/value)"
+        export N8N_COMMAND_TOKEN="$$(cat /run/secrets/n8n_command/value)"
+        export HERMES_WEBHOOK_SECRET="$$(cat /run/secrets/hermes_webhook/value)"
+        exec /opt/hermes/docker/entrypoint-dispatch.sh "$$@"
+      - hermes
+    command: ["gateway", "run"]
     # s6-rc marca um serviço como essential e ignora SIGTERM;
     # stop_grace_period reduz o tempo de espera antes do SIGKILL
     stop_signal: SIGTERM
@@ -111,8 +171,6 @@ services:
       - "127.0.0.1:9119:9119"
     environment:
       - HERMES_TELEMETRY_ENABLED=false
-      - LLM_PROVIDER=ollama
-      - OLLAMA_BASE_URL=http://ollama:11434
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
       - DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN:-}
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
@@ -127,17 +185,28 @@ services:
       - IMAP_HOST=${IMAP_HOST:-}
       - HERMES_DASHBOARD=true
       - HERMES_DASHBOARD_BASIC_AUTH_USERNAME=${HERMES_DASHBOARD_USER:-admin}
-      - HERMES_DASHBOARD_BASIC_AUTH_PASSWORD=${HERMES_DASHBOARD_PASS}
+      - HERMES_DASHBOARD_BASIC_AUTH_PASSWORD=${HERMES_DASHBOARD_PASS:-password}
+      # Ferramentas do ELEX20 (hermes/mcp) e entrada de alertas (hermes/config.yaml)
+      - ELEX_DB_NAME=${POSTGRES_DB:-grafana}
+      - TELEGRAM_HOME_CHANNEL=${TELEGRAM_HOME_CHANNEL:-}
+      - DISCORD_HOME_CHANNEL=${DISCORD_HOME_CHANNEL:-}
     # O socket do Docker NÃO é montado: ele daria ao agente (que recebe texto de
     # Discord, Telegram, e-mail e web) controle total do host. O terminal roda
     # com backend "local", dentro deste container sem privilégios.
     volumes:
       - ./hermes_data:/opt/data
-      - ./hermes/config.jsonc:/opt/data/config.json:ro
+      - ./hermes/mcp:/opt/elex/mcp:ro
+      - sec_hermes_ro:/run/secrets/hermes_ro:ro
+      - sec_n8n_command:/run/secrets/n8n_command:ro
+      - sec_hermes_webhook:/run/secrets/hermes_webhook:ro
     networks:
       - monitoring
     depends_on:
       hermes-init:
+        condition: service_completed_successfully
+      secrets-init:
+        condition: service_completed_successfully
+      db-init:
         condition: service_completed_successfully
       ollama:
         condition: service_started
@@ -152,19 +221,18 @@ services:
       - "127.0.0.1:3000:3000"
     environment:
       - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
-      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-password}
       - GF_USERS_ALLOW_SIGN_UP=false
       - GF_SERVER_ROOT_URL=http://localhost:3000
       - GF_PLUGINS_PREINSTALL=grafana-lokiexplore-app,yesoreyeram-infinity-datasource,grafana-pyroscope-app
       - GF_DATABASE_TYPE=postgres
       - GF_DATABASE_HOST=timescaledb:5432
-      - GF_DATABASE_NAME=${POSTGRES_DB}
-      - GF_DATABASE_USER=${POSTGRES_USER}
-      - GF_DATABASE_PASSWORD=${POSTGRES_PASSWORD}
+      - GF_DATABASE_NAME=${POSTGRES_DB:-grafana}
+      - GF_DATABASE_USER=${POSTGRES_USER:-postgres}
+      - GF_DATABASE_PASSWORD=${POSTGRES_PASSWORD:-password}
       - GF_DATABASE_SSL_MODE=disable
-      # Senha do papel de leitura usado pelo datasource (grafana/provisioning)
-      - POSTGRES_DB=${POSTGRES_DB}
-      - GRAFANA_RO_PASSWORD=${GRAFANA_RO_PASSWORD:?defina GRAFANA_RO_PASSWORD no .env}
+      # Usado pelo datasource (grafana/provisioning); a senha do papel de leitura vem de arquivo
+      - POSTGRES_DB=${POSTGRES_DB:-grafana}
     healthcheck:
       test:
         ["CMD-SHELL", "wget -qO- http://localhost:3000/api/health | grep -q ok"]
@@ -175,6 +243,7 @@ services:
     volumes:
       - grafana_data:/var/lib/grafana
       - ./grafana/provisioning:/etc/grafana/provisioning
+      - sec_grafana_ro:/run/secrets/grafana_ro:ro
     networks:
       - monitoring
     depends_on:
@@ -200,9 +269,11 @@ services:
     container_name: alloy
     restart: unless-stopped
     # Porta não exposta ao host — acesso apenas pela rede interna
-    # Nota: /var/log e /var/lib/docker/containers são caminhos do host Linux/macOS.
-    # No Windows com Docker Desktop + WSL2 esses caminhos existem dentro do WSL2
-    # e a coleta de logs funciona normalmente.
+    # Só sobe com COMPOSE_PROFILES=logs (padrão do .env.example): /var/log e
+    # /var/lib/docker/containers são caminhos do host Linux; no Docker Desktop do
+    # macOS e do Windows eles não existem e o serviço falharia. O instalador
+    # desliga o perfil nesses sistemas.
+    profiles: ["logs"]
     volumes:
       - ./grafana/alloy/config.alloy:/etc/alloy/config.alloy:ro
       - /var/log:/var/log:ro
@@ -227,14 +298,11 @@ services:
     image: eclipse-mosquitto:2.1.2-alpine@sha256:860aeb5d63ce509508f6dcfb2bc8a1c1dd2bc60555b562b45ce90e52d8dabb0f
     container_name: mosquitto
     restart: unless-stopped
-    # Autenticação + ACL (usuários "device" e "n8n"; senhas geradas no start).
+    # Autenticação + ACL (usuários "device" e "n8n"; senhas geradas pelo secrets-init).
     # A porta 1883 só é publicada no IP de MQTT_BIND (padrão: loopback). Para o ESP32
     # na LAN, defina MQTT_BIND no .env com o IP do host nessa rede, não 0.0.0.0.
     ports:
       - "${MQTT_BIND:-127.0.0.1}:1883:1883"
-    environment:
-      - MQTT_DEVICE_PASS=${MQTT_DEVICE_PASS:?defina MQTT_DEVICE_PASS no .env}
-      - MQTT_N8N_PASS=${MQTT_N8N_PASS:?defina MQTT_N8N_PASS no .env}
     entrypoint: ["/bin/sh", "/entrypoint.sh"]
     volumes:
       - ./mosquitto/entrypoint.sh:/entrypoint.sh:ro
@@ -243,6 +311,8 @@ services:
       - ./mosquitto/acl-health:/mosquitto/acl-src/acl-health:ro
       - mosquitto_data:/mosquitto/data
       - mosquitto_log:/mosquitto/log
+      - sec_mqtt_device:/run/secrets/mqtt_device:ro
+      - sec_mqtt_n8n:/run/secrets/mqtt_n8n:ro
     healthcheck:
       # Listener 1884 só existe em loopback dentro do container e só aceita "health"
       test:
@@ -255,8 +325,18 @@ services:
       retries: 3
     networks:
       - monitoring
+    depends_on:
+      secrets-init:
+        condition: service_completed_successfully
 
 volumes:
+  sec_grafana_ro:
+  sec_n8n_db:
+  sec_hermes_ro:
+  sec_mqtt_device:
+  sec_mqtt_n8n:
+  sec_hermes_webhook:
+  sec_n8n_command:
   timescaledb_data:
   n8n_data:
   ollama_data:
