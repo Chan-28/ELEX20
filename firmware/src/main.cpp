@@ -46,30 +46,30 @@
 
 // ── Pinos (configuráveis em platformio.ini) ──────────────────
 #ifndef I2S_WS_PIN
-#  define I2S_WS_PIN  42
+#  define I2S_WS_PIN  5
 #endif
 #ifndef I2S_SCK_PIN
-#  define I2S_SCK_PIN 40
+#  define I2S_SCK_PIN 4
 #endif
 #ifndef I2S_SD_PIN
-#  define I2S_SD_PIN  41   // I2S0: frente + trás
+#  define I2S_SD_PIN  6   // I2S0: frente + trás
 #endif
 #ifndef I2S1_SD_PIN
-#  define I2S1_SD_PIN 39   // I2S1: direita + esquerda
+#  define I2S1_SD_PIN 7   // I2S1: direita + esquerda
 #endif
 // Motores de vibração (MOSFET por PWM): frente, direita, trás, esquerda.
 // Evite GPIO 26-37 (flash/PSRAM octal).
 #ifndef MOTOR_PIN_FRONT
-#  define MOTOR_PIN_FRONT 4
+#  define MOTOR_PIN_FRONT 18
 #endif
 #ifndef MOTOR_PIN_RIGHT
-#  define MOTOR_PIN_RIGHT 5
+#  define MOTOR_PIN_RIGHT 17
 #endif
 #ifndef MOTOR_PIN_BACK
-#  define MOTOR_PIN_BACK  6
+#  define MOTOR_PIN_BACK  16
 #endif
 #ifndef MOTOR_PIN_LEFT
-#  define MOTOR_PIN_LEFT  7
+#  define MOTOR_PIN_LEFT  15
 #endif
 
 // ── Parâmetros de áudio ───────────────────────────────────────
