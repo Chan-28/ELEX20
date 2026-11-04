@@ -93,7 +93,13 @@ Pode rodar de novo a qualquer momento: ele só completa o que falta. Opções ú
 
 ### Verificar o download (opcional)
 
-Cada arquivo da release vem com `.sha256` e `.sigstore.json`. Com o [cosign](https://docs.sigstore.dev/cosign/system_config/installation/):
+A release traz um `SHA256SUMS` com os hashes de todos os arquivos, e cada arquivo tem seu `.sigstore.json`. Para conferir o hash do que você baixou (com o `SHA256SUMS` na mesma pasta):
+
+```bash
+sha256sum --check --ignore-missing SHA256SUMS
+```
+
+Para conferir a origem, use o [cosign](https://docs.sigstore.dev/cosign/system_config/installation/):
 
 ```bash
 cosign verify-blob \
