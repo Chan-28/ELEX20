@@ -101,14 +101,7 @@
             },
             "evidence": {
               "locale": "pt-BR",
-              "bundledLocales": [
-                "en",
-                "zh-CN",
-                "zh-TW",
-                "es",
-                "ko",
-                "ar"
-              ]
+              "bundledLocales": ["en", "zh-CN", "zh-TW", "es", "ko", "ar"]
             },
             "supportedFixes": [
               "Supply meta.translations for this locale.",
@@ -152,9 +145,7 @@
           {
             "name": "single_svg",
             "ok": true,
-            "details": [
-              "found 1 <svg> block(s)"
-            ]
+            "details": ["found 1 <svg> block(s)"]
           },
           {
             "name": "finite_svg",
@@ -1031,14 +1022,7 @@
       },
       "evidence": {
         "locale": "pt-BR",
-        "bundledLocales": [
-          "en",
-          "zh-CN",
-          "zh-TW",
-          "es",
-          "ko",
-          "ar"
-        ]
+        "bundledLocales": ["en", "zh-CN", "zh-TW", "es", "ko", "ar"]
       },
       "supportedFixes": [
         "Supply meta.translations for this locale.",

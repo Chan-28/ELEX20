@@ -32,14 +32,7 @@
       },
       "evidence": {
         "locale": "pt-BR",
-        "bundledLocales": [
-          "en",
-          "zh-CN",
-          "zh-TW",
-          "es",
-          "ko",
-          "ar"
-        ]
+        "bundledLocales": ["en", "zh-CN", "zh-TW", "es", "ko", "ar"]
       },
       "supportedFixes": [
         "Supply meta.translations for this locale.",
