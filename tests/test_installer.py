@@ -34,26 +34,41 @@ def test_aplicar_env_preserva_comentarios_e_ordem_e_acrescenta_chaves_novas():
     assert saida == "# topo\nA=1\n# meio\nB=novo\nC=3\nZ=fim\n"
 
 
-def test_instalacao_nova_gera_todos_os_segredos_e_troca_senhas_de_exemplo():
+def test_instalacao_nova_so_randomiza_a_senha_interna_do_banco_e_mantem_os_placeholders_de_login():
     modelo = inst.ler_env((RAIZ / ".env.example").read_text(encoding="utf-8"))
     valores = inst.montar_valores({}, modelo, "Linux", None, {})
-    for chave in inst.SEGREDOS_OBRIGATORIOS + inst.SENHAS_FRACAS_DE_EXEMPLO:
-        assert re.fullmatch(r"[0-9a-f]{48}", valores[chave]), chave
-    assert len({valores[c] for c in inst.SEGREDOS_OBRIGATORIOS}) == len(inst.SEGREDOS_OBRIGATORIOS)
+    assert re.fullmatch(r"[0-9a-f]{48}", valores["POSTGRES_PASSWORD"])
+    # logins que o usuário digita ficam com admin/password; segredos internos não são do instalador
+    for chave in ("GRAFANA_ADMIN_PASSWORD", "HERMES_DASHBOARD_PASS", *inst.SEGREDOS_AUTOMATICOS.values()):
+        assert chave not in valores
+
+
+def test_banco_ja_existente_sem_env_nao_troca_a_senha_padrao():
+    modelo = inst.ler_env((RAIZ / ".env.example").read_text(encoding="utf-8"))
+    valores = inst.montar_valores({}, modelo, "Linux", None, {}, banco_ja_existe=True)
+    assert "POSTGRES_PASSWORD" not in valores
 
 
 def test_env_existente_nunca_tem_valores_trocados():
     modelo = inst.ler_env((RAIZ / ".env.example").read_text(encoding="utf-8"))
-    existente = dict.fromkeys(inst.SEGREDOS_OBRIGATORIOS, "antigo")
-    existente |= {"POSTGRES_PASSWORD": "password", "COMPOSE_PROFILES": ""}
+    existente = {"POSTGRES_PASSWORD": "password", "COMPOSE_PROFILES": ""}
     assert inst.montar_valores(existente, modelo, "Linux", None, {}) == {}
 
 
 def test_env_existente_so_completa_o_que_falta():
     modelo = inst.ler_env((RAIZ / ".env.example").read_text(encoding="utf-8"))
-    existente = {c: "antigo" for c in inst.SEGREDOS_OBRIGATORIOS if c != "N8N_COMMAND_TOKEN"}
-    existente["COMPOSE_PROFILES"] = "logs"
-    assert set(inst.montar_valores(existente, modelo, "Linux", None, {})) == {"N8N_COMMAND_TOKEN"}
+    assert set(inst.montar_valores({"POSTGRES_PASSWORD": "x"}, modelo, "Linux", None, {})) == {"COMPOSE_PROFILES"}
+
+
+def test_segredos_automaticos_batem_com_o_secrets_init_e_o_compose():
+    script = (RAIZ / "init" / "secrets-init.sh").read_text(encoding="utf-8")
+    compose = (RAIZ / "docker-compose.yaml").read_text(encoding="utf-8")
+    for nome, variavel in inst.SEGREDOS_AUTOMATICOS.items():
+        assert f"{nome}:{variavel}" in script, f"{nome} fora do secrets-init.sh"
+        assert f"sec_{nome}:/secrets/{nome}" in compose, f"{nome} sem volume no secrets-init"
+        assert f"sec_{nome}:" in compose.split("\nvolumes:\n", 1)[1], f"volume sec_{nome} não declarado"
+    # nenhuma variável do .env é mais obrigatória para subir a stack
+    assert ":?" not in compose
 
 
 @pytest.mark.parametrize(("sistema", "perfil"), [("Linux", "logs"), ("Darwin", ""), ("Windows", "")])

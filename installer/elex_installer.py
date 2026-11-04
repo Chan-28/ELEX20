@@ -43,18 +43,21 @@ def ler_versao() -> str:
 
 VERSAO = ler_versao()
 
-# Sem valor padrão no .env.example: o instalador gera um valor aleatório para cada uma
-SEGREDOS_OBRIGATORIOS = (
-    "GRAFANA_RO_PASSWORD",
-    "N8N_DB_PASSWORD",
-    "HERMES_RO_PASSWORD",
-    "MQTT_DEVICE_PASS",
-    "MQTT_N8N_PASS",
-    "HERMES_WEBHOOK_SECRET",
-    "N8N_COMMAND_TOKEN",
-)
-# Valem "password" no .env.example; numa instalação nova viram aleatórias
-SENHAS_FRACAS_DE_EXEMPLO = ("GRAFANA_ADMIN_PASSWORD", "POSTGRES_PASSWORD", "HERMES_DASHBOARD_PASS")
+# Segredos internos: o serviço secrets-init (init/secrets-init.sh) gera cada um sozinho na primeira
+# subida e os guarda em volumes. nome do arquivo em /run/secrets/<nome>/value -> variável do .env que
+# o sobrescreve (opcional). O instalador só os lê, nunca os gera.
+SEGREDOS_AUTOMATICOS = {
+    "grafana_ro": "GRAFANA_RO_PASSWORD",
+    "n8n_db": "N8N_DB_PASSWORD",
+    "hermes_ro": "HERMES_RO_PASSWORD",
+    "mqtt_device": "MQTT_DEVICE_PASS",
+    "mqtt_n8n": "MQTT_N8N_PASS",
+    "hermes_webhook": "HERMES_WEBHOOK_SECRET",
+    "n8n_command": "N8N_COMMAND_TOKEN",
+}
+# Logins que o usuário digita (Grafana e Hermes) ficam com os placeholders admin/password do compose.
+# A senha do superusuário do banco é interna e vira aleatória numa instalação nova.
+SENHAS_INTERNAS_DE_EXEMPLO = ("POSTGRES_PASSWORD",)
 
 MODELO_OLLAMA = "qwen2.5:3b"
 ARQUIVOS_DO_PROJETO = (
@@ -63,6 +66,7 @@ ARQUIVOS_DO_PROJETO = (
     "grafana",
     "hermes/config.yaml",
     "hermes/mcp",
+    "init",
     "mosquitto",
     "n8n",
     "timescaledb/init.sql",
@@ -126,16 +130,18 @@ def aplicar_env(modelo: str, valores: dict[str, str]) -> str:
 
 
 def montar_valores(
-    existente: dict[str, str], modelo: dict[str, str], sistema: str, ip_lan: str | None, extras: dict[str, str]
+    existente: dict[str, str],
+    modelo: dict[str, str],
+    sistema: str,
+    ip_lan: str | None,
+    extras: dict[str, str],
+    banco_ja_existe: bool = False,
 ) -> dict[str, str]:
     """Decide o que gravar no .env. Nunca troca um valor que já existe (o banco guarda a senha antiga)."""
-    novo_env = not existente
+    novo_env = not existente and not banco_ja_existe
     valores: dict[str, str] = {}
-    for chave in SEGREDOS_OBRIGATORIOS:
-        if not existente.get(chave):
-            valores[chave] = gerar_segredo()
     if novo_env:
-        for chave in SENHAS_FRACAS_DE_EXEMPLO:
+        for chave in SENHAS_INTERNAS_DE_EXEMPLO:
             if modelo.get(chave) == "password":
                 valores[chave] = gerar_segredo()
     # A coleta de logs (Alloy) só funciona no Docker do Linux
@@ -367,6 +373,17 @@ class Instalador:
         else:
             self.info(f"Usando a pasta do repositório: {self.destino}")
 
+    def senha_padrao_do_banco_funciona(self) -> bool:
+        """True se o banco já em execução aceita a senha padrão (stack subida sem .env)."""
+        if self.dry_run:
+            return False
+        r = self.compose(
+            "exec", "-T", "-e", "PGPASSWORD=password", "timescaledb",
+            "psql", "-h", "127.0.0.1", "-U", "postgres", "-d", "grafana", "-tAc", "select 1",
+            capturar=True, check=False,
+        )  # fmt: skip
+        return r.returncode == 0 and r.stdout.strip() == "1"
+
     def volumes_antigos(self) -> bool:
         if self.dry_run:
             return False
@@ -380,13 +397,18 @@ class Instalador:
         modelo_texto = (self.destino / ".env.example").read_text(encoding="utf-8")
         existente = ler_env(arquivo.read_text(encoding="utf-8")) if arquivo.exists() else {}
 
+        banco_ja_existe = False
         if not existente and self.volumes_antigos():
-            self.erro(
-                "Existem dados de uma instalação anterior (volume do banco), mas não há .env.\n"
-                "Um .env novo teria senhas diferentes e o banco antigo não abriria.\n"
-                "Recupere o .env antigo, ou apague os dados antigos de propósito (docker compose down -v)."
-            )
-            return None
+            if self.senha_padrao_do_banco_funciona():
+                self.info("A stack já roda com as senhas padrão (subida sem .env); elas serão mantidas.")
+                banco_ja_existe = True
+            else:
+                self.erro(
+                    "Existem dados de uma instalação anterior (volume do banco), mas não há .env.\n"
+                    "Um .env novo teria senhas diferentes e o banco antigo não abriria.\n"
+                    "Recupere o .env antigo, ou apague os dados antigos de propósito (docker compose down -v)."
+                )
+                return None
 
         ip_lan = None
         extras = dict(self.extras)
@@ -413,7 +435,7 @@ class Instalador:
 
         self.ip_lan = ip_lan
         modelo = ler_env(modelo_texto)
-        novos = montar_valores(existente, modelo, self.sistema, ip_lan, extras)
+        novos = montar_valores(existente, modelo, self.sistema, ip_lan, extras, banco_ja_existe)
         if existente and not novos:
             self.info("O .env já está completo; nada foi alterado.")
         else:
@@ -462,6 +484,13 @@ class Instalador:
         except subprocess.CalledProcessError:
             self.info(f"Não deu certo agora. Tente depois: docker compose exec ollama ollama pull {MODELO_OLLAMA}")
 
+    def ler_segredo(self, servico: str, nome: str) -> str:
+        """Lê um segredo gerado pela stack, de dentro do container que o monta."""
+        if self.dry_run:
+            return f"<{nome}>"
+        r = self.compose("exec", "-T", servico, "cat", f"/run/secrets/{nome}/value", capturar=True)
+        return r.stdout.strip()
+
     def provisionar_n8n(self, valores: dict[str, str]) -> bool:
         self.titulo("5/5  Configurando o n8n (credenciais e workflows)")
         n8n = ("exec", "-T", "n8n", "n8n")
@@ -470,7 +499,12 @@ class Instalador:
         try:
             if os.name == "posix":
                 arquivo.chmod(0o600)
-            arquivo.write_text(json.dumps(credenciais_n8n(valores)), encoding="utf-8")
+            segredos = {
+                "MQTT_N8N_PASS": self.ler_segredo("n8n", "mqtt_n8n"),
+                "N8N_DB_PASSWORD": self.ler_segredo("n8n", "n8n_db"),
+                "POSTGRES_DB": valores.get("POSTGRES_DB", "grafana"),
+            }
+            arquivo.write_text(json.dumps(credenciais_n8n(segredos)), encoding="utf-8")
             self.compose("cp", str(arquivo), "n8n:/tmp/elex-cred.json")
             try:
                 self.compose(*n8n, "import:credentials", "--input=/tmp/elex-cred.json", capturar=True)
@@ -488,7 +522,7 @@ class Instalador:
         self.info("Credenciais criadas e workflows ativados.")
         return True
 
-    def gerar_env_firmware(self, valores: dict[str, str], ip_lan: str | None) -> None:
+    def gerar_env_firmware(self, ip_lan: str | None) -> None:
         if not (self.destino / "firmware" / "platformio.ini").exists():
             return
         if not self.confirmar("Gerar o firmware/.env com Wi-Fi e senha MQTT para compilar o firmware?", padrao=False):
@@ -498,7 +532,7 @@ class Instalador:
         host = self.perguntar("IP deste computador na rede", ip_lan or detectar_ip_lan() or "")
         texto = (
             f"WIFI_SSID={ssid}\nWIFI_PASS={senha}\nMQTT_HOST={host}\nMQTT_USER=device\n"
-            f"MQTT_PASS={valores['MQTT_DEVICE_PASS']}\n"
+            f"MQTT_PASS={self.ler_segredo('mosquitto', 'mqtt_device')}\n"
         )
         arquivo = self.destino / "firmware" / ".env"
         arquivo.write_text(texto, encoding="utf-8")
@@ -513,19 +547,21 @@ class Instalador:
         print(f" Pasta:      {self.destino}")
         print(
             f" Grafana:    {URL_GRAFANA}   usuário {valores.get('GRAFANA_ADMIN_USER', 'admin')}"
-            f"  senha {valores.get('GRAFANA_ADMIN_PASSWORD', '')}"
+            f"  senha {valores.get('GRAFANA_ADMIN_PASSWORD', 'password')}"
         )
         print(
             f" Hermes:     {URL_HERMES}   usuário {valores.get('HERMES_DASHBOARD_USER', 'admin')}"
-            f"  senha {valores.get('HERMES_DASHBOARD_PASS', '')}"
+            f"  senha {valores.get('HERMES_DASHBOARD_PASS', 'password')}"
         )
         print(f" n8n:        {URL_N8N}   (crie sua conta na primeira abertura)")
         print("\n Dados para gravar no sensor (firmware):")
         print(
             f"   MQTT_HOST = {valores.get('MQTT_BIND', '127.0.0.1')}   MQTT_USER = device"
-            f"   MQTT_PASS = {valores.get('MQTT_DEVICE_PASS', '')}"
+            f"   MQTT_PASS = {self.ler_segredo('mosquitto', 'mqtt_device')}"
         )
-        print("\n As senhas ficam no arquivo .env da pasta acima. Guarde-o e não o compartilhe.")
+        print("\n Os logins admin/password são placeholders: troque-os (no .env e na tela de cada serviço).")
+        print(" As senhas internas (banco, MQTT, tokens) foram geradas sozinhas e ficam em volumes do Docker.")
+        print(" Guarde o arquivo .env da pasta acima e não o compartilhe.")
         print(" Para parar: docker compose stop   |   Para iniciar de novo: docker compose start")
 
     def executar(self) -> int:
@@ -540,7 +576,7 @@ class Instalador:
         if not self.pular_modelo:
             self.baixar_modelo()
         n8n_ok = self.provisionar_n8n(valores)
-        self.gerar_env_firmware(valores, self.ip_lan)
+        self.gerar_env_firmware(self.ip_lan)
         self.resumo(valores)
         return 0 if n8n_ok else 2
 
