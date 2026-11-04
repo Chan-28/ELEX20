@@ -35,6 +35,6 @@ permissions:
 
 jobs:
   instalador:
-    uses: ./.github/workflows/installer-build.yml
+    uses: $/.github/workflows/installer-build.yml
     permissions:
       contents: read

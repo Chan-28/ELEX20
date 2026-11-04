@@ -15,7 +15,7 @@ permissions:
 jobs:
   installers:
     name: Instaladores
-    uses: ./.github/workflows/installer-build.yml
+    uses: $/.github/workflows/installer-build.yml
     with:
       version: ${{ github.ref_name }}
     permissions:
