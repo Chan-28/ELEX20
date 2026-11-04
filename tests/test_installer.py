@@ -146,6 +146,15 @@ def test_credenciais_batem_com_o_que_os_workflows_referenciam():
     assert ids_de_workflow == set(inst.WORKFLOWS_N8N)
 
 
+@pytest.mark.parametrize("valor", [None, "", "password"])
+def test_descrever_senha_mostra_o_placeholder(valor):
+    assert "password" in inst.descrever_senha(valor)
+
+
+def test_descrever_senha_nunca_mostra_senha_real():
+    assert "s3gr3d0" not in inst.descrever_senha("s3gr3d0")
+
+
 def test_nome_do_projeto_segue_a_regra_do_compose():
     assert inst.nome_do_projeto(Path("/x/ELEX 20!")) == "elex20"
 

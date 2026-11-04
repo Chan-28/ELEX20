@@ -121,7 +121,7 @@ Rode o instalador direto da pasta, com o Python 3 do sistema: `./instalar.sh` (L
 
 > Os logins `admin` / `password` são placeholders para uso só na sua máquina: troque-os antes de qualquer outro uso. Os segredos internos (papéis do banco, usuários do MQTT e tokens n8n ↔ Hermes) são aleatórios e gerados automaticamente, com ou sem instalador, e nenhum serviço enxerga os segredos dos outros.
 >
-> **Senha do sensor (ESP32):** é a do usuário `device` do MQTT. O instalador a mostra no final; para ver depois: `docker compose exec mosquitto cat /run/secrets/mqtt_device/value`. Use-a como `MQTT_PASS` no `firmware/.env`.
+> **Senha do sensor (ESP32):** é a do usuário `device` do MQTT. Para vê-la, rode na pasta de instalação: `docker compose exec mosquitto cat /run/secrets/mqtt_device/value`. Use-a como `MQTT_PASS` no `firmware/.env`.
 
 ### Compatibilidade de sistemas operacionais
 

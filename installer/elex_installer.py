@@ -241,6 +241,13 @@ def credenciais_n8n(valores: dict[str, str]) -> list[dict]:
     ]
 
 
+def descrever_senha(valor: str | None) -> str:
+    """Texto do resumo final: senha real nunca vai para o terminal, só o placeholder conhecido."""
+    if valor in (None, "", "password"):
+        return "password (placeholder: troque)"
+    return "a definida no .env"
+
+
 def nome_do_projeto(pasta: Path) -> str:
     return re.sub(r"[^a-z0-9_-]", "", pasta.name.lower())
 
@@ -547,18 +554,16 @@ class Instalador:
         print(f" Pasta:      {self.destino}")
         print(
             f" Grafana:    {URL_GRAFANA}   usuário {valores.get('GRAFANA_ADMIN_USER', 'admin')}"
-            f"  senha {valores.get('GRAFANA_ADMIN_PASSWORD', 'password')}"
+            f"  senha {descrever_senha(valores.get('GRAFANA_ADMIN_PASSWORD'))}"
         )
         print(
             f" Hermes:     {URL_HERMES}   usuário {valores.get('HERMES_DASHBOARD_USER', 'admin')}"
-            f"  senha {valores.get('HERMES_DASHBOARD_PASS', 'password')}"
+            f"  senha {descrever_senha(valores.get('HERMES_DASHBOARD_PASS'))}"
         )
         print(f" n8n:        {URL_N8N}   (crie sua conta na primeira abertura)")
         print("\n Dados para gravar no sensor (firmware):")
-        print(
-            f"   MQTT_HOST = {valores.get('MQTT_BIND', '127.0.0.1')}   MQTT_USER = device"
-            f"   MQTT_PASS = {self.ler_segredo('mosquitto', 'mqtt_device')}"
-        )
+        print(f"   MQTT_HOST = {valores.get('MQTT_BIND', '127.0.0.1')}   MQTT_USER = device")
+        print("   MQTT_PASS: rode na pasta acima  docker compose exec mosquitto cat /run/secrets/mqtt_device/value")
         print("\n Os logins admin/password são placeholders: troque-os (no .env e na tela de cada serviço).")
         print(" As senhas internas (banco, MQTT, tokens) foram geradas sozinhas e ficam em volumes do Docker.")
         print(" Guarde o arquivo .env da pasta acima e não o compartilhe.")
