@@ -16,7 +16,7 @@ ESP32 (Edge Impulse, classificação de sons urbanos + direção do som)
 
 ## Instalação rápida (recomendada)
 
-Funciona em **Windows, macOS e Linux**. Você não precisa saber programar: o instalador cria as senhas, sobe todos os serviços e configura o n8n sozinho.
+Funciona em **Windows, macOS e Linux**. Você não precisa saber programar: o instalador sobe todos os serviços e configura o n8n sozinho, e as senhas internas são geradas automaticamente.
 
 ### 1. Instale o Docker
 
@@ -76,7 +76,7 @@ O instalador pergunta só o que é opcional (você pode apertar Enter para pular
 - bot do Telegram e/ou do Discord (token, o seu ID e o chat que recebe os alertas);
 - se quer baixar o modelo local de IA (cerca de 2 GB).
 
-Ele instala em `~/ELEX20` (no Windows, `C:\Users\<você>\ELEX20`) e, ao final, mostra os endereços e as senhas geradas. **As senhas ficam no arquivo `.env` dessa pasta: guarde-o e não o compartilhe.**
+Ele instala em `~/ELEX20` (no Windows, `C:\Users\<você>\ELEX20`) e, ao final, mostra os endereços e os logins. Os logins do Grafana e do Hermes começam como `admin` / `password` (placeholders: troque-os); as senhas internas (banco, MQTT e tokens entre n8n e Hermes) são **geradas sozinhas** e você não precisa configurar nada. **Guarde o arquivo `.env` dessa pasta e não o compartilhe.**
 
 Na primeira vez, o Docker baixa alguns GB de imagens; pode levar vários minutos.
 
@@ -84,7 +84,7 @@ Na primeira vez, o Docker baixa alguns GB de imagens; pode levar vários minutos
 
 1. Confere se o Docker está instalado e ligado.
 2. Copia os arquivos da stack para a pasta de instalação.
-3. Cria o `.env` com senhas aleatórias (nunca troca um `.env` que já existe).
+3. Cria o `.env` com os padrões (nunca troca um `.env` que já existe). As senhas internas são geradas pela própria stack na primeira subida (serviço `secrets-init`) e ficam em volumes do Docker.
 4. Executa `docker compose up -d` e espera o n8n e o Grafana responderem.
 5. Baixa o modelo local do Ollama (opcional).
 6. Cria no n8n as credenciais do Postgres e do MQTT, importa os workflows e os ativa.
@@ -111,15 +111,17 @@ Rode o instalador direto da pasta, com o Python 3 do sistema: `./instalar.sh` (L
 
 ## Serviços
 
-| Serviço                              | Endereço                    | Usuário                 | Senha                                |
-| ------------------------------------ | --------------------------- | ----------------------- | ------------------------------------ |
-| **Grafana** — dashboards e métricas  | <http://localhost:3000>     | `GRAFANA_ADMIN_USER`    | `GRAFANA_ADMIN_PASSWORD` (no `.env`) |
-| **n8n** — automação de fluxos        | <http://localhost:5678>     | criado no 1º acesso     | —                                    |
-| **Hermes Dashboard** — assistente IA | <http://localhost:9119>     | `HERMES_DASHBOARD_USER` | `HERMES_DASHBOARD_PASS` (no `.env`)  |
-| **Mosquitto** — broker MQTT (ESP32)  | `mqtt://localhost:1883`     | `device` / `n8n`        | `MQTT_DEVICE_PASS` / `MQTT_N8N_PASS` |
-| **TimescaleDB** — banco de dados     | interno (sem porta exposta) | `postgres`              | `POSTGRES_PASSWORD` (no `.env`)      |
+| Serviço                              | Endereço                    | Usuário             | Senha                            |
+| ------------------------------------ | --------------------------- | ------------------- | -------------------------------- |
+| **Grafana** — dashboards e métricas  | <http://localhost:3000>     | `admin`             | `password` (placeholder, troque) |
+| **n8n** — automação de fluxos        | <http://localhost:5678>     | criado no 1º acesso | —                                |
+| **Hermes Dashboard** — assistente IA | <http://localhost:9119>     | `admin`             | `password` (placeholder, troque) |
+| **Mosquitto** — broker MQTT (ESP32)  | `mqtt://localhost:1883`     | `device` / `n8n`    | gerada sozinha (veja abaixo)     |
+| **TimescaleDB** — banco de dados     | interno (sem porta exposta) | `postgres`          | `POSTGRES_PASSWORD` (no `.env`)  |
 
-> Com o instalador, todas as senhas são aleatórias. Se você criar o `.env` à mão a partir do `.env.example`, as senhas de exemplo (`password`) servem só para a sua máquina: troque-as antes de qualquer outro uso.
+> Os logins `admin` / `password` são placeholders para uso só na sua máquina: troque-os antes de qualquer outro uso. Os segredos internos (papéis do banco, usuários do MQTT e tokens n8n ↔ Hermes) são aleatórios e gerados automaticamente, com ou sem instalador, e nenhum serviço enxerga os segredos dos outros.
+>
+> **Senha do sensor (ESP32):** é a do usuário `device` do MQTT. O instalador a mostra no final; para ver depois: `docker compose exec mosquitto cat /run/secrets/mqtt_device/value`. Use-a como `MQTT_PASS` no `firmware/.env`.
 
 ### Compatibilidade de sistemas operacionais
 
@@ -146,7 +148,7 @@ Quem prefere não usar o instalador faz os mesmos passos à mão:
 cp .env.example .env
 ```
 
-Preencha no `.env` as sete variáveis **sem valor padrão** (o compose falha e avisa qual falta), cada uma com `openssl rand -hex 24`: `GRAFANA_RO_PASSWORD`, `N8N_DB_PASSWORD`, `HERMES_RO_PASSWORD`, `MQTT_DEVICE_PASS`, `MQTT_N8N_PASS`, `HERMES_WEBHOOK_SECRET` e `N8N_COMMAND_TOKEN`. No macOS e no Windows, deixe `COMPOSE_PROFILES=` vazio. Para o ESP32 na rede local, defina também `MQTT_BIND` com o IP do computador nessa rede (o padrão `127.0.0.1` só aceita conexões locais) e use a mesma senha de `MQTT_DEVICE_PASS` em `MQTT_PASS` no `firmware/.env`.
+O `.env` é opcional: sem ele a stack sobe com os padrões (logins `admin` / `password`). Nenhuma senha precisa ser criada à mão: o serviço `secrets-init` gera os segredos internos na primeira subida. Preencha o `.env` só para o que for seu: tokens dos bots, `MQTT_BIND` com o IP do computador na rede (o padrão `127.0.0.1` só aceita conexões locais, necessário para o ESP32) e, no macOS e no Windows, `COMPOSE_PROFILES=` vazio.
 
 ```bash
 docker compose up -d
@@ -160,7 +162,7 @@ Depois, ligue o n8n ao banco e ao MQTT:
 docker compose exec n8n n8n import:workflow --separate --input=/workflows
 ```
 
-e, no n8n, crie as credenciais **Postgres** `TimescaleDB (n8n_app)` (host `timescaledb`, banco `POSTGRES_DB`, usuário `n8n_app`, senha `N8N_DB_PASSWORD`) e **MQTT** `Mosquitto (usuário n8n)` (host `mosquitto`, porta 1883, usuário `n8n`, senha `MQTT_N8N_PASS`), e ative os dois workflows. Por fim, baixe a reserva local do Hermes: `docker compose exec ollama ollama pull qwen2.5:3b`.
+e, no n8n, crie as credenciais **Postgres** `TimescaleDB (n8n_app)` (host `timescaledb`, banco `POSTGRES_DB`, usuário `n8n_app`, senha em `docker compose exec n8n cat /run/secrets/n8n_db/value`) e **MQTT** `Mosquitto (usuário n8n)` (host `mosquitto`, porta 1883, usuário `n8n`, senha em `docker compose exec n8n cat /run/secrets/mqtt_n8n/value`), e ative os dois workflows. Por fim, baixe a reserva local do Hermes: `docker compose exec ollama ollama pull qwen2.5:3b`.
 
 ---
 
@@ -169,7 +171,7 @@ e, no n8n, crie as credenciais **Postgres** `TimescaleDB (n8n_app)` (host `times
 ### Grafana — dashboards
 
 1. Acesse <http://localhost:3000>
-2. Entre com o usuário e a senha do `.env` (`GRAFANA_ADMIN_USER` e `GRAFANA_ADMIN_PASSWORD`)
+2. Entre com `admin` / `password` (ou os valores de `GRAFANA_ADMIN_USER` e `GRAFANA_ADMIN_PASSWORD` do `.env`) e troque a senha
 3. Os dashboards de sons urbanos já estão pré-configurados na seção **Dashboards**
 
 ### n8n — automação de fluxos
@@ -184,7 +186,7 @@ Os workflows **ELEX20 - Ingestão MQTT** e **ELEX20 - Comando ao dispositivo** j
 
 ### Hermes — assistente de IA
 
-1. Acesse <http://localhost:9119> e entre com o usuário e a senha do `.env`
+1. Acesse <http://localhost:9119> e entre com `admin` / `password` (ou `HERMES_DASHBOARD_USER` e `HERMES_DASHBOARD_PASS` do `.env`)
 2. Fale com o bot no Telegram ou no Discord (só os IDs listados em `TELEGRAM_ALLOWED_USERS` e `DISCORD_ALLOWED_USERS` são atendidos)
 3. Ferramentas que ele tem: `sensores_status`, `eventos_recentes`, `resumo_sons`, `direcao_predominante`, `classes_urgencia` e `enviar_comando`. Ele lê o banco só com o papel `hermes_ro` e nunca fala direto com o MQTT: os comandos passam pelo n8n, que valida chave e faixa.
 4. Os alertas de urgência alta chegam ao chat definido em `TELEGRAM_HOME_CHANNEL`.
@@ -210,13 +212,15 @@ Para atualizar as imagens: `docker compose pull` e depois `docker compose up -d`
 
 ### Trocar senhas
 
-Edite o `.env` e reinicie os serviços afetados:
+Os logins (Grafana e Hermes) ficam no `.env`; edite e reinicie os serviços afetados:
 
 ```bash
 docker compose up -d grafana hermes-agent timescaledb
 ```
 
-> `POSTGRES_PASSWORD`, `GRAFANA_ADMIN_PASSWORD` e a conta do n8n só valem na primeira criação dos dados; mudar depois exige trocar a senha dentro do próprio serviço. As senhas `GRAFANA_RO_PASSWORD`, `N8N_DB_PASSWORD` e `HERMES_RO_PASSWORD` são reaplicadas a cada `docker compose up`.
+> `POSTGRES_PASSWORD`, `GRAFANA_ADMIN_PASSWORD` e a conta do n8n só valem na primeira criação dos dados; mudar depois exige trocar a senha dentro do próprio serviço.
+>
+> Os segredos internos são gerados uma vez e ficam em volumes do Docker (não em arquivos do repositório). Para fixar um valor, defina a variável no `.env` (por exemplo `MQTT_DEVICE_PASS=...`); ela sobrescreve o volume. **`docker compose down -v` apaga esses volumes**: os segredos são gerados de novo e o sensor precisa ser regravado com a nova senha MQTT.
 
 ---
 

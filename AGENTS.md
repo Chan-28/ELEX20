@@ -19,7 +19,7 @@ uv run ruff check . --fix && uv run ruff format .   # npm run fix
 bash scripts/infra-smoke.sh        # testa papéis do banco e ACL do MQTT (sobe containers descartáveis)
 
 # Infra
-cp .env.example .env               # preencher antes de subir (nunca commitar)
+cp .env.example .env               # opcional: sem .env a stack sobe com os padrões (nunca commitar)
 docker compose up -d
 docker compose logs -f <servico>
 
@@ -52,6 +52,7 @@ Documentação e arquivos `.md/.json/.yaml` não exigem build. O Prettier format
 - O n8n escuta só em `127.0.0.1:5678`. Mantenha os serviços ligados a localhost. A porta 1883 só é publicada em `MQTT_BIND` (padrão loopback); o Mosquitto exige usuário (`device` publica, `n8n` assina) e ACL em `mosquitto/acl`.
 - Grafana e n8n não usam o superusuário do banco: `grafana_ro` (leitura) e `n8n_app`, criados pelo `db-init` (`timescaledb/db-init.sql`). Não monte o socket do Docker no Hermes.
 - O Alloy (`profiles: [logs]`) só sobe com `COMPOSE_PROFILES=logs` (Linux): no Docker Desktop do macOS/Windows os caminhos de logs não existem. O instalador define isso por sistema.
+- Segredos internos (senhas dos papéis do banco e do MQTT, tokens n8n↔Hermes): o serviço `secrets-init` (`init/secrets-init.sh`) os gera na primeira subida em volumes `sec_*` (um por segredo; cada serviço monta só os seus, em `/run/secrets/<nome>/value`). Nada aqui é obrigatório no `.env`; definir a variável só fixa o valor. Um segredo novo precisa entrar no script, no compose (volume + mount) e em `SEGREDOS_AUTOMATICOS` do instalador (há teste).
 - Imagens são fixadas por versão e digest; atualize pelo Dependabot, não volte para `latest`.
 - Tópicos MQTT: `sound/inference`, `sound/status` e `sound/cmd` (`/<device_id>`; só o n8n escreve em `sound/cmd`, o Hermes nunca publica no MQTT); o schema documenta `sound/inference/<device_id>`. Mudou um, confira os outros.
 - `AUDIO_SAMPLE_RATE` (16000) e `AUDIO_WINDOW_MS` precisam coincidir com a janela do projeto Edge Impulse.
