@@ -1,6 +1,6 @@
 # HANDOFF — sessão de 2026-11-02 a 2026-11-03
 
-Registro completo da conversa entre o usuário (Chan Lik / Henrique) e o Claude Code
+Registro completo da conversa entre o usuário e o Claude Code
 na worktree `claude/platform-io-firmware-a00022`. Quem retomar o trabalho deve ler
 este arquivo e depois o documento de desenho em
 `docs/superpowers/specs/2026-11-03-hermes-integracoes-direcao-design.md`.
@@ -124,8 +124,8 @@ Hermes (hermes-agent) isolado: Discord/Telegram, Ollama, Lightpanda, painel :911
 - Pipeline YAMNet com transfer learning: YAMNet congelado + cabeça **Dense** (pool
   médio, sons estacionários) ou **Conv1D** (sequência temporal); exporta TFLite
   float32 e INT8. É um bloco de aprendizado customizado do Edge Impulse
-  (`parameters.json`, `Dockerfile`, `.ei-block-config` com organização 516485 e
-  projeto 9258).
+  (`parameters.json`, `Dockerfile`, `.ei-block-config` com organização e
+  bloco do Edge Impulse).
 - Aviso do próprio `train.py`: o TFLite exportado tem **só a cabeça**; o projeto do
   Studio precisa usar o bloco DSP **"Raw audio"** (não MFCC/MFE) para o Studio embutir
   o YAMNet na biblioteca Arduino. Credenciais Kaggle por `KAGGLE_USERNAME`/`KAGGLE_KEY`.
@@ -222,10 +222,9 @@ Fontes consultadas sobre o Hermes (documentação oficial):
 <https://hermes-agent.nousresearch.com/docs/user-guide/messaging/webhooks>.
 Alguns detalhes vieram de espelhos e de páginas truncadas; conferir na documentação.
 
-## 9. Relatório do projeto (PDF "Relatório_ELEX20_2026_2", UTFPR)
+## 9. Relatório do projeto (PDF "Relatório_ELEX20_2026_2")
 
 - Título: "Sistema de Percepção Sonora Háptica" (Oficina de Integração 1, 2026/2).
-  Autores: Chan Hong Lik, Gustavo Olsson Felchner, Mohamed Telles Cansiz.
 - Sistema vestível: 4 INMP441 numa faixa ao redor da cabeça, ESP32-S3, TinyML (Edge
   Impulse), 4 motores de vibração 1027 ERM com MOSFET AO3400A por PWM, bateria LiPo.
 - Servidor local em Docker: o relatório cita FastAPI + WebSocket + TimescaleDB + Grafana

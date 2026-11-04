@@ -8,7 +8,7 @@
   "provenance": "current",
   "deliveryReceiptId": "f9ef6797-fb24-4e0c-84c6-1e8fb66ff5d9",
   "artifact": {
-    "path": "/home/henrique/GitHub/ELEX20/.claude/worktrees/platform-io-firmware-a00022/.archify/architecture-firmware-runtime-20261102-235242/firmware-runtime.html",
+    "path": "/home/usuario/GitHub/ELEX20/.claude/worktrees/platform-io-firmware-a00022/.archify/architecture-firmware-runtime-20261102-235242/firmware-runtime.html",
     "sha256": "ba44f55ef7f947a3123b38896bbdfd2ea8e403f3603d494561564dd7b1b77ece",
     "bytes": 855837
   },
@@ -26,7 +26,7 @@
       "severity": "error",
       "message": "browser-check could not complete its Chrome inspection.",
       "subject": {
-        "artifact": "/home/henrique/GitHub/ELEX20/.claude/worktrees/platform-io-firmware-a00022/.archify/architecture-firmware-runtime-20261102-235242/firmware-runtime.html"
+        "artifact": "/home/usuario/GitHub/ELEX20/.claude/worktrees/platform-io-firmware-a00022/.archify/architecture-firmware-runtime-20261102-235242/firmware-runtime.html"
       },
       "evidence": {
         "reason": "Chrome navigation failed: net::ERR_FILE_NOT_FOUND"
@@ -60,7 +60,7 @@
     "contactSheet": null
   },
   "sidecars": {
-    "directory": "/home/henrique/GitHub/ELEX20/.claude/worktrees/platform-io-firmware-a00022/.archify/architecture-firmware-runtime-20261102-235242/review-2",
+    "directory": "/home/usuario/GitHub/ELEX20/.claude/worktrees/platform-io-firmware-a00022/.archify/architecture-firmware-runtime-20261102-235242/review-2",
     "receipt": "firmware-runtime.browser-check.json",
     "files": []
   },

@@ -4,7 +4,7 @@ version = "0.2.0"
 description = "Monitoramento de sons urbanos — ESP32-S3 + Edge Impulse + TimescaleDB + Grafana"
 readme = "README.md"
 authors = [
-    { name = "Chan", email = "honglikch@gmail.com" }
+    { name = "Chan-28" }
 ]
 requires-python = ">=3.11"
 dependencies = [

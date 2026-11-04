@@ -6,12 +6,12 @@
   "type": "architecture",
   "quality": "showcase",
   "specification": {
-    "path": "/home/henrique/GitHub/ELEX20/.claude/worktrees/platform-io-firmware-a00022/.archify/architecture-firmware-build-20261102-235242/candidate.json",
+    "path": "/home/usuario/GitHub/ELEX20/.claude/worktrees/platform-io-firmware-a00022/.archify/architecture-firmware-build-20261102-235242/candidate.json",
     "sha256": "35df58e8ae7506c6f7086296e6a76175f19e7e8fa2d0cc4615415cf93e578ecd",
     "bytes": 3000
   },
   "artifact": {
-    "path": "/home/henrique/GitHub/ELEX20/.claude/worktrees/platform-io-firmware-a00022/.archify/architecture-firmware-build-20261102-235242/firmware-build.html",
+    "path": "/home/usuario/GitHub/ELEX20/.claude/worktrees/platform-io-firmware-a00022/.archify/architecture-firmware-build-20261102-235242/firmware-build.html",
     "sha256": "3211e6d794a72d6b2e181587bc4ac4f6721841c914c6ddfd68b740cab04a0dcc",
     "bytes": 845927
   },
@@ -32,14 +32,7 @@
       },
       "evidence": {
         "locale": "pt-BR",
-        "bundledLocales": [
-          "en",
-          "zh-CN",
-          "zh-TW",
-          "es",
-          "ko",
-          "ar"
-        ]
+        "bundledLocales": ["en", "zh-CN", "zh-TW", "es", "ko", "ar"]
       },
       "supportedFixes": [
         "Supply meta.translations for this locale.",
@@ -53,9 +46,9 @@
     "truncated": false
   },
   "evidence": {
-    "receipt": "/home/henrique/GitHub/ELEX20/.claude/worktrees/platform-io-firmware-a00022/.archify/architecture-firmware-build-20261102-235242/review-2/firmware-build.finalize.json",
-    "summaryReceipt": "/home/henrique/GitHub/ELEX20/.claude/worktrees/platform-io-firmware-a00022/.archify/architecture-firmware-build-20261102-235242/review-2/firmware-build.finalize-summary.json",
-    "browserCheckReceipt": "/home/henrique/GitHub/ELEX20/.claude/worktrees/platform-io-firmware-a00022/.archify/architecture-firmware-build-20261102-235242/review-2/firmware-build.browser-check.json"
+    "receipt": "/home/usuario/GitHub/ELEX20/.claude/worktrees/platform-io-firmware-a00022/.archify/architecture-firmware-build-20261102-235242/review-2/firmware-build.finalize.json",
+    "summaryReceipt": "/home/usuario/GitHub/ELEX20/.claude/worktrees/platform-io-firmware-a00022/.archify/architecture-firmware-build-20261102-235242/review-2/firmware-build.finalize-summary.json",
+    "browserCheckReceipt": "/home/usuario/GitHub/ELEX20/.claude/worktrees/platform-io-firmware-a00022/.archify/architecture-firmware-build-20261102-235242/review-2/firmware-build.browser-check.json"
   },
   "update": {
     "status": "current",

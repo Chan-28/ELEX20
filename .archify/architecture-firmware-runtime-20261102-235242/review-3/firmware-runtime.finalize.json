@@ -7,12 +7,12 @@
   "quality": "showcase",
   "startedAt": "2026-11-03T03:03:40.579Z",
   "specification": {
-    "path": "/home/henrique/GitHub/ELEX20/.claude/worktrees/platform-io-firmware-a00022/.archify/architecture-firmware-runtime-20261102-235242/candidate.json",
+    "path": "/home/usuario/GitHub/ELEX20/.claude/worktrees/platform-io-firmware-a00022/.archify/architecture-firmware-runtime-20261102-235242/candidate.json",
     "sha256": "d4bb1c4806b7b47b141ddc44a745345550a8e2e3db1bafe24f32ecefb0deb721",
     "bytes": 4453
   },
   "artifact": {
-    "path": "/home/henrique/GitHub/ELEX20/.claude/worktrees/platform-io-firmware-a00022/.archify/architecture-firmware-runtime-20261102-235242/firmware-runtime.html",
+    "path": "/home/usuario/GitHub/ELEX20/.claude/worktrees/platform-io-firmware-a00022/.archify/architecture-firmware-runtime-20261102-235242/firmware-runtime.html",
     "sha256": "ba44f55ef7f947a3123b38896bbdfd2ea8e403f3603d494561564dd7b1b77ece",
     "bytes": 855837
   },
@@ -24,11 +24,11 @@
       "execution": "embedded-in-deliver",
       "command": [
         "/home/linuxbrew/.linuxbrew/Cellar/node/26.10.0_1/bin/node",
-        "/home/henrique/.claude/skills/archify/bin/archify.mjs",
+        "/home/usuario/.claude/skills/archify/bin/archify.mjs",
         "deliver",
         "architecture",
-        "/home/henrique/GitHub/ELEX20/.claude/worktrees/platform-io-firmware-a00022/.archify/architecture-firmware-runtime-20261102-235242/candidate.json",
-        "/home/henrique/GitHub/ELEX20/.claude/worktrees/platform-io-firmware-a00022/.archify/architecture-firmware-runtime-20261102-235242/firmware-runtime.html",
+        "/home/usuario/GitHub/ELEX20/.claude/worktrees/platform-io-firmware-a00022/.archify/architecture-firmware-runtime-20261102-235242/candidate.json",
+        "/home/usuario/GitHub/ELEX20/.claude/worktrees/platform-io-firmware-a00022/.archify/architecture-firmware-runtime-20261102-235242/firmware-runtime.html",
         "--quality",
         "showcase",
         "--json"
@@ -57,11 +57,11 @@
       "durationMs": 401,
       "command": [
         "/home/linuxbrew/.linuxbrew/Cellar/node/26.10.0_1/bin/node",
-        "/home/henrique/.claude/skills/archify/bin/archify.mjs",
+        "/home/usuario/.claude/skills/archify/bin/archify.mjs",
         "deliver",
         "architecture",
-        "/home/henrique/GitHub/ELEX20/.claude/worktrees/platform-io-firmware-a00022/.archify/architecture-firmware-runtime-20261102-235242/candidate.json",
-        "/home/henrique/GitHub/ELEX20/.claude/worktrees/platform-io-firmware-a00022/.archify/architecture-firmware-runtime-20261102-235242/firmware-runtime.html",
+        "/home/usuario/GitHub/ELEX20/.claude/worktrees/platform-io-firmware-a00022/.archify/architecture-firmware-runtime-20261102-235242/candidate.json",
+        "/home/usuario/GitHub/ELEX20/.claude/worktrees/platform-io-firmware-a00022/.archify/architecture-firmware-runtime-20261102-235242/firmware-runtime.html",
         "--quality",
         "showcase",
         "--json"
@@ -72,8 +72,8 @@
         "ok": true,
         "command": "deliver",
         "type": "architecture",
-        "input": "/home/henrique/GitHub/ELEX20/.claude/worktrees/platform-io-firmware-a00022/.archify/architecture-firmware-runtime-20261102-235242/candidate.json",
-        "output": "/home/henrique/GitHub/ELEX20/.claude/worktrees/platform-io-firmware-a00022/.archify/architecture-firmware-runtime-20261102-235242/firmware-runtime.html",
+        "input": "/home/usuario/GitHub/ELEX20/.claude/worktrees/platform-io-firmware-a00022/.archify/architecture-firmware-runtime-20261102-235242/candidate.json",
+        "output": "/home/usuario/GitHub/ELEX20/.claude/worktrees/platform-io-firmware-a00022/.archify/architecture-firmware-runtime-20261102-235242/firmware-runtime.html",
         "specification": {
           "sha256": "d4bb1c4806b7b47b141ddc44a745345550a8e2e3db1bafe24f32ecefb0deb721",
           "bytes": 4453
@@ -101,14 +101,7 @@
             },
             "evidence": {
               "locale": "pt-BR",
-              "bundledLocales": [
-                "en",
-                "zh-CN",
-                "zh-TW",
-                "es",
-                "ko",
-                "ar"
-              ]
+              "bundledLocales": ["en", "zh-CN", "zh-TW", "es", "ko", "ar"]
             },
             "supportedFixes": [
               "Supply meta.translations for this locale.",
@@ -136,14 +129,14 @@
       "durationMs": 186,
       "command": [
         "/home/linuxbrew/.linuxbrew/Cellar/node/26.10.0_1/bin/node",
-        "/home/henrique/.claude/skills/archify/bin/archify.mjs",
+        "/home/usuario/.claude/skills/archify/bin/archify.mjs",
         "check",
-        "/home/henrique/GitHub/ELEX20/.claude/worktrees/platform-io-firmware-a00022/.archify/architecture-firmware-runtime-20261102-235242/firmware-runtime.html",
+        "/home/usuario/GitHub/ELEX20/.claude/worktrees/platform-io-firmware-a00022/.archify/architecture-firmware-runtime-20261102-235242/firmware-runtime.html",
         "--require-provenance"
       ],
       "receipt": {
         "ok": true,
-        "file": "/home/henrique/GitHub/ELEX20/.claude/worktrees/platform-io-firmware-a00022/.archify/architecture-firmware-runtime-20261102-235242/firmware-runtime.html",
+        "file": "/home/usuario/GitHub/ELEX20/.claude/worktrees/platform-io-firmware-a00022/.archify/architecture-firmware-runtime-20261102-235242/firmware-runtime.html",
         "artifact": {
           "sha256": "ba44f55ef7f947a3123b38896bbdfd2ea8e403f3603d494561564dd7b1b77ece",
           "bytes": 855837
@@ -152,9 +145,7 @@
           {
             "name": "single_svg",
             "ok": true,
-            "details": [
-              "found 1 <svg> block(s)"
-            ]
+            "details": ["found 1 <svg> block(s)"]
           },
           {
             "name": "finite_svg",
@@ -283,13 +274,13 @@
       "durationMs": 3869,
       "command": [
         "/home/linuxbrew/.linuxbrew/Cellar/node/26.10.0_1/bin/node",
-        "/home/henrique/.claude/skills/archify/bin/archify.mjs",
+        "/home/usuario/.claude/skills/archify/bin/archify.mjs",
         "browser-check",
-        "/home/henrique/GitHub/ELEX20/.claude/worktrees/platform-io-firmware-a00022/.archify/architecture-firmware-runtime-20261102-235242/firmware-runtime.html",
+        "/home/usuario/GitHub/ELEX20/.claude/worktrees/platform-io-firmware-a00022/.archify/architecture-firmware-runtime-20261102-235242/firmware-runtime.html",
         "--json",
         "--require-provenance",
         "--out-dir",
-        "/home/henrique/GitHub/ELEX20/.claude/worktrees/platform-io-firmware-a00022/.archify/architecture-firmware-runtime-20261102-235242/review-3"
+        "/home/usuario/GitHub/ELEX20/.claude/worktrees/platform-io-firmware-a00022/.archify/architecture-firmware-runtime-20261102-235242/review-3"
       ],
       "execution": "in-process",
       "receipt": {
@@ -302,7 +293,7 @@
         "provenance": "current",
         "deliveryReceiptId": "954fa628-13f2-432f-858e-ba91a5b2659f",
         "artifact": {
-          "path": "/home/henrique/GitHub/ELEX20/.claude/worktrees/platform-io-firmware-a00022/.archify/architecture-firmware-runtime-20261102-235242/firmware-runtime.html",
+          "path": "/home/usuario/GitHub/ELEX20/.claude/worktrees/platform-io-firmware-a00022/.archify/architecture-firmware-runtime-20261102-235242/firmware-runtime.html",
           "sha256": "ba44f55ef7f947a3123b38896bbdfd2ea8e403f3603d494561564dd7b1b77ece",
           "bytes": 855837
         },
@@ -312,7 +303,7 @@
         },
         "chrome": {
           "status": "available",
-          "executable": "/home/henrique/.cache/ms-playwright/chromium-1234/chrome-linux64/chrome"
+          "executable": "/home/usuario/.cache/ms-playwright/chromium-1234/chrome-linux64/chrome"
         },
         "diagnostics": [],
         "containment": {
@@ -1009,7 +1000,7 @@
           "contactSheet": null
         },
         "sidecars": {
-          "directory": "/home/henrique/GitHub/ELEX20/.claude/worktrees/platform-io-firmware-a00022/.archify/architecture-firmware-runtime-20261102-235242/review-3",
+          "directory": "/home/usuario/GitHub/ELEX20/.claude/worktrees/platform-io-firmware-a00022/.archify/architecture-firmware-runtime-20261102-235242/review-3",
           "receipt": "firmware-runtime.browser-check.json",
           "files": []
         }
@@ -1031,14 +1022,7 @@
       },
       "evidence": {
         "locale": "pt-BR",
-        "bundledLocales": [
-          "en",
-          "zh-CN",
-          "zh-TW",
-          "es",
-          "ko",
-          "ar"
-        ]
+        "bundledLocales": ["en", "zh-CN", "zh-TW", "es", "ko", "ar"]
       },
       "supportedFixes": [
         "Supply meta.translations for this locale.",
@@ -1047,9 +1031,9 @@
     }
   ],
   "evidence": {
-    "receipt": "/home/henrique/GitHub/ELEX20/.claude/worktrees/platform-io-firmware-a00022/.archify/architecture-firmware-runtime-20261102-235242/review-3/firmware-runtime.finalize.json",
-    "summaryReceipt": "/home/henrique/GitHub/ELEX20/.claude/worktrees/platform-io-firmware-a00022/.archify/architecture-firmware-runtime-20261102-235242/review-3/firmware-runtime.finalize-summary.json",
-    "browserCheckReceipt": "/home/henrique/GitHub/ELEX20/.claude/worktrees/platform-io-firmware-a00022/.archify/architecture-firmware-runtime-20261102-235242/review-3/firmware-runtime.browser-check.json"
+    "receipt": "/home/usuario/GitHub/ELEX20/.claude/worktrees/platform-io-firmware-a00022/.archify/architecture-firmware-runtime-20261102-235242/review-3/firmware-runtime.finalize.json",
+    "summaryReceipt": "/home/usuario/GitHub/ELEX20/.claude/worktrees/platform-io-firmware-a00022/.archify/architecture-firmware-runtime-20261102-235242/review-3/firmware-runtime.finalize-summary.json",
+    "browserCheckReceipt": "/home/usuario/GitHub/ELEX20/.claude/worktrees/platform-io-firmware-a00022/.archify/architecture-firmware-runtime-20261102-235242/review-3/firmware-runtime.browser-check.json"
   },
   "visualReview": "not-requested",
   "finishedAt": "2026-11-03T03:03:45.192Z",

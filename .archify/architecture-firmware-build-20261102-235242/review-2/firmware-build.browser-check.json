@@ -8,7 +8,7 @@
   "provenance": "current",
   "deliveryReceiptId": "de88c86f-6bdf-4677-bf3a-219794795014",
   "artifact": {
-    "path": "/home/henrique/GitHub/ELEX20/.claude/worktrees/platform-io-firmware-a00022/.archify/architecture-firmware-build-20261102-235242/firmware-build.html",
+    "path": "/home/usuario/GitHub/ELEX20/.claude/worktrees/platform-io-firmware-a00022/.archify/architecture-firmware-build-20261102-235242/firmware-build.html",
     "sha256": "3211e6d794a72d6b2e181587bc4ac4f6721841c914c6ddfd68b740cab04a0dcc",
     "bytes": 845927
   },
@@ -18,7 +18,7 @@
   },
   "chrome": {
     "status": "available",
-    "executable": "/home/henrique/.cache/ms-playwright/chromium-1234/chrome-linux64/chrome"
+    "executable": "/home/usuario/.cache/ms-playwright/chromium-1234/chrome-linux64/chrome"
   },
   "diagnostics": [],
   "containment": {
@@ -715,7 +715,7 @@
     "contactSheet": null
   },
   "sidecars": {
-    "directory": "/home/henrique/GitHub/ELEX20/.claude/worktrees/platform-io-firmware-a00022/.archify/architecture-firmware-build-20261102-235242/review-2",
+    "directory": "/home/usuario/GitHub/ELEX20/.claude/worktrees/platform-io-firmware-a00022/.archify/architecture-firmware-build-20261102-235242/review-2",
     "receipt": "firmware-build.browser-check.json",
     "files": []
   }

@@ -8,7 +8,7 @@
   "provenance": "current",
   "deliveryReceiptId": "9f0f0c97-7636-4f1c-9db9-888d0a24ff03",
   "artifact": {
-    "path": "/home/henrique/GitHub/ELEX20/.claude/worktrees/platform-io-firmware-a00022/.archify/architecture-firmware-build-20261102-235242/firmware-build.html",
+    "path": "/home/usuario/GitHub/ELEX20/.claude/worktrees/platform-io-firmware-a00022/.archify/architecture-firmware-build-20261102-235242/firmware-build.html",
     "sha256": "3211e6d794a72d6b2e181587bc4ac4f6721841c914c6ddfd68b740cab04a0dcc",
     "bytes": 845927
   },
@@ -26,7 +26,7 @@
       "severity": "warning",
       "message": "No supported browser found. Install Chrome/Chromium (or Microsoft Edge), or set ARCHIFY_CHROME to its executable path.",
       "subject": {
-        "artifact": "/home/henrique/GitHub/ELEX20/.claude/worktrees/platform-io-firmware-a00022/.archify/architecture-firmware-build-20261102-235242/firmware-build.html"
+        "artifact": "/home/usuario/GitHub/ELEX20/.claude/worktrees/platform-io-firmware-a00022/.archify/architecture-firmware-build-20261102-235242/firmware-build.html"
       },
       "evidence": {
         "executable": null
