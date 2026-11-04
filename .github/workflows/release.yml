@@ -70,8 +70,8 @@ jobs:
       - name: Hash and sign
         run: |
           cd dist
+          sha256sum -- * > SHA256SUMS
           for f in *; do
-            sha256sum "$f" > "$f.sha256"
             cosign sign-blob --yes --bundle "$f.sigstore.json" "$f"
           done
 
@@ -80,9 +80,9 @@ jobs:
           IDENTITY: https://github.com/${{ github.repository }}/.github/workflows/release.yml@refs/tags/${{ github.ref_name }}
         run: |
           cd dist
+          sha256sum --check SHA256SUMS
           for f in *; do
-            case "$f" in *.sha256|*.sigstore.json) continue ;; esac
-            sha256sum --check "$f.sha256"
+            case "$f" in *.sigstore.json) continue ;; esac
             cosign verify-blob --bundle "$f.sigstore.json" \
               --certificate-identity "$IDENTITY" \
               --certificate-oidc-issuer https://token.actions.githubusercontent.com "$f"
