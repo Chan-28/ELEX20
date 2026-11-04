@@ -1,0 +1,119 @@
+{
+  "id": "elex-comando-dispositivo",
+  "name": "ELEX20 - Comando ao dispositivo",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "elex-comando",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "b1000000-0000-4000-8000-000000000001",
+      "name": "Webhook do Hermes",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 0],
+      "webhookId": "elex-comando"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Valida token, device_id, chave e faixa. As faixas espelham hermes/mcp/comandos.py e\n// firmware/lib/elex_core/settings.cpp: mudou uma, confira as outras.\nconst crypto = require('crypto');\nconst fs = require('fs');\nconst COMANDOS = {\n  threshold: [0.3, 0.99],\n  doa_enabled: null,\n  motor_enabled: null,\n  port1_skew: [-8, 8],\n  motor_max_ms: [100, 2000],\n};\nconst item = $input.first().json;\nconst recebido = String((item.headers || {})['x-elex-token'] || '');\nlet esperado = '';\ntry { esperado = fs.readFileSync('/run/secrets/n8n_command/value', 'utf8'); } catch (e) { esperado = ''; }\nconst a = Buffer.from(recebido), b = Buffer.from(esperado);\nif (!esperado || a.length !== b.length || !crypto.timingSafeEqual(a, b)) {\n  return [{ json: { ok: false, status: 401, erro: 'não autorizado' } }];\n}\nconst p = item.body || {};\nconst key = String(p.key || '');\nconst value = p.value;\nif (!/^[A-Za-z0-9._-]{1,64}$/.test(String(p.device_id || ''))) return [{ json: { ok: false, status: 400, erro: 'device_id inválido' } }];\nif (!Object.prototype.hasOwnProperty.call(COMANDOS, key)) return [{ json: { ok: false, status: 400, erro: 'comando desconhecido' } }];\nif (typeof value !== 'number' || !Number.isFinite(value)) return [{ json: { ok: false, status: 400, erro: 'valor inválido' } }];\nconst faixa = COMANDOS[key];\nif (faixa === null ? !(value === 0 || value === 1) : !(value >= faixa[0] && value <= faixa[1])) {\n  return [{ json: { ok: false, status: 400, erro: 'valor fora da faixa' } }];\n}\nreturn [{ json: { ok: true, status: 200, device_id: p.device_id, payload: JSON.stringify({ key, value }) } }];"
+      },
+      "id": "b1000000-0000-4000-8000-000000000002",
+      "name": "Validar comando",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [220, 0]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "c2000000-0000-4000-8000-000000000001",
+              "leftValue": "={{ $json.ok }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "b1000000-0000-4000-8000-000000000003",
+      "name": "Válido?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [440, 0]
+    },
+    {
+      "parameters": {
+        "topic": "={{ 'sound/cmd/' + $json.device_id }}",
+        "sendInputData": false,
+        "message": "={{ $json.payload }}",
+        "options": { "qos": 1, "retain": false }
+      },
+      "id": "b1000000-0000-4000-8000-000000000004",
+      "name": "Publicar sound/cmd",
+      "type": "n8n-nodes-base.mqtt",
+      "typeVersion": 1,
+      "position": [680, -100],
+      "credentials": {
+        "mqtt": { "id": "elex-mqtt", "name": "Mosquitto (usuário n8n)" }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { ok: true } }}",
+        "options": { "responseCode": 200 }
+      },
+      "id": "b1000000-0000-4000-8000-000000000005",
+      "name": "Responder 200",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [900, -100]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { ok: false, erro: $json.erro } }}",
+        "options": { "responseCode": "={{ $json.status }}" }
+      },
+      "id": "b1000000-0000-4000-8000-000000000006",
+      "name": "Responder erro",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [680, 100]
+    }
+  ],
+  "connections": {
+    "Webhook do Hermes": {
+      "main": [[{ "node": "Validar comando", "type": "main", "index": 0 }]]
+    },
+    "Validar comando": {
+      "main": [[{ "node": "Válido?", "type": "main", "index": 0 }]]
+    },
+    "Válido?": {
+      "main": [
+        [{ "node": "Publicar sound/cmd", "type": "main", "index": 0 }],
+        [{ "node": "Responder erro", "type": "main", "index": 0 }]
+      ]
+    },
+    "Publicar sound/cmd": {
+      "main": [[{ "node": "Responder 200", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": { "executionOrder": "v1" },
+  "active": false
+}

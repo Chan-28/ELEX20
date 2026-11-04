@@ -31,12 +31,6 @@ jobs:
 
       # O Docker Compose já vem instalado no ubuntu-latest.
       - name: Validate syntax
-        env:
-          # Variáveis obrigatórias sem valor no .env.example (não têm senha padrão)
-          GRAFANA_RO_PASSWORD: ci-dummy
-          N8N_DB_PASSWORD: ci-dummy
-          MQTT_DEVICE_PASS: ci-dummy
-          MQTT_N8N_PASS: ci-dummy
         run: docker compose --env-file .env.example -f docker-compose.yaml config --quiet
 
       - name: Check for required env vars
@@ -185,11 +179,6 @@ jobs:
       # Stack efêmera no runner, com os valores de exemplo do .env.example.
       # O compose já publica Grafana/n8n em 127.0.0.1; o ZAP usa --network host.
       - name: Up service stack
-        env:
-          GRAFANA_RO_PASSWORD: ci-dummy
-          N8N_DB_PASSWORD: ci-dummy
-          MQTT_DEVICE_PASS: ci-dummy
-          MQTT_N8N_PASS: ci-dummy
         run: |
           cp .env.example .env
           docker compose up -d --wait timescaledb ${{ matrix.alias }}
@@ -227,11 +216,6 @@ jobs:
 
       - name: Down service stack
         if: always()
-        env:
-          GRAFANA_RO_PASSWORD: ci-dummy
-          N8N_DB_PASSWORD: ci-dummy
-          MQTT_DEVICE_PASS: ci-dummy
-          MQTT_N8N_PASS: ci-dummy
         run: docker compose down
 
   # 6. Resumo final

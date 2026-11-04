@@ -1,0 +1,73 @@
+# Configuração do Hermes (o hermes-init a copia para /opt/data/config.yaml a cada `up`).
+# O Hermes v0.22.5 lê só este arquivo (HERMES_HOME=/opt/data); o antigo
+# config.jsonc nunca era lido. Segredos e allowlists vêm do ambiente (.env),
+# não daqui.
+
+model:
+  # OpenRouter como principal; a chave vem de OPENROUTER_API_KEY
+  default: "openai/gpt-4o-mini"
+  provider: "openrouter"
+
+# Reserva local quando o OpenRouter falhar ou estiver sem chave.
+# Baixe o modelo antes: docker compose exec ollama ollama pull qwen2.5:3b
+fallback_providers:
+  - provider: "custom"
+    # Opções de modelo local (escolha um e baixe com `ollama pull <modelo>`):
+    #   "qwen2.5:3b"        — equilibrado, bom para código e conversa
+    #   "qwen2.5-coder:3b"  — especializado em código
+    #   "llama3.2:3b"       — conversa geral
+    #   "phi4-mini"         — raciocínio lógico
+    #   "gemma3:4b"         — mais potente, mais pesado
+    # (o config.jsonc antigo usava "qwen3:3b", que não existe no Ollama)
+    model: "qwen2.5:3b"
+    base_url: "http://ollama:11434/v1"
+
+# Comandos rodam dentro do container do Hermes. O backend "docker" exigiria
+# montar o socket do Docker (controle total do host) e não deve ser usado.
+terminal:
+  backend: "local"
+
+browser:
+  cdp_url: "ws://lightpanda:9222"
+
+telemetry:
+  enabled: false
+
+# Ferramentas do ELEX20 (hermes/mcp/elex_db.py): consultas ao banco com o papel
+# hermes_ro e envio de comandos ao sensor pelo n8n. Só estas ferramentas são
+# registradas; o Hermes nunca fala com o MQTT.
+mcp_servers:
+  elex:
+    command: "/opt/hermes/.venv/bin/python"
+    args: ["/opt/elex/mcp/elex_db.py"]
+    env:
+      ELEX_DB_HOST: "timescaledb"
+      ELEX_DB_NAME: "${ELEX_DB_NAME}"
+      ELEX_DB_USER: "hermes_ro"
+      ELEX_DB_PASSWORD: "${HERMES_RO_PASSWORD}"
+      N8N_COMMAND_URL: "http://n8n:5678/webhook/elex-comando"
+      N8N_COMMAND_TOKEN: "${N8N_COMMAND_TOKEN}"
+    tools:
+      include:
+        - sensores_status
+        - eventos_recentes
+        - resumo_sons
+        - direcao_predominante
+        - classes_urgencia
+        - enviar_comando
+
+# Entrada de alertas do n8n (porta 8644, só na rede interna). A assinatura HMAC
+# é validada pelo Hermes com o segredo HERMES_WEBHOOK_SECRET. O alerta é
+# entregue como texto fixo (deliver_only), sem passar pelo modelo: rótulos
+# vindos do MQTT são dados não confiáveis.
+# O chat de destino vem de TELEGRAM_HOME_CHANNEL (ou DISCORD_HOME_CHANNEL).
+platforms:
+  webhook:
+    enabled: true
+    extra:
+      routes:
+        alerta-som:
+          secret: "${HERMES_WEBHOOK_SECRET}"
+          deliver_only: true
+          deliver: "telegram"
+          prompt: "Alerta: {label} ({confidence_pct}%) no sensor {device}, direção {sector}. Urgência {urgency}."

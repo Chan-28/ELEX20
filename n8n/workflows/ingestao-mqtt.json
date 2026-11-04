@@ -1,0 +1,175 @@
+{
+  "id": "elex-ingestao-mqtt",
+  "name": "ELEX20 - Ingestão MQTT",
+  "nodes": [
+    {
+      "parameters": {
+        "topics": "sound/inference/+,sound/status/+",
+        "options": {}
+      },
+      "id": "a1000000-0000-4000-8000-000000000001",
+      "name": "MQTT sound/*",
+      "type": "n8n-nodes-base.mqttTrigger",
+      "typeVersion": 1,
+      "position": [0, 0],
+      "credentials": {
+        "mqtt": { "id": "elex-mqtt", "name": "Mosquitto (usuário n8n)" }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Mensagens do MQTT são dados não confiáveis: valida tudo e descarta o que não bate.\nconst SECTORS = ['N', 'NE', 'E', 'SE', 'S', 'SO', 'O', 'NO'];\nconst int = (v, lo, hi) => (Number.isFinite(v) && v >= lo && v <= hi ? Math.round(v) : null);\nconst out = [];\nfor (const item of $input.all()) {\n  const m = String(item.json.topic || '').match(/^sound\\/(inference|status)\\/([A-Za-z0-9._-]{1,64})$/);\n  if (!m) continue;\n  let p;\n  try { p = JSON.parse(String(item.json.message)); } catch (e) { continue; }\n  if (typeof p !== 'object' || p === null || Array.isArray(p)) continue;\n  const device_id = m[2];\n  if (m[1] === 'status') {\n    out.push({ json: { kind: 'status', device_id, uptime_s: int(p.uptime_s, 0, 4e9), heap: int(p.heap, 0, 4e9), rssi: int(p.rssi, -127, 0), raw_json: JSON.stringify(p) } });\n    continue;\n  }\n  if (p.mock === true) continue; // leituras simuladas nunca entram no banco\n  const label = typeof p.label === 'string' ? p.label : '';\n  const conf = Number(p.confidence);\n  if (!/^[A-Za-z0-9_-]{1,64}$/.test(label) || !(conf >= 0 && conf <= 1)) continue;\n  const doa = Number(p.doa_confidence);\n  out.push({ json: {\n    kind: 'inference', device_id, label, confidence: conf,\n    direction_deg: int(p.direction_deg, 0, 359),\n    sector: SECTORS.includes(p.sector) ? p.sector : null,\n    doa_confidence: p.doa_confidence !== undefined && doa >= 0 && doa <= 1 ? doa : null,\n    raw_json: JSON.stringify(p),\n  } });\n}\nreturn out;"
+      },
+      "id": "a1000000-0000-4000-8000-000000000002",
+      "name": "Validar mensagem",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [220, 0]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "c1000000-0000-4000-8000-000000000001",
+              "leftValue": "={{ $json.kind }}",
+              "rightValue": "inference",
+              "operator": { "type": "string", "operation": "equals" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "a1000000-0000-4000-8000-000000000003",
+      "name": "É inferência?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [440, 0]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO sound_events (device_id, label, confidence, direction_deg, sector, doa_confidence, urgency, raw_json)\nVALUES ($1, $2, $3, $4::smallint, $5::text, $6::float4, (SELECT urgency FROM sound_classes WHERE label = $2), $7::jsonb)\nRETURNING device_id, label, confidence, sector, urgency;",
+        "options": {
+          "queryReplacement": "={{ [$json.device_id, $json.label, $json.confidence, $json.direction_deg, $json.sector, $json.doa_confidence, $json.raw_json] }}"
+        }
+      },
+      "id": "a1000000-0000-4000-8000-000000000004",
+      "name": "Gravar sound_events",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [680, -120],
+      "credentials": {
+        "postgres": { "id": "elex-postgres", "name": "TimescaleDB (n8n_app)" }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH d AS (INSERT INTO devices (device_id) VALUES ($1) ON CONFLICT (device_id) DO NOTHING)\nINSERT INTO device_status (device_id, uptime_s, heap, rssi, raw_json)\nVALUES ($1, $2::bigint, $3::bigint, $4::smallint, $5::jsonb);",
+        "options": {
+          "queryReplacement": "={{ [$json.device_id, $json.uptime_s, $json.heap, $json.rssi, $json.raw_json] }}"
+        }
+      },
+      "id": "a1000000-0000-4000-8000-000000000005",
+      "name": "Gravar device_status",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [680, 120],
+      "credentials": {
+        "postgres": { "id": "elex-postgres", "name": "TimescaleDB (n8n_app)" }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "c1000000-0000-4000-8000-000000000002",
+              "leftValue": "={{ $json.urgency }}",
+              "rightValue": 3,
+              "operator": { "type": "number", "operation": "gte" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "a1000000-0000-4000-8000-000000000006",
+      "name": "Urgência alta?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [900, -120]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Assina o alerta para o Hermes (HMAC-SHA256 de \"<timestamp>.<corpo>\", cabeçalho V2).\n// Precisa de NODE_FUNCTION_ALLOW_BUILTIN=crypto,fs no n8n; o segredo vem do arquivo montado (docker-compose.yaml).\nconst crypto = require('crypto');\nconst segredo = require('fs').readFileSync('/run/secrets/hermes_webhook/value', 'utf8');\nconst d = $input.first().json;\nconst body = JSON.stringify({\n  label: d.label,\n  confidence_pct: Math.round(d.confidence * 100),\n  device: d.device_id,\n  sector: d.sector || 'não estimada',\n  urgency: d.urgency,\n});\nconst ts = String(Math.floor(Date.now() / 1000));\nconst sig = crypto.createHmac('sha256', segredo).update(`${ts}.${body}`).digest('hex');\nreturn [{ json: { body, ts, sig } }];"
+      },
+      "id": "a1000000-0000-4000-8000-000000000007",
+      "name": "Assinar alerta",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, -200]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://hermes-agent:8644/webhooks/alerta-som",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "X-Webhook-Timestamp", "value": "={{ $json.ts }}" },
+            { "name": "X-Webhook-Signature-V2", "value": "={{ $json.sig }}" }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ $json.body }}",
+        "options": { "timeout": 10000 }
+      },
+      "id": "a1000000-0000-4000-8000-000000000008",
+      "name": "Alertar Hermes",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1340, -200],
+      "continueOnFail": true
+    }
+  ],
+  "connections": {
+    "MQTT sound/*": {
+      "main": [[{ "node": "Validar mensagem", "type": "main", "index": 0 }]]
+    },
+    "Validar mensagem": {
+      "main": [[{ "node": "É inferência?", "type": "main", "index": 0 }]]
+    },
+    "É inferência?": {
+      "main": [
+        [{ "node": "Gravar sound_events", "type": "main", "index": 0 }],
+        [{ "node": "Gravar device_status", "type": "main", "index": 0 }]
+      ]
+    },
+    "Gravar sound_events": {
+      "main": [[{ "node": "Urgência alta?", "type": "main", "index": 0 }]]
+    },
+    "Urgência alta?": {
+      "main": [[{ "node": "Assinar alerta", "type": "main", "index": 0 }], []]
+    },
+    "Assinar alerta": {
+      "main": [[{ "node": "Alertar Hermes", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": { "executionOrder": "v1" },
+  "active": false
+}

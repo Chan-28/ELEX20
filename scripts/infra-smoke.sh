@@ -2,7 +2,8 @@
 # Teste de infraestrutura: valida os controles de segurança do banco e do MQTT.
 #   - papéis do banco: grafana_ro só lê; n8n_app só insere; nenhum é superusuário;
 #     restrições de tamanho/formato de sound_events
-#   - Mosquitto: cliente anônimo recusado; "device" só publica em sound/*; "n8n" só lê
+#   - Mosquitto: cliente anônimo recusado; "device" só publica em sound/* e lê só o próprio
+#     sound/cmd/<id>; "n8n" lê sound/# e só ele escreve em sound/cmd/*
 # Sobe containers num projeto descartável (elexsmoke) com senhas de teste e remove
 # os próprios volumes ao terminar. Usado localmente e em .github/workflows/infra-smoke.yml.
 set -uo pipefail
@@ -10,9 +11,6 @@ set -uo pipefail
 cd "$(dirname "$0")/.." || exit 1
 
 PROJECT=elexsmoke
-export GRAFANA_RO_PASSWORD=smoke-ro N8N_DB_PASSWORD=smoke-n8n
-export MQTT_DEVICE_PASS=smoke-device MQTT_N8N_PASS=smoke-n8n-mqtt
-
 dc() { docker compose -p "$PROJECT" --env-file .env.example "$@"; }
 
 # container_name fixo no compose: não dá para rodar junto com a stack de verdade
@@ -49,6 +47,16 @@ if ! dc up -d --wait timescaledb mosquitto >/dev/null 2>&1 || ! dc run --rm --no
   exit 1
 fi
 
+# Segredos gerados sozinhos pelo secrets-init: lê dos containers que os montam
+GRAFANA_RO_PASSWORD=$(dc run --rm --no-deps -T --entrypoint cat db-init /run/secrets/grafana_ro/value)
+N8N_DB_PASSWORD=$(dc run --rm --no-deps -T --entrypoint cat db-init /run/secrets/n8n_db/value)
+HERMES_RO_PASSWORD=$(dc run --rm --no-deps -T --entrypoint cat db-init /run/secrets/hermes_ro/value)
+MQTT_DEVICE_PASS=$(docker exec mosquitto cat /run/secrets/mqtt_device/value)
+MQTT_N8N_PASS=$(docker exec mosquitto cat /run/secrets/mqtt_n8n/value)
+if [ -z "$GRAFANA_RO_PASSWORD" ] || [ -z "$MQTT_DEVICE_PASS" ] || [ "$MQTT_DEVICE_PASS" = "$MQTT_N8N_PASS" ]; then
+  echo "Segredos não foram gerados corretamente" >&2; exit 1
+fi
+
 # POSTGRES_USER/POSTGRES_PASSWORD/POSTGRES_DB vêm do .env.example
 DB=grafana
 echo; echo "Banco de dados"
@@ -70,6 +78,23 @@ expect_ok   "n8n_app cria tabelas no próprio banco"    sql n8n_app "$N8N_DB_PAS
 expect_fail "label com 100 caracteres é rejeitado"     sql n8n_app "$N8N_DB_PASSWORD" "$DB" "insert into sound_events(device_id,label,confidence) values('esp32-01',repeat('x',100),0.9)"
 expect_fail "device_id inválido é rejeitado"           sql n8n_app "$N8N_DB_PASSWORD" "$DB" "insert into sound_events(device_id,label,confidence) values('a b;--','chuva',0.9)"
 expect_fail "raw_json acima de 4 KB é rejeitado"       sql n8n_app "$N8N_DB_PASSWORD" "$DB" "insert into sound_events(device_id,label,confidence,raw_json) values('d','l',0.5,jsonb_build_object('k',repeat('x',5000)))"
+expect_ok   "n8n_app insere direção e urgência válidas" sql n8n_app "$N8N_DB_PASSWORD" "$DB" "insert into sound_events(device_id,label,confidence,direction_deg,sector,doa_confidence,urgency) values('esp32-01','siren',0.9,90,'E',0.8,3)"
+expect_fail "setor inválido é rejeitado"               sql n8n_app "$N8N_DB_PASSWORD" "$DB" "insert into sound_events(device_id,label,confidence,sector) values('esp32-01','siren',0.9,'X')"
+expect_fail "direção fora de 0-359 é rejeitada"        sql n8n_app "$N8N_DB_PASSWORD" "$DB" "insert into sound_events(device_id,label,confidence,direction_deg) values('esp32-01','siren',0.9,360)"
+expect_ok   "n8n_app grava heartbeat em device_status" sql n8n_app "$N8N_DB_PASSWORD" "$DB" "insert into device_status(device_id,uptime_s,heap,rssi) values('esp32-01',60,200000,-52)"
+expect_fail "rssi positivo é rejeitado"                sql n8n_app "$N8N_DB_PASSWORD" "$DB" "insert into device_status(device_id,rssi) values('esp32-01',10)"
+expect_fail "n8n_app não altera sound_classes"         sql n8n_app "$N8N_DB_PASSWORD" "$DB" "update sound_classes set urgency=0"
+expect_ok   "grafana_ro lê device_last_status"         sql grafana_ro "$GRAFANA_RO_PASSWORD" "$DB" "select count(*) from device_last_status"
+[ "$(sql hermes_ro "$HERMES_RO_PASSWORD" "$DB" "select current_setting('is_superuser')" 2>/dev/null)" = "off" ] \
+  && ok "hermes_ro não é superusuário" || bad "hermes_ro não é superusuário"
+expect_ok   "hermes_ro lê sound_events_public"        sql hermes_ro "$HERMES_RO_PASSWORD" "$DB" "select time,device_id,label,confidence,direction_deg,sector,urgency from sound_events_public limit 1"
+expect_fail "hermes_ro não lê raw_json"                sql hermes_ro "$HERMES_RO_PASSWORD" "$DB" "select raw_json from sound_events limit 1"
+expect_fail "hermes_ro não lê a tabela sound_events"   sql hermes_ro "$HERMES_RO_PASSWORD" "$DB" "select * from sound_events limit 1"
+expect_ok   "hermes_ro lê device_last_status"          sql hermes_ro "$HERMES_RO_PASSWORD" "$DB" "select count(*) from device_last_status"
+expect_ok   "hermes_ro lê sound_classes"               sql hermes_ro "$HERMES_RO_PASSWORD" "$DB" "select count(*) from sound_classes"
+expect_fail "hermes_ro não escreve"                    sql hermes_ro "$HERMES_RO_PASSWORD" "$DB" "insert into device_status(device_id) values('x')"
+expect_fail "hermes_ro não lê tabelas fora da lista"   sql hermes_ro "$HERMES_RO_PASSWORD" "$DB" "select * from segredo_interno"
+expect_fail "hermes_ro não executa COPY PROGRAM"       sql hermes_ro "$HERMES_RO_PASSWORD" "$DB" "copy (select 1) to program 'id'"
 
 echo; echo "MQTT (Mosquitto)"
 expect_fail "cliente anônimo é recusado"               mpub -t sound/inference/x -m a
@@ -83,6 +108,18 @@ mpub -u device -P "$MQTT_DEVICE_PASS" -i esp -r -q 1 -t other/topic -m fora >/de
 mpub -u n8n -P "$MQTT_N8N_PASS" -i n8n -r -q 1 -t sound/inference/forjado -m forjado >/dev/null 2>&1
 [ -z "$(msub -u n8n -P "$MQTT_N8N_PASS" -t 'sound/inference/forjado' -C 1 -W 2 2>/dev/null)" ] \
   && ok "n8n não consegue publicar" || bad "n8n não consegue publicar"
+# Comandos ao dispositivo: só o n8n escreve em sound/cmd/*, cada device lê só o seu (client id)
+expect_ok   "n8n publica comando em sound/cmd/<id>"    mpub -u n8n -P "$MQTT_N8N_PASS" -i n8n -r -q 1 -t sound/cmd/esp -m '{"key":"threshold","value":0.7}'
+[ "$(msub -u device -P "$MQTT_DEVICE_PASS" -i esp -t sound/cmd/esp -C 1 -W 5 2>/dev/null)" = '{"key":"threshold","value":0.7}' ] \
+  && ok "device recebe o próprio comando" || bad "device recebe o próprio comando"
+mpub -u n8n -P "$MQTT_N8N_PASS" -i n8n -r -q 1 -t sound/cmd/outro -m '{"key":"threshold","value":0.5}' >/dev/null 2>&1
+[ -z "$(msub -u device -P "$MQTT_DEVICE_PASS" -i esp -t sound/cmd/outro -C 1 -W 2 2>/dev/null)" ] \
+  && ok "device não lê comando de outro device" || bad "device não lê comando de outro device"
+mpub -u device -P "$MQTT_DEVICE_PASS" -i esp -r -q 1 -t sound/cmd/forjado -m '{"key":"threshold","value":0.3}' >/dev/null 2>&1
+[ -z "$(msub -u n8n -P "$MQTT_N8N_PASS" -t 'sound/cmd/forjado' -C 1 -W 2 2>/dev/null)" ] \
+  && ok "device não publica em sound/cmd" || bad "device não publica em sound/cmd"
+mpub -u n8n -P "$MQTT_N8N_PASS" -i n8n -r -n -t sound/cmd/esp >/dev/null 2>&1
+mpub -u n8n -P "$MQTT_N8N_PASS" -i n8n -r -n -t sound/cmd/outro >/dev/null 2>&1
 expect_ok   "healthcheck anônimo funciona no listener 1884 (loopback)" mpub -p 1884 -t health -m ping -q 1
 mpub -p 1884 -r -q 1 -t sound/inference/anonimo -m anonimo >/dev/null 2>&1
 [ -z "$(msub -u n8n -P "$MQTT_N8N_PASS" -t 'sound/inference/anonimo' -C 1 -W 2 2>/dev/null)" ] \

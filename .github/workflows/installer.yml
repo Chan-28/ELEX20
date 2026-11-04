@@ -1,0 +1,40 @@
+name: Instalador (Windows, macOS e Linux)
+
+# Garante, a cada mudança relevante, que o instalador compila e roda nos cinco
+# alvos (Linux x86_64 e ARM, Windows, macOS Intel e Apple Silicon) antes do release.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "installer/**"
+      - "docker-compose.yaml"
+      - ".env.example"
+      - "grafana/**"
+      - "hermes/**"
+      - "mosquitto/**"
+      - "n8n/**"
+      - "timescaledb/**"
+      - ".github/workflows/installer.yml"
+      - ".github/workflows/installer-build.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "installer/**"
+      - "docker-compose.yaml"
+      - ".env.example"
+      - "grafana/**"
+      - "hermes/**"
+      - "mosquitto/**"
+      - "n8n/**"
+      - "timescaledb/**"
+      - ".github/workflows/installer.yml"
+      - ".github/workflows/installer-build.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  instalador:
+    uses: $/.github/workflows/installer-build.yml
+    permissions:
+      contents: read
