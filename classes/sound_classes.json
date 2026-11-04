@@ -435,6 +435,8 @@
     },
     {
       "rotulo": "silencio",
+      "ativa": false,
+      "motivo_inativa": "aguardando gravações próprias de silêncio e ruído de fundo",
       "urgencia": 0,
       "nome": "Silêncio ou fundo",
       "audioset": [

@@ -11,6 +11,7 @@ Uso:
 """
 
 import argparse
+import array
 import csv
 import json
 import random
@@ -22,13 +23,14 @@ from pathlib import Path
 
 RAIZ = Path(__file__).resolve().parent.parent
 TAXA = 16000
-MAX_CLIPE_S = 10.0  # um clipe longo não pode dominar a categoria
-LIMITE_TREINO_S = 16 * 60.0
-LIMITE_TESTE_S = 4 * 60.0
+MAX_CLIPE_S = 30.0  # um clipe longo não pode dominar a categoria
+LIMITE_TREINO_S = 80 * 60.0  # teto por categoria: as raras ficam com o que existe
+LIMITE_TESTE_S = 20 * 60.0
 SEMENTE = 20  # sorteio reproduzível
 PASTA_TESTE_US8K = 10
 PASTA_TESTE_ESC50 = 5
 PERCENTUAL_TESTE_GRUPOS = 20
+PICO_MINIMO = 33  # cerca de -60 dBFS em 16 bits: abaixo disso o clipe é considerado mudo
 LICENCA_US8K = "CC-BY-NC"
 LICENCA_ESC50 = "CC-BY-NC"
 
@@ -45,7 +47,8 @@ class Clipe:
 
 
 def carregar_categorias(caminho: Path = RAIZ / "classes" / "sound_classes.json") -> list[dict]:
-    return json.loads(caminho.read_text(encoding="utf-8"))["categorias"]
+    categorias = json.loads(caminho.read_text(encoding="utf-8"))["categorias"]
+    return [c for c in categorias if c.get("ativa", True)]
 
 
 def categoria_fsd(rotulos_clipe: set[str], categorias: list[dict]) -> str | None:
@@ -167,18 +170,27 @@ def separar_grupos_do_teste(clipes: list[Clipe]) -> list[Clipe]:
 
 
 def duracao_s(caminho: Path) -> float:
-    with wave.open(str(caminho), "rb") as arquivo:
-        return arquivo.getnframes() / arquivo.getframerate()
+    try:
+        with wave.open(str(caminho), "rb") as arquivo:
+            return arquivo.getnframes() / arquivo.getframerate()
+    except wave.Error:  # WAV de ponto flutuante ou extensível: o módulo wave não lê
+        saida = subprocess.run(  # noqa: S603  (argumentos em lista, sem shell)
+            ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(caminho)],  # noqa: S607
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        return float(saida.stdout.strip())
 
 
 def selecionar(clipes: list[Clipe], limite_s: float, duracao=duracao_s) -> list[tuple[Clipe, float]]:
     """Sorteia clipes até o limite, alternando as fontes para os complementos não sumirem."""
-    sorteador = random.Random(SEMENTE)  # noqa: S311  (amostragem, não é criptografia)
     filas: dict[str, list[Clipe]] = {}
     for clipe in sorted(clipes, key=lambda c: (c.fonte, c.identificador)):
         filas.setdefault(clipe.fonte, []).append(clipe)
-    for fila in filas.values():
-        sorteador.shuffle(fila)
+    # Um sorteio por fonte: a ordem de uma fonte não muda quando outra entra ou sai
+    for fonte, fila in filas.items():
+        random.Random(f"{SEMENTE}:{fonte}").shuffle(fila)  # noqa: S311  (amostragem, não é criptografia)
     escolhidos, total = [], 0.0
     while total < limite_s and any(filas.values()):
         for fila in filas.values():
@@ -198,6 +210,13 @@ def converter(origem: Path, destino: Path) -> None:
         ],
         check=True,
     )  # fmt: skip
+
+
+def clipe_mudo(caminho: Path) -> bool:
+    """Lê o WAV de 16 bits convertido e diz se o pico fica abaixo de PICO_MINIMO."""
+    with wave.open(str(caminho), "rb") as arquivo:
+        amostras = array.array("h", arquivo.readframes(arquivo.getnframes()))
+    return max((abs(a) for a in amostras), default=0) < PICO_MINIMO
 
 
 def relatorio(selecionados: list[tuple[Clipe, float]], categorias: list[dict]) -> dict:
@@ -249,21 +268,27 @@ def main() -> None:
             selecionados += selecionar([c for c in da_categoria if c.particao == particao], limite)
 
     args.saida.mkdir(parents=True, exist_ok=True)
+    mantidos: list[tuple[Clipe, float]] = []
     with (args.saida / "manifesto.csv").open("w", encoding="utf-8", newline="") as arquivo:
         escritor = csv.writer(arquivo)
         escritor.writerow(["arquivo", "rotulo", "particao", "fonte", "id", "licenca", "grupo", "segundos"])
         for clipe, segundos in selecionados:
             nome = f"{clipe.rotulo}.{clipe.fonte}_{clipe.identificador}.wav"
-            escritor.writerow(
-                [nome, clipe.rotulo, clipe.particao, clipe.fonte, clipe.identificador,
-                 clipe.licenca, clipe.grupo, round(segundos, 2)]
-            )  # fmt: skip
             if not args.somente_relatorio:
                 pasta = args.saida / clipe.particao
                 pasta.mkdir(exist_ok=True)
                 converter(clipe.caminho, pasta / nome)
+                if clipe_mudo(pasta / nome):
+                    (pasta / nome).unlink()
+                    print(f"descartado (mudo): {nome}")
+                    continue
+            escritor.writerow(
+                [nome, clipe.rotulo, clipe.particao, clipe.fonte, clipe.identificador,
+                 clipe.licenca, clipe.grupo, round(segundos, 2)]
+            )  # fmt: skip
+            mantidos.append((clipe, segundos))
 
-    dados = relatorio(selecionados, categorias)
+    dados = relatorio(mantidos, categorias)
     (args.saida / "relatorio.json").write_text(json.dumps(dados, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     for rotulo, item in dados.items():
         minutos = f"treino {item['minutos_treino']:5} min  teste {item['minutos_teste']:5} min"
