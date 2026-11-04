@@ -1,0 +1,496 @@
+{
+  "versao": 1,
+  "descricao": "Fonte única das categorias de som do ELEX20. A urgência vai de 0 (nenhuma) a 3 (alta). A ordem define a prioridade quando um clipe combina com mais de uma categoria.",
+  "categorias": [
+    {
+      "rotulo": "sirene",
+      "urgencia": 3,
+      "nome": "Sirene",
+      "audioset": [
+        {
+          "nome": "Siren",
+          "mid": "/m/03kmc9"
+        },
+        {
+          "nome": "Emergency vehicle",
+          "mid": "/m/03j1ly"
+        },
+        {
+          "nome": "Civil defense siren",
+          "mid": "/m/0dgbq"
+        },
+        {
+          "nome": "Police car (siren)",
+          "mid": "/m/04qvtq"
+        },
+        {
+          "nome": "Ambulance (siren)",
+          "mid": "/m/012n7d"
+        },
+        {
+          "nome": "Fire engine, fire truck (siren)",
+          "mid": "/m/012ndj"
+        }
+      ],
+      "fontes": {
+        "fsd50k": ["Siren"],
+        "fsd50k_genericos": [],
+        "urbansound8k": ["siren"],
+        "esc50": ["siren"]
+      }
+    },
+    {
+      "rotulo": "buzina",
+      "urgencia": 3,
+      "nome": "Buzina",
+      "audioset": [
+        {
+          "nome": "Vehicle horn, car horn, honking",
+          "mid": "/m/0912c9"
+        },
+        {
+          "nome": "Air horn, truck horn",
+          "mid": "/m/05x_td"
+        },
+        {
+          "nome": "Train horn",
+          "mid": "/m/0284vy3"
+        }
+      ],
+      "fontes": {
+        "fsd50k": ["Vehicle_horn_and_car_horn_and_honking"],
+        "fsd50k_genericos": [],
+        "urbansound8k": ["car_horn"],
+        "esc50": ["car_horn"]
+      }
+    },
+    {
+      "rotulo": "alarme",
+      "urgencia": 3,
+      "nome": "Alarme",
+      "audioset": [
+        {
+          "nome": "Alarm",
+          "mid": "/m/07pp_mv"
+        },
+        {
+          "nome": "Fire alarm",
+          "mid": "/m/0c3f7m"
+        },
+        {
+          "nome": "Smoke detector, smoke alarm",
+          "mid": "/m/01y3hg"
+        },
+        {
+          "nome": "Car alarm",
+          "mid": "/m/02mfyn"
+        }
+      ],
+      "fontes": {
+        "fsd50k": ["Alarm"],
+        "fsd50k_genericos": ["Alarm"],
+        "urbansound8k": [],
+        "esc50": []
+      }
+    },
+    {
+      "rotulo": "tiro_explosao",
+      "urgencia": 3,
+      "nome": "Tiro ou explosão",
+      "audioset": [
+        {
+          "nome": "Gunshot, gunfire",
+          "mid": "/m/032s66"
+        },
+        {
+          "nome": "Machine gun",
+          "mid": "/m/04zjc"
+        },
+        {
+          "nome": "Artillery fire",
+          "mid": "/m/0_1c"
+        },
+        {
+          "nome": "Explosion",
+          "mid": "/m/014zdl"
+        },
+        {
+          "nome": "Fireworks",
+          "mid": "/m/0g6b5"
+        }
+      ],
+      "fontes": {
+        "fsd50k": ["Gunshot_and_gunfire", "Explosion", "Fireworks"],
+        "fsd50k_genericos": ["Explosion"],
+        "urbansound8k": ["gun_shot"],
+        "esc50": ["fireworks"]
+      }
+    },
+    {
+      "rotulo": "grito",
+      "urgencia": 3,
+      "nome": "Grito ou choro",
+      "audioset": [
+        {
+          "nome": "Screaming",
+          "mid": "/m/03qc9zr"
+        },
+        {
+          "nome": "Shout",
+          "mid": "/m/07p6fty"
+        },
+        {
+          "nome": "Wail, moan",
+          "mid": "/m/07qw_06"
+        },
+        {
+          "nome": "Crying, sobbing",
+          "mid": "/m/0463cq4"
+        }
+      ],
+      "fontes": {
+        "fsd50k": ["Screaming", "Shout", "Crying_and_sobbing"],
+        "fsd50k_genericos": [],
+        "urbansound8k": [],
+        "esc50": []
+      }
+    },
+    {
+      "rotulo": "impacto",
+      "urgencia": 2,
+      "nome": "Impacto",
+      "audioset": [
+        {
+          "nome": "Smash, crash",
+          "mid": "/m/07pjjrj"
+        },
+        {
+          "nome": "Crushing",
+          "mid": "/m/07plct2"
+        },
+        {
+          "nome": "Bang",
+          "mid": "/m/07pws3f"
+        }
+      ],
+      "fontes": {
+        "fsd50k": ["Crushing"],
+        "fsd50k_genericos": [],
+        "urbansound8k": [],
+        "esc50": []
+      }
+    },
+    {
+      "rotulo": "trem",
+      "urgencia": 2,
+      "nome": "Trem",
+      "audioset": [
+        {
+          "nome": "Train",
+          "mid": "/m/07jdr"
+        },
+        {
+          "nome": "Rail transport",
+          "mid": "/m/06d_3"
+        },
+        {
+          "nome": "Train whistle",
+          "mid": "/m/04zmvq"
+        },
+        {
+          "nome": "Train wheels squealing",
+          "mid": "/t/dd00048"
+        }
+      ],
+      "fontes": {
+        "fsd50k": ["Train", "Rail_transport"],
+        "fsd50k_genericos": ["Rail_transport"],
+        "urbansound8k": [],
+        "esc50": ["train"]
+      }
+    },
+    {
+      "rotulo": "aeronave",
+      "urgencia": 0,
+      "nome": "Aeronave",
+      "audioset": [
+        {
+          "nome": "Aircraft",
+          "mid": "/m/0k5j"
+        },
+        {
+          "nome": "Aircraft engine",
+          "mid": "/m/014yck"
+        },
+        {
+          "nome": "Fixed-wing aircraft, airplane",
+          "mid": "/m/0cmf2"
+        },
+        {
+          "nome": "Helicopter",
+          "mid": "/m/09ct_"
+        },
+        {
+          "nome": "Propeller, airscrew",
+          "mid": "/m/02l6bg"
+        }
+      ],
+      "fontes": {
+        "fsd50k": ["Aircraft", "Fixed-wing_aircraft_and_airplane"],
+        "fsd50k_genericos": ["Aircraft"],
+        "urbansound8k": [],
+        "esc50": ["airplane", "helicopter"]
+      }
+    },
+    {
+      "rotulo": "ferramenta",
+      "urgencia": 1,
+      "nome": "Ferramenta",
+      "audioset": [
+        {
+          "nome": "Drill",
+          "mid": "/m/01d380"
+        },
+        {
+          "nome": "Jackhammer",
+          "mid": "/m/03p19w"
+        },
+        {
+          "nome": "Chainsaw",
+          "mid": "/m/01j4z9"
+        },
+        {
+          "nome": "Sawing",
+          "mid": "/m/01b82r"
+        }
+      ],
+      "fontes": {
+        "fsd50k": ["Drill", "Sawing", "Power_tool"],
+        "fsd50k_genericos": ["Power_tool"],
+        "urbansound8k": ["jackhammer"],
+        "esc50": ["chainsaw"]
+      }
+    },
+    {
+      "rotulo": "veiculo",
+      "urgencia": 1,
+      "nome": "Veículo",
+      "audioset": [
+        {
+          "nome": "Vehicle",
+          "mid": "/m/07yv9"
+        },
+        {
+          "nome": "Car",
+          "mid": "/m/0k4j"
+        },
+        {
+          "nome": "Motor vehicle (road)",
+          "mid": "/m/012f08"
+        },
+        {
+          "nome": "Engine",
+          "mid": "/m/02mk9"
+        },
+        {
+          "nome": "Traffic noise, roadway noise",
+          "mid": "/m/0btp2"
+        },
+        {
+          "nome": "Truck",
+          "mid": "/m/07r04"
+        },
+        {
+          "nome": "Bus",
+          "mid": "/m/01bjv"
+        },
+        {
+          "nome": "Motorcycle",
+          "mid": "/m/04_sv"
+        },
+        {
+          "nome": "Race car, auto racing",
+          "mid": "/m/0ltv"
+        },
+        {
+          "nome": "Car passing by",
+          "mid": "/t/dd00134"
+        },
+        {
+          "nome": "Air brake",
+          "mid": "/m/0gvgw0"
+        }
+      ],
+      "fontes": {
+        "fsd50k": [
+          "Car",
+          "Truck",
+          "Bus",
+          "Motorcycle",
+          "Motor_vehicle_(road)",
+          "Vehicle",
+          "Engine",
+          "Car_passing_by",
+          "Race_car_and_auto_racing",
+          "Traffic_noise_and_roadway_noise"
+        ],
+        "fsd50k_genericos": [
+          "Car",
+          "Truck",
+          "Motor_vehicle_(road)",
+          "Vehicle",
+          "Engine"
+        ],
+        "urbansound8k": [],
+        "esc50": []
+      }
+    },
+    {
+      "rotulo": "animal",
+      "urgencia": 0,
+      "nome": "Animal",
+      "audioset": [
+        {
+          "nome": "Animal",
+          "mid": "/m/0jbk"
+        }
+      ],
+      "fontes": {
+        "fsd50k": ["Animal"],
+        "fsd50k_genericos": ["Animal"],
+        "urbansound8k": [],
+        "esc50": []
+      }
+    },
+    {
+      "rotulo": "clima",
+      "urgencia": 0,
+      "nome": "Chuva ou trovão",
+      "audioset": [
+        {
+          "nome": "Rain",
+          "mid": "/m/06mb1"
+        },
+        {
+          "nome": "Thunder",
+          "mid": "/m/0ngt1"
+        },
+        {
+          "nome": "Thunderstorm",
+          "mid": "/m/0jb2l"
+        }
+      ],
+      "fontes": {
+        "fsd50k": ["Thunder", "Thunderstorm", "Rain"],
+        "fsd50k_genericos": [],
+        "urbansound8k": [],
+        "esc50": ["rain", "thunderstorm"]
+      }
+    },
+    {
+      "rotulo": "fala_multidao",
+      "urgencia": 0,
+      "nome": "Fala ou multidão",
+      "audioset": [
+        {
+          "nome": "Speech",
+          "mid": "/m/09x0r"
+        },
+        {
+          "nome": "Cheering",
+          "mid": "/m/053hz1"
+        },
+        {
+          "nome": "Applause",
+          "mid": "/m/028ght"
+        },
+        {
+          "nome": "Children shouting",
+          "mid": "/t/dd00135"
+        }
+      ],
+      "fontes": {
+        "fsd50k": ["Speech", "Cheering", "Applause"],
+        "fsd50k_genericos": [],
+        "urbansound8k": [],
+        "esc50": []
+      }
+    },
+    {
+      "rotulo": "musica",
+      "urgencia": 0,
+      "nome": "Música",
+      "audioset": [
+        {
+          "nome": "Music",
+          "mid": "/m/04rlf"
+        }
+      ],
+      "fontes": {
+        "fsd50k": ["Music"],
+        "fsd50k_genericos": ["Music"],
+        "urbansound8k": [],
+        "esc50": []
+      }
+    },
+    {
+      "rotulo": "silencio",
+      "urgencia": 0,
+      "nome": "Silêncio ou fundo",
+      "audioset": [
+        {
+          "nome": "Silence",
+          "mid": "/m/028v0c"
+        }
+      ],
+      "fontes": {
+        "fsd50k": [],
+        "fsd50k_genericos": [],
+        "urbansound8k": [],
+        "esc50": []
+      }
+    }
+  ],
+  "removidas": [
+    {
+      "nome": "Bicycle",
+      "mid": "/m/0199g",
+      "motivo": "faz pouco som característico"
+    },
+    {
+      "nome": "Motorboat, speedboat",
+      "mid": "/m/02rlv9",
+      "motivo": "pouco útil em ambiente urbano"
+    },
+    {
+      "nome": "Ship",
+      "mid": "/m/06q74",
+      "motivo": "pouco útil em ambiente urbano"
+    },
+    {
+      "nome": "Bell",
+      "mid": "/m/0395lw",
+      "motivo": "ambígua: igreja, porta ou bicicleta"
+    },
+    {
+      "nome": "Whistle",
+      "mid": "/m/0l156k",
+      "motivo": "ambígua: árbitro, trânsito ou pessoa"
+    },
+    {
+      "nome": "Fire",
+      "mid": "/m/02_41",
+      "motivo": "o crepitar se confunde com chuva"
+    },
+    {
+      "nome": "Roar",
+      "mid": "/m/04cvmfc",
+      "motivo": "ambígua e sem dados no FSD50K"
+    },
+    {
+      "nome": "Groan",
+      "mid": "/m/07s2xch",
+      "motivo": "baixa demais para detectar à distância"
+    }
+  ]
+}
