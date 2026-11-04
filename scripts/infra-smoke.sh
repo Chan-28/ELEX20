@@ -11,10 +11,6 @@ set -uo pipefail
 cd "$(dirname "$0")/.." || exit 1
 
 PROJECT=elexsmoke
-export GRAFANA_RO_PASSWORD=smoke-ro N8N_DB_PASSWORD=smoke-n8n HERMES_RO_PASSWORD=smoke-hermes
-export HERMES_WEBHOOK_SECRET=smoke-webhook N8N_COMMAND_TOKEN=smoke-token
-export MQTT_DEVICE_PASS=smoke-device MQTT_N8N_PASS=smoke-n8n-mqtt
-
 dc() { docker compose -p "$PROJECT" --env-file .env.example "$@"; }
 
 # container_name fixo no compose: não dá para rodar junto com a stack de verdade
@@ -49,6 +45,16 @@ if ! dc up -d --wait timescaledb mosquitto >/dev/null 2>&1 || ! dc run --rm --no
   dc ps -a; dc logs --tail=40 db-init mosquitto timescaledb
   echo "Falha ao subir a stack" >&2
   exit 1
+fi
+
+# Segredos gerados sozinhos pelo secrets-init: lê dos containers que os montam
+GRAFANA_RO_PASSWORD=$(dc run --rm --no-deps -T --entrypoint cat db-init /run/secrets/grafana_ro/value)
+N8N_DB_PASSWORD=$(dc run --rm --no-deps -T --entrypoint cat db-init /run/secrets/n8n_db/value)
+HERMES_RO_PASSWORD=$(dc run --rm --no-deps -T --entrypoint cat db-init /run/secrets/hermes_ro/value)
+MQTT_DEVICE_PASS=$(docker exec mosquitto cat /run/secrets/mqtt_device/value)
+MQTT_N8N_PASS=$(docker exec mosquitto cat /run/secrets/mqtt_n8n/value)
+if [ -z "$GRAFANA_RO_PASSWORD" ] || [ -z "$MQTT_DEVICE_PASS" ] || [ "$MQTT_DEVICE_PASS" = "$MQTT_N8N_PASS" ]; then
+  echo "Segredos não foram gerados corretamente" >&2; exit 1
 fi
 
 # POSTGRES_USER/POSTGRES_PASSWORD/POSTGRES_DB vêm do .env.example

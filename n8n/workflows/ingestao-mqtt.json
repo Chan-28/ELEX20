@@ -114,7 +114,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Assina o alerta para o Hermes (HMAC-SHA256 de \"<timestamp>.<corpo>\", cabeçalho V2).\n// Precisa de NODE_FUNCTION_ALLOW_BUILTIN=crypto e HERMES_WEBHOOK_SECRET no n8n (docker-compose.yaml).\nconst crypto = require('crypto');\nconst d = $input.first().json;\nconst body = JSON.stringify({\n  label: d.label,\n  confidence_pct: Math.round(d.confidence * 100),\n  device: d.device_id,\n  sector: d.sector || 'não estimada',\n  urgency: d.urgency,\n});\nconst ts = String(Math.floor(Date.now() / 1000));\nconst sig = crypto.createHmac('sha256', $env.HERMES_WEBHOOK_SECRET).update(`${ts}.${body}`).digest('hex');\nreturn [{ json: { body, ts, sig } }];"
+        "jsCode": "// Assina o alerta para o Hermes (HMAC-SHA256 de \"<timestamp>.<corpo>\", cabeçalho V2).\n// Precisa de NODE_FUNCTION_ALLOW_BUILTIN=crypto,fs no n8n; o segredo vem do arquivo montado (docker-compose.yaml).\nconst crypto = require('crypto');\nconst segredo = require('fs').readFileSync('/run/secrets/hermes_webhook/value', 'utf8');\nconst d = $input.first().json;\nconst body = JSON.stringify({\n  label: d.label,\n  confidence_pct: Math.round(d.confidence * 100),\n  device: d.device_id,\n  sector: d.sector || 'não estimada',\n  urgency: d.urgency,\n});\nconst ts = String(Math.floor(Date.now() / 1000));\nconst sig = crypto.createHmac('sha256', segredo).update(`${ts}.${body}`).digest('hex');\nreturn [{ json: { body, ts, sig } }];"
       },
       "id": "a1000000-0000-4000-8000-000000000007",
       "name": "Assinar alerta",
