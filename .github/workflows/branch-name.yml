@@ -1,0 +1,26 @@
+name: Branch name
+
+# Reprova PRs cuja branch não segue <tipo>/<descricao-em-kebab-case>. O hook pre-push faz
+# a mesma conferência, mas não vale para quem o ignora ou cria a branch pelo GitHub.
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions: {}
+
+jobs:
+  branch-name:
+    name: Branch name
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Conferir o nome da branch
+        env:
+          BRANCH: ${{ github.head_ref }}
+        run: sh scripts/lint-branch-name.sh "$BRANCH"

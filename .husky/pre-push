@@ -1,0 +1,1 @@
+sh scripts/lint-branch-name.sh
