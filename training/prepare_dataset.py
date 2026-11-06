@@ -3,6 +3,8 @@
 A lista vem de classes/sound_classes.json. A saída tem WAVs de 16 kHz mono em train/ e
 test/, com o rótulo antes do primeiro ponto do nome, como o Edge Impulse espera, mais
 manifest.csv (origem e licença de cada clipe) e report.json (contagens).
+As três bases vêm do Freesound, então o grupo é o autor, comum a elas. O diretório do
+UrbanSound8K precisa ter o FREESOUNDCREDITS.txt, que dá o autor de cada gravação.
 Nada aqui envia dados a um serviço externo.
 
 Uso:
@@ -15,6 +17,7 @@ import array
 import csv
 import json
 import random
+import re
 import subprocess
 import wave
 import zlib
@@ -43,7 +46,7 @@ class Clipe:
     caminho: Path
     particao: str  # train ou test
     licenca: str
-    grupo: str  # gravação de origem: nunca aparece em treino e teste ao mesmo tempo
+    grupo: str  # autor no Freesound, ou a gravação se ele for desconhecido: nunca em treino e teste
 
 
 def carregar_categorias(caminho: Path = RAIZ / "classes" / "sound_classes.json") -> list[dict]:
@@ -91,7 +94,26 @@ def normalizar_licenca(url: str) -> str:
     return "desconhecida"
 
 
-def clipes_fsd50k(raiz: Path, categorias: list[dict]) -> list[Clipe]:
+def ler_autores(fsd50k: Path, urbansound8k: Path) -> dict[str, str]:
+    """Autor de cada som do Freesound, pelos metadados do FSD50K e pelos créditos do UrbanSound8K."""
+    autores = {}
+    creditos = (urbansound8k / "FREESOUNDCREDITS.txt").read_text(encoding="utf-8", errors="replace")
+    for linha in creditos.splitlines():
+        if casamento := re.fullmatch(r"(\d+) by (.+?)\s*", linha):
+            autores[casamento[1]] = casamento[2].lower()
+    for parte in ("dev", "eval"):
+        info = json.loads((fsd50k / "FSD50K.metadata" / f"{parte}_clips_info_FSD50K.json").read_text(encoding="utf-8"))
+        autores |= {som: dados["uploader"].lower() for som, dados in info.items() if dados.get("uploader")}
+    return autores
+
+
+def grupo_freesound(som: str, autores: dict[str, str]) -> str:
+    """Grupo comum às três bases: uma gravação sem autor conhecido ainda se une pelo próprio som."""
+    autor = autores.get(som)
+    return f"autor:{autor}" if autor else f"gravacao:{som}"
+
+
+def clipes_fsd50k(raiz: Path, categorias: list[dict], autores: dict[str, str]) -> list[Clipe]:
     info = {
         "dev": json.loads((raiz / "FSD50K.metadata" / "dev_clips_info_FSD50K.json").read_text(encoding="utf-8")),
         "eval": json.loads((raiz / "FSD50K.metadata" / "eval_clips_info_FSD50K.json").read_text(encoding="utf-8")),
@@ -112,13 +134,13 @@ def clipes_fsd50k(raiz: Path, categorias: list[dict]) -> list[Clipe]:
                         raiz / f"FSD50K.{parte}_audio" / f"{linha['fname']}.wav",
                         particao,
                         normalizar_licenca(dados.get("license", "")),
-                        f"fsd50k:{dados.get('uploader', linha['fname'])}",
+                        grupo_freesound(linha["fname"], autores),
                     )
                 )
     return clipes
 
 
-def clipes_urbansound8k(raiz: Path, categorias: list[dict]) -> list[Clipe]:
+def clipes_urbansound8k(raiz: Path, categorias: list[dict], autores: dict[str, str]) -> list[Clipe]:
     mapa = {nome: c["rotulo"] for c in categorias for nome in c["fontes"]["urbansound8k"]}
     clipes = []
     with (raiz / "metadata" / "UrbanSound8K.csv").open(encoding="utf-8", newline="") as arquivo:
@@ -135,13 +157,13 @@ def clipes_urbansound8k(raiz: Path, categorias: list[dict]) -> list[Clipe]:
                     raiz / "audio" / f"fold{pasta}" / linha["slice_file_name"],
                     "test" if pasta == PASTA_TESTE_US8K else "train",
                     LICENCA_US8K,
-                    f"us8k:{linha['fsID']}",
+                    grupo_freesound(linha["fsID"], autores),
                 )
             )
     return clipes
 
 
-def clipes_esc50(raiz: Path, categorias: list[dict]) -> list[Clipe]:
+def clipes_esc50(raiz: Path, categorias: list[dict], autores: dict[str, str]) -> list[Clipe]:
     mapa = {nome: c["rotulo"] for c in categorias for nome in c["fontes"]["esc50"]}
     clipes = []
     with (raiz / "meta" / "esc50.csv").open(encoding="utf-8", newline="") as arquivo:
@@ -157,14 +179,14 @@ def clipes_esc50(raiz: Path, categorias: list[dict]) -> list[Clipe]:
                     raiz / "audio" / linha["filename"],
                     "test" if int(linha["fold"]) == PASTA_TESTE_ESC50 else "train",
                     LICENCA_ESC50,
-                    f"esc50:{linha['src_file']}",
+                    grupo_freesound(linha["src_file"], autores),
                 )
             )
     return clipes
 
 
 def separar_grupos_do_teste(clipes: list[Clipe]) -> list[Clipe]:
-    """Descarta do treino qualquer clipe cuja gravação de origem esteja no teste."""
+    """Descarta do treino qualquer clipe cujo grupo esteja no teste."""
     no_teste = {c.grupo for c in clipes if c.particao == "test"}
     return [c for c in clipes if c.particao == "test" or c.grupo not in no_teste]
 
@@ -200,6 +222,22 @@ def selecionar(clipes: list[Clipe], limite_s: float, duracao=duracao_s) -> list[
                 escolhidos.append((clipe, segundos))
                 total += segundos
     return escolhidos
+
+
+def selecionar_particoes(clipes: list[Clipe], categorias: list[dict], duracao=duracao_s) -> list[tuple[Clipe, float]]:
+    """Sorteia o teste e depois o treino, que só perde os grupos que de fato caíram no teste."""
+    por_categoria = [[c for c in clipes if c.rotulo == cat["rotulo"]] for cat in categorias]
+    teste: list[tuple[Clipe, float]] = []
+    for clipes_categoria in por_categoria:
+        candidatos = [c for c in clipes_categoria if c.particao == "test"]
+        teste += selecionar(candidatos, LIMITE_TESTE_S, duracao)
+    no_teste = [c for c, _ in teste]
+    livres = separar_grupos_do_teste(no_teste + [c for c in clipes if c.particao == "train"])
+    treino: list[tuple[Clipe, float]] = []
+    for categoria in categorias:
+        candidatos = [c for c in livres if c.particao == "train" and c.rotulo == categoria["rotulo"]]
+        treino += selecionar(candidatos, LIMITE_TREINO_S, duracao)
+    return treino + teste
 
 
 def converter(origem: Path, destino: Path) -> None:
@@ -251,21 +289,17 @@ def main() -> None:
     args = parser.parse_args()
 
     categorias = carregar_categorias()
+    autores = ler_autores(args.fsd50k, args.urbansound8k)
     clipes = (
-        clipes_fsd50k(args.fsd50k, categorias)
-        + clipes_urbansound8k(args.urbansound8k, categorias)
-        + clipes_esc50(args.esc50, categorias)
+        clipes_fsd50k(args.fsd50k, categorias, autores)
+        + clipes_urbansound8k(args.urbansound8k, categorias, autores)
+        + clipes_esc50(args.esc50, categorias, autores)
     )
-    clipes = separar_grupos_do_teste(clipes)
     clipes = [c for c in clipes if c.licenca != "desconhecida"]
     if args.no_nc:
         clipes = [c for c in clipes if c.licenca in ("CC0", "CC-BY")]
 
-    selecionados: list[tuple[Clipe, float]] = []
-    for categoria in categorias:
-        da_categoria = [c for c in clipes if c.rotulo == categoria["rotulo"]]
-        for particao, limite in (("train", LIMITE_TREINO_S), ("test", LIMITE_TESTE_S)):
-            selecionados += selecionar([c for c in da_categoria if c.particao == particao], limite)
+    selecionados = selecionar_particoes(clipes, categorias)
 
     args.output.mkdir(parents=True, exist_ok=True)
     mantidos: list[tuple[Clipe, float]] = []

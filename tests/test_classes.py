@@ -76,6 +76,51 @@ def test_gravacao_do_teste_nao_fica_no_treino():
     assert [c.identificador for c in preparar.separar_grupos_do_teste(clipes)] == ["a", "c"]
 
 
+def test_mesmo_autor_une_as_tres_bases_e_autor_desconhecido_usa_a_gravacao():
+    autores = {"100": "ana", "200": "ana"}
+    assert preparar.grupo_freesound("100", autores) == preparar.grupo_freesound("200", autores) == "autor:ana"
+    assert preparar.grupo_freesound("300", autores) == "gravacao:300"
+
+
+def test_autores_vem_dos_creditos_e_dos_metadados(tmp_path):
+    creditos = "[soundid] by [username]\n\n10 by Ana\n11 by jo silva\n"
+    (tmp_path / "FREESOUNDCREDITS.txt").write_text(creditos, encoding="utf-8")
+    meta = tmp_path / "FSD50K.metadata"
+    meta.mkdir()
+    (meta / "dev_clips_info_FSD50K.json").write_text(json.dumps({"20": {"uploader": "ANA"}}), encoding="utf-8")
+    (meta / "eval_clips_info_FSD50K.json").write_text(json.dumps({"21": {}}), encoding="utf-8")
+    assert preparar.ler_autores(tmp_path, tmp_path) == {"10": "ana", "11": "jo silva", "20": "ana"}
+
+
+def test_autor_sorteado_no_teste_sai_do_treino_em_todas_as_bases(monkeypatch):
+    def clipe(identificador, fonte, particao, grupo, rotulo="sirene"):
+        return preparar.Clipe(rotulo, fonte, identificador, Path("x.wav"), particao, "CC0", grupo)
+
+    monkeypatch.setattr(preparar, "LIMITE_TESTE_S", 10.0)
+    clipes = [
+        clipe("t", "fsd50k", "test", "autor:ana"),
+        clipe("a", "urbansound8k", "train", "autor:ana"),
+        clipe("b", "esc50", "train", "autor:ana", rotulo="buzina"),
+        clipe("c", "esc50", "train", "autor:bia"),
+    ]
+    escolhidos = preparar.selecionar_particoes(clipes, [{"rotulo": "sirene"}, {"rotulo": "buzina"}], lambda _c: 10.0)
+    assert sorted(c.identificador for c, _ in escolhidos) == ["c", "t"]
+
+
+def test_candidato_nao_sorteado_para_o_teste_nao_custa_treino(monkeypatch):
+    def clipe(identificador, particao, grupo):
+        return preparar.Clipe("sirene", "fsd50k", identificador, Path("x.wav"), particao, "CC0", grupo)
+
+    monkeypatch.setattr(preparar, "LIMITE_TESTE_S", 10.0)
+    clipes = [clipe("t1", "test", "autor:ana"), clipe("t2", "test", "autor:bia"),
+              clipe("a", "train", "autor:ana"), clipe("b", "train", "autor:bia")]  # fmt: skip
+    escolhidos = preparar.selecionar_particoes(clipes, [{"rotulo": "sirene"}], lambda _c: 10.0)
+    no_teste = {c.grupo for c, _ in escolhidos if c.particao == "test"}
+    no_treino = {c.grupo for c, _ in escolhidos if c.particao == "train"}
+    assert len(no_teste) == len(no_treino) == 1
+    assert no_teste.isdisjoint(no_treino)
+
+
 def test_licencas_normalizadas():
     assert preparar.normalizar_licenca("http://creativecommons.org/publicdomain/zero/1.0/") == "CC0"
     assert preparar.normalizar_licenca("http://creativecommons.org/licenses/by/3.0/") == "CC-BY"
