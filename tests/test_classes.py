@@ -1,7 +1,9 @@
 """Testes da lista de categorias de som e da seleção do dataset."""
 
+import array
 import importlib.util
 import json
+import wave
 from pathlib import Path
 
 RAIZ = Path(__file__).resolve().parent.parent
@@ -10,6 +12,26 @@ ESPEC = importlib.util.spec_from_file_location("preparar_dataset", RAIZ / "train
 preparar = importlib.util.module_from_spec(ESPEC)
 ESPEC.loader.exec_module(preparar)
 CATEGORIAS = LISTA["categorias"]
+
+
+def test_silencio_fica_inativa_ate_haver_gravacoes():
+    ativas = [c["rotulo"] for c in preparar.carregar_categorias()]
+    assert len(ativas) == 14
+    assert "silencio" not in ativas
+
+
+def test_clipe_mudo_e_detectado(tmp_path):
+    def gravar(nome, valor):
+        caminho = tmp_path / nome
+        with wave.open(str(caminho), "wb") as arquivo:
+            arquivo.setnchannels(1)
+            arquivo.setsampwidth(2)
+            arquivo.setframerate(16000)
+            arquivo.writeframes(array.array("h", [valor] * 160).tobytes())
+        return caminho
+
+    assert preparar.clipe_mudo(gravar("mudo.wav", 3))
+    assert not preparar.clipe_mudo(gravar("som.wav", 1000))
 
 
 def test_lista_tem_as_15_categorias_e_urgencias_validas():
