@@ -50,6 +50,7 @@ Documentação e arquivos `.md/.json/.yaml` não exigem build. O Prettier format
 
 ## Arquitetura e limites
 
+- A rede fica fora do caminho do áudio: o `loop()` só classifica e estima a direção, a tarefa `net` cuida de Wi-Fi, MQTT e publicação (recuo em `lib/elex_core/backoff.h`; tempo do motor em `motor_timer.h`) e a tarefa `motor`, acima do `loop()`, é a única que toca nos motores. Não chame nada que bloqueie na rede no `loop()`, e não reinicie a placa por falta de rede. Detecções feitas sem rede são descartadas.
 - Serviços ficam na rede interna `monitoring`. **O TimescaleDB não expõe porta ao host**; não adicione `ports:` a ele.
 - O n8n escuta só em `127.0.0.1:5678`. Mantenha os serviços ligados a localhost. A porta 1883 só é publicada em `MQTT_BIND` (padrão loopback); o Mosquitto exige usuário (`device` publica, `n8n` assina) e ACL em `mosquitto/acl`.
 - Grafana e n8n não usam o superusuário do banco: `grafana_ro` (leitura) e `n8n_app`, criados pelo `db-init` (`timescaledb/db-init.sql`). Não monte o socket do Docker no Hermes.

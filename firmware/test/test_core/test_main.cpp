@@ -4,7 +4,9 @@
 #include <stdlib.h>
 #include <unity.h>
 
+#include "backoff.h"
 #include "doa.h"
+#include "motor_timer.h"
 #include "settings.h"
 
 using namespace elex;
@@ -187,6 +189,117 @@ void test_urgencia_e_motor() {
     TEST_ASSERT_TRUE(motor_duty_for_urgency(3) > motor_duty_for_urgency(1));
 }
 
+void test_recuo_primeira_tentativa_imediata() {
+    Backoff b(1000, 8000);
+    TEST_ASSERT_TRUE(b.due(0));
+    b.attempted(0);
+    TEST_ASSERT_FALSE(b.due(999));
+    TEST_ASSERT_TRUE(b.due(1000));
+}
+
+void test_recuo_dobra_ate_o_teto() {
+    Backoff b(1000, 5000);
+    uint32_t agora = 0;
+    const uint32_t esperadas[] = {1000, 2000, 4000, 5000, 5000};
+    for (const uint32_t espera : esperadas) {
+        TEST_ASSERT_TRUE(b.due(agora));
+        b.attempted(agora);
+        TEST_ASSERT_EQUAL_UINT32(espera, b.wait_ms());
+        TEST_ASSERT_FALSE(b.due(agora + espera - 1));
+        agora += espera;
+    }
+}
+
+void test_recuo_recomeca_ao_conectar() {
+    Backoff b(1000, 8000);
+    b.attempted(0);
+    b.attempted(1000);
+    b.attempted(3000);
+    TEST_ASSERT_EQUAL_UINT32(4000, b.wait_ms());
+    b.connected();
+    // Queda longe da última tentativa: reconecta na hora
+    TEST_ASSERT_TRUE(b.due(60000));
+    b.attempted(60000);
+    TEST_ASSERT_EQUAL_UINT32(1000, b.wait_ms());
+}
+
+void test_recuo_enlace_instavel_respeita_espera_minima() {
+    Backoff b(1000, 8000);
+    b.attempted(5000);
+    b.connected();
+    // A conexão caiu logo depois de subir: não tenta de novo em laço apertado
+    TEST_ASSERT_FALSE(b.due(5100));
+    TEST_ASSERT_TRUE(b.due(6000));
+}
+
+void test_recuo_atravessa_virada_do_millis() {
+    Backoff b(1000, 8000);
+    const uint32_t antes = UINT32_MAX - 200;
+    b.attempted(antes);
+    TEST_ASSERT_FALSE(b.due(antes + 999));  // já virou, vale 798
+    TEST_ASSERT_TRUE(b.due(antes + 1000));
+}
+
+void test_recuo_teto_nao_transborda() {
+    Backoff b(3000000000u, UINT32_MAX);
+    b.attempted(0);
+    b.attempted(0);
+    TEST_ASSERT_EQUAL_UINT32(UINT32_MAX, b.wait_ms());
+}
+
+void test_recuo_teto_menor_que_piso() {
+    Backoff b(5000, 1000);
+    b.attempted(0);
+    b.attempted(0);
+    TEST_ASSERT_EQUAL_UINT32(5000, b.wait_ms());
+}
+
+void test_motor_desliga_no_tempo_e_uma_vez() {
+    MotorTimer t;
+    TEST_ASSERT_TRUE(t.start(1000, 600));
+    TEST_ASSERT_TRUE(t.active());
+    TEST_ASSERT_EQUAL_UINT32(600, t.remaining_ms(1000));
+    TEST_ASSERT_EQUAL_UINT32(1, t.remaining_ms(1599));
+    TEST_ASSERT_FALSE(t.expired(1599));
+    TEST_ASSERT_TRUE(t.expired(1600));
+    TEST_ASSERT_FALSE(t.active());
+    TEST_ASSERT_FALSE(t.expired(1601));
+    TEST_ASSERT_EQUAL_UINT32(0, t.remaining_ms(1601));
+}
+
+void test_motor_atrasado_desliga_mesmo_assim() {
+    MotorTimer t;
+    t.start(0, 600);
+    TEST_ASSERT_EQUAL_UINT32(0, t.remaining_ms(5000));
+    TEST_ASSERT_TRUE(t.expired(5000));
+}
+
+void test_motor_respeita_descanso() {
+    MotorTimer t;
+    t.start(0, 600);
+    TEST_ASSERT_FALSE(t.start(100, 600));  // ainda vibrando: não prolonga
+    TEST_ASSERT_TRUE(t.expired(600));
+    TEST_ASSERT_FALSE(t.start(899, 600));
+    TEST_ASSERT_TRUE(t.start(900, 600));
+}
+
+void test_motor_primeira_vibracao_em_qualquer_momento() {
+    // Sem vibração anterior não há descanso, mesmo depois de 25 dias ligado
+    MotorTimer t;
+    TEST_ASSERT_TRUE(t.start(0x80000010u, 600));
+}
+
+void test_motor_atravessa_virada_do_millis() {
+    MotorTimer t;
+    const uint32_t inicio = UINT32_MAX - 100;
+    t.start(inicio, 600);
+    TEST_ASSERT_EQUAL_UINT32(1, t.remaining_ms(inicio + 599));
+    TEST_ASSERT_FALSE(t.expired(inicio + 599));
+    TEST_ASSERT_TRUE(t.expired(inicio + 600));
+    TEST_ASSERT_FALSE(t.start(inicio + 899, 600));
+    TEST_ASSERT_TRUE(t.start(inicio + 900, 600));
+}
+
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_oito_setores_sem_ruido);
@@ -200,5 +313,17 @@ int main(int, char**) {
     RUN_TEST(test_setores);
     RUN_TEST(test_comandos_validos_e_invalidos);
     RUN_TEST(test_urgencia_e_motor);
+    RUN_TEST(test_recuo_primeira_tentativa_imediata);
+    RUN_TEST(test_recuo_dobra_ate_o_teto);
+    RUN_TEST(test_recuo_recomeca_ao_conectar);
+    RUN_TEST(test_recuo_enlace_instavel_respeita_espera_minima);
+    RUN_TEST(test_recuo_atravessa_virada_do_millis);
+    RUN_TEST(test_recuo_teto_nao_transborda);
+    RUN_TEST(test_recuo_teto_menor_que_piso);
+    RUN_TEST(test_motor_desliga_no_tempo_e_uma_vez);
+    RUN_TEST(test_motor_atrasado_desliga_mesmo_assim);
+    RUN_TEST(test_motor_respeita_descanso);
+    RUN_TEST(test_motor_primeira_vibracao_em_qualquer_momento);
+    RUN_TEST(test_motor_atravessa_virada_do_millis);
     return UNITY_END();
 }
