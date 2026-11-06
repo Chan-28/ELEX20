@@ -2,13 +2,13 @@
 
 Registro de como o classificador de 14 categorias do wearable foi avaliado e melhorado até 2026-11-06. Serve para quem for continuar o trabalho sem repetir tentativas nem confiar em números antigos.
 
-**Estado atual:** nenhum modelo atinge as metas. O melhor resultado honesto é cerca de **32% de sensibilidade** a 2 falsos alertas/h, com latência na placa ainda não medida.
+**Estado atual:** nenhum modelo atinge as metas. No teste com limiar congelado, o melhor modelo dá **31% de sensibilidade** a 0,5–0,9 falso alerta/h, medido contra 13,84 h de negativos, com latência na placa ainda não medida.
 
-| Meta                      | Alvo     | Hoje                                           |
-| ------------------------- | -------- | ---------------------------------------------- |
-| Sensibilidade, urgência 3 | ≥ 85%    | ~32% a 2/h; ~47% a 5/h; ~62% a 15/h            |
-| Falsos alertas por hora   | ≤ 2      | Ponto de operação escolhido, não uma conquista |
-| Tempo por janela          | < 500 ms | Sem medição; estimativa de 0,5 a 2,5 s na rede |
+| Meta                      | Alvo     | Hoje                                            |
+| ------------------------- | -------- | ----------------------------------------------- |
+| Sensibilidade, urgência 3 | ≥ 85%    | ~31% com limiar congelado; ver curva na etapa 8 |
+| Falsos alertas por hora   | ≤ 2      | Ponto de operação escolhido, não uma conquista  |
+| Tempo por janela          | < 500 ms | Sem medição; estimativa de 0,5 a 2,5 s na rede  |
 
 Urgência 3 reúne `sirene`, `buzina`, `alarme`, `tiro_explosao` e `grito`.
 
@@ -94,7 +94,7 @@ Refazendo com autores separados, MLP, sementes 7 e 11:
 | Teste a 5/h                | 46% a 49%     |
 | Teste a 15/h               | 61% a 62%     |
 
-**Estes são os números de referência.** O ranking das cabeças não foi refeito com autores separados.
+Estes números substituíram os das etapas anteriores e foram atualizados na etapa 8. O ranking das cabeças não foi refeito com autores separados.
 
 ### 7. Dados completos
 
@@ -107,23 +107,53 @@ Seleção real, sem converter áudio:
 | Treino   | 7.482  | 14,29 | 1.785                |
 | Teste    | 1.633  | 4,04  | 795                  |
 
-Nenhum grupo aparece nos dois lados. `sirene` fica com 556 clipes no treino, `buzina` com 258, `aeronave` com 153 e `impacto` com 171. O dataset ainda não foi gerado, e nenhum modelo foi treinado com ele.
+Nenhum grupo aparece nos dois lados. `sirene` fica com 556 clipes no treino, `buzina` com 258, `aeronave` com 153 e `impacto` com 171. Nessa seleção, o script ainda descartou 2 clipes mudos ao converter, e o dataset final ficou com 9.113 clipes.
+
+### 8. Negativos do FSD50K e aumento por mistura
+
+Protocolo fixado antes de ver os resultados: validação cruzada por autor, sementes 7 e 11, com todas as variantes medidas nos mesmos clipes, sem aumento. Uma variante só avança se o intervalo pareado ficar acima de zero nas duas sementes.
+
+- **Negativos:** 17.727 clipes no treino e 4.738 no teste, de FSD50K, ESC-50 e UrbanSound8K, com autores separados. Os rótulos `Tools` e `Wind` ficaram de fora, por lembrarem categorias não urgentes.
+- **Aumento:** duas cópias de cada clipe de urgência 3 do treino, misturadas com ruído de rua a SNR de 0 a 15 dB. No total, foram 5.794 clipes. O aumento nunca entra na validação nem no teste, e cópias com som ou ruído de um autor da validação saem do treino daquela dobra.
+
+| Variante              | Sensibilidade a ~2/h | Diferença e IC95                      | Decisão    |
+| --------------------- | -------------------- | ------------------------------------- | ---------- |
+| Base                  | 32,5% e 31,4%        | —                                     | Referência |
+| + negativos do FSD50K | 34,9% e 35,1%        | +2,4 [+1,3; +3,6] e +3,8 [+2,8; +4,9] | Aprovada   |
+| + negativos + aumento | 33,0% e 34,7%        | -1,8 [-5,4; +1,1] e -0,4 [-2,9; +2,0] | Reprovada  |
+
+O aumento subiu `buzina` e `tiro_explosao`, mas derrubou `sirene` de cerca de 60% para cerca de 46%. Aplicá-lo só às classes favorecidas seria escolher pelo resultado, então ele precisaria de uma hipótese e de um novo protocolo.
+
+Medição única no teste, com limiares congelados (728 clipes de urgência 3, 13,84 h de negativos, 1.878 autores):
+
+| Modelo                 | Sensibilidade (IC95)    | Falsos alertas/h (IC95) | Acerto por clipe |
+| ---------------------- | ----------------------- | ----------------------- | ---------------- |
+| Base, semente 7        | 29,3% (23,7 a 34,7)     | 1,16 (0,51 a 1,93)      | 76,5%            |
+| Base, semente 11       | 28,3% (22,8 a 33,7)     | 0,87 (0,36 a 1,47)      | 76,5%            |
+| **FSD50K, semente 7**  | **31,0%** (25,3 a 37,0) | **0,51** (0,14 a 1,03)  | 77,0%            |
+| **FSD50K, semente 11** | **31,5%** (25,6 a 37,2) | **0,87** (0,31 a 1,58)  | 77,1%            |
+
+A diferença para a base foi +1,8 ponto (IC95 -0,4 a +4,2) na semente 7 e +3,1 (IC95 +1,1 a +5,7) na semente 11. O ganho se repetiu, mas ficou estatisticamente claro só em uma semente.
+
+Ajustando o limiar no próprio teste, o que é otimista, a variante aprovada dá 39% a 40% a 2/h, 48% a 50% a 5/h e 59% a 61% a 15/h. Esses valores não são comparáveis com os da etapa 6, porque o teste tem bem mais horas de negativos. Por classe, com limiar congelado: `buzina` 49%, `tiro_explosao` 34%, `sirene` 34%, `alarme` 25% a 26% e `grito` 22% a 24%.
+
+A variante com negativos do FSD50K é a nova linha de base.
 
 ## Resumo
 
 - O vazamento foi o erro mais caro: até a etapa 5, as comparações pareciam melhores do que eram.
 - Os ganhos reais vieram do YAMNet, da classe de rejeição e da MLP. A cabeça temporal e a MIL não ajudaram.
-- O próximo ganho deve vir de dados, não da arquitetura.
+- Negativos variados ajudaram pouco, mas de forma repetida. O aumento por mistura, como foi feito, não ajudou.
+- Mais do mesmo tipo de dado não fecha a distância até a meta: faltam gravações reais de rua e, provavelmente, rever a meta ou o tipo de alerta.
 - O conjunto negativo não representa uma rua real, então os falsos alertas em campo são desconhecidos.
 
 ## Próximos passos
 
 1. Medir a latência do YAMNet na placa. Até cerca de 500 ms, integrar; de 0,5 a 2 s, usar passo maior; acima de 2 s, usar rede menor ou processar fora da placa.
-2. Gerar o dataset com autores separados e refazer os embeddings.
-3. Usar os cerca de 20.600 clipes fora do mapa do FSD50K como negativos na classe de rejeição.
-4. Refazer o ranking das cabeças com autores separados, selecionando por validação cruzada.
-5. Coletar gravações de rua reais, com o microfone do sensor.
-6. Com o modelo decidido, atualizar juntos firmware, banco, comandos, n8n, testes e smoke. Hoje eles ainda usam os rótulos antigos.
+2. Coletar gravações de rua reais, com o microfone do sensor. Elas medem os falsos alertas de verdade e são o dado que mais falta.
+3. Refazer o ranking das cabeças com autores separados, selecionando por validação cruzada.
+4. Só depois, com uma hipótese nova, testar outro aumento. O teste já foi usado de novo: não ajuste nada olhando para ele.
+5. Com o modelo decidido, atualizar juntos firmware, banco, comandos, n8n, testes e smoke. Hoje eles ainda usam os rótulos antigos.
 
 ## Licenças
 

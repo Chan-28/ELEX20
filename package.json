@@ -10,6 +10,7 @@
   "scripts": {
     "prepare": "husky",
     "lint": "uv run ruff check .",
+    "lint:branch": "sh scripts/lint-branch-name.sh",
     "format": "uv run ruff format .",
     "fix": "uv run ruff check . --fix && uv run ruff format ."
   },

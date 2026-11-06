@@ -76,6 +76,7 @@ Documentação e arquivos `.md/.json/.yaml` não exigem build. O Prettier format
 ## Git, commits e PRs
 
 - Commits seguem Conventional Commits (`commitlint` no hook `commit-msg`). Ex.: `feat(firmware): ajusta janela de áudio`.
+- Branches seguem `<tipo>/<descricao-em-kebab-case>`, com os tipos do commitlint. Ex.: `fix/dataset-author-split`. `claude/` e `dependabot/` também valem. O hook `pre-push` e o workflow `branch-name.yml` conferem com `scripts/lint-branch-name.sh`.
 - O hook `pre-commit` roda `lint-staged` (ESLint e Prettier). Se falhar, corrija; não use `--no-verify`.
 - PR para `main`. O CI do Python só dispara quando mudam `**.py`, `pyproject.toml` ou `uv.lock`.
 
