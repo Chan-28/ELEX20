@@ -3,7 +3,7 @@
 Registro completo da conversa entre o usuário e o Claude Code
 na worktree `claude/platform-io-firmware-a00022`. Quem retomar o trabalho deve ler
 este arquivo e depois o documento de desenho em
-`docs/superpowers/specs/2026-11-03-hermes-integracoes-direcao-design.md`.
+`docs/superpowers/specs/2026-11-03-hermes-integrations-direction-design.md`.
 
 > Observação: o `.gitignore` de `main` ignora `HANDOFF.md` (PR #34). Este arquivo foi
 > adicionado com `git add -f` a pedido do usuário ("não coloque ele no gitignore por
@@ -243,7 +243,7 @@ Alguns detalhes vieram de espelhos e de páginas truncadas; conferir na document
 
 ## 10. Arquivos criados ou alterados nesta sessão (no PR)
 
-- `docs/superpowers/specs/2026-11-03-hermes-integracoes-direcao-design.md`: documento
+- `docs/superpowers/specs/2026-11-03-hermes-integrations-direction-design.md`: documento
   de desenho (rascunho para aprovação).
 - `.archify/`: dois diagramas e seus recibos.
 - `HANDOFF.md`: este arquivo.

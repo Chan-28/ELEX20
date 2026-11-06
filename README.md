@@ -1,37 +1,64 @@
 # ELEX20 - Análise e Reconhecimento de Sons Locais
 
-O ELEX20 escuta o ambiente com um sensor ESP32-S3, reconhece sons urbanos (sirenes, buzinas, tiros e outros), estima de que direção eles vêm e avisa você. O sensor classifica o som no próprio aparelho e vibra para indicar a direção. No computador, um painel mostra o histórico ao vivo, e um assistente de IA (Hermes) responde perguntas e envia alertas pelo Telegram e pelo Discord.
+O ELEX20 é um wearable de percepção sonora. Quatro microfones captam o ambiente, um ESP32-S3 reconhece no próprio aparelho sons urbanos, como sirenes, buzinas e tiros, e estima de que direção eles vêm. Quatro motores vibram para indicar a direção, com mais força quanto maior a urgência do som.
 
 ```text
-Sensor ESP32-S3 (reconhece o som e a direção)
-    → [MQTT / Wi-Fi] → Mosquitto
-    → [automação]    → n8n
-    → [gravação]     → TimescaleDB
-    → [consulta]     → Grafana (painéis ao vivo)
-                     → Hermes (perguntas, alertas e comandos pelo chat)
+4 microfones INMP441 → ESP32-S3 (classificação + direção) → motor de vibração
+```
+
+Essa é a parte principal do projeto. O monitoramento é um complemento: o sensor envia as detecções a um servidor no seu computador, onde ficam o histórico e os alertas.
+
+```text
+Sensor → [MQTT / Wi-Fi] → Mosquitto → n8n → TimescaleDB → Grafana (painéis)
+                                                        → Hermes (chat, alertas e comandos)
 ```
 
 ## Antes de começar
 
-O ELEX20 tem duas partes, e você pode começar só pela primeira:
+| Parte                      | O que faz                                             | O que você precisa                                                                                |
+| -------------------------- | ----------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| **Sensor** (o wearable)    | Capta o som, classifica e vibra indicando a direção   | O hardware de [Monte o sensor](#1-monte-o-sensor), o repositório clonado e um modelo Edge Impulse |
+| **Servidor** (complemento) | Guarda o histórico, mostra os painéis e envia alertas | Windows, macOS ou Linux com Docker e alguns GB livres para as imagens                             |
 
-| Parte                     | O que faz                                       | O que você precisa                                                                                      |
-| ------------------------- | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| **Servidor** (computador) | Recebe, guarda e mostra os dados; envia alertas | Windows, macOS ou Linux com Docker e alguns GB livres para as imagens                                   |
-| **Sensor** (opcional)     | Capta o som e classifica no aparelho            | O hardware listado em [Ligar o sensor](#ligar-o-sensor), o repositório clonado e um modelo Edge Impulse |
-
-> **Importante:** o modelo que reconhece os sons **não vem neste repositório**. Sem ele, o sensor conecta e informa o próprio estado, mas não publica classificações. Veja [Usar um modelo real](#usar-um-modelo-real).
+> **Importante:**
+>
+> - O modelo que reconhece os sons **não vem neste repositório**. Sem ele, o sensor conecta e informa o próprio estado, mas não classifica nem vibra. Veja [Usar um modelo real](#usar-um-modelo-real).
+> - O firmware atual ainda **depende da rede**: ele reinicia se o Wi-Fi falhar e pausa a classificação enquanto tenta alcançar o Mosquitto. Por isso o servidor precisa estar no ar para o sensor funcionar direito.
 
 **Roteiro:**
 
-1. [Instale o servidor](#1-instale-o-servidor).
-2. [Teste sem sensor](#2-teste-sem-sensor).
-3. [Ligue o sensor](#ligar-o-sensor), se tiver o hardware.
-4. [Use o sistema](#usar-o-sistema).
+1. [Monte o sensor](#1-monte-o-sensor).
+2. [Suba o servidor](#2-suba-o-servidor).
+3. [Grave o firmware](#3-grave-o-firmware).
+4. [Use o sistema](#4-use-o-sistema).
 
 ---
 
-## 1. Instale o servidor
+## 1. Monte o sensor
+
+### Hardware
+
+- 1 ESP32-S3 com 16 MB de flash e 8 MB de PSRAM (N16R8);
+- 4 microfones I2S INMP441;
+- 4 motores de vibração, cada um acionado por um MOSFET;
+- cabo USB e rede Wi-Fi de **2,4 GHz**, a mesma do computador ou com rota até ele.
+
+### Ligações
+
+Alimente os microfones com **3,3 V** e GND. Eles compartilham os sinais de clock, e o pino L/R define o canal de cada um:
+
+| Posição  | SCK    | WS     | SD     | L/R   | Motor (via MOSFET) |
+| -------- | ------ | ------ | ------ | ----- | ------------------ |
+| Frente   | GPIO 4 | GPIO 5 | GPIO 6 | GND   | GPIO 18            |
+| Trás     | GPIO 4 | GPIO 5 | GPIO 6 | 3,3 V | GPIO 16            |
+| Direita  | GPIO 4 | GPIO 5 | GPIO 7 | GND   | GPIO 17            |
+| Esquerda | GPIO 4 | GPIO 5 | GPIO 7 | 3,3 V | GPIO 15            |
+
+Os pinos ficam em `firmware/platformio.ini`. O firmware assume os microfones a 9 cm do centro (`MIC_RADIUS_M`): ajuste esse valor se o seu arranjo for diferente, porque ele entra no cálculo da direção.
+
+---
+
+## 2. Suba o servidor
 
 Você não precisa saber programar: o instalador sobe todos os serviços e configura o n8n sozinho, e as senhas internas são geradas automaticamente.
 
@@ -56,17 +83,17 @@ Confira com `docker compose version`. Se faltar algo, o instalador também expli
 
 Na página de [Releases](https://github.com/Chan-28/ELEX20/releases), baixe o arquivo do seu sistema:
 
-| Sistema                             | Arquivo                              |
-| ----------------------------------- | ------------------------------------ |
-| Windows                             | `elex-instalador-windows-x86_64.exe` |
-| macOS (Apple Silicon: M1, M2, ...)  | `elex-instalador-macos-arm64`        |
-| macOS (Intel)                       | `elex-instalador-macos-x86_64`       |
-| Linux (PC comum)                    | `elex-instalador-linux-x86_64`       |
-| Linux (ARM: Raspberry Pi 4/5, etc.) | `elex-instalador-linux-arm64`        |
+| Sistema                             | Arquivo                             |
+| ----------------------------------- | ----------------------------------- |
+| Windows                             | `elex-installer-windows-x86_64.exe` |
+| macOS (Apple Silicon: M1, M2, ...)  | `elex-installer-macos-arm64`        |
+| macOS (Intel)                       | `elex-installer-macos-x86_64`       |
+| Linux (PC comum)                    | `elex-installer-linux-x86_64`       |
+| Linux (ARM: Raspberry Pi 4/5, etc.) | `elex-installer-linux-arm64`        |
 
-O mesmo arquivo serve para qualquer distribuição Linux. Para saber se o seu Linux é x86_64 ou ARM, rode `uname -m`.
+A partir da próxima release, os arquivos usam estes nomes; a v1.0.0 ainda traz `elex-instalador-*` no lugar de `elex-installer-*`. O mesmo arquivo serve para qualquer distribuição Linux. Para saber se o seu Linux é x86_64 ou ARM, rode `uname -m`.
 
-> **Vai gravar o sensor?** Clone o repositório e rode `./instalar.sh` (Linux/macOS) ou `instalar.bat` (Windows), com o Python 3 do sistema, em vez do executável. O executável não traz a pasta `firmware/`. Clonado, o repositório vira a própria pasta de instalação, e o instalador pode gerar o `firmware/.env` para você.
+> **Vai gravar o sensor?** Clone o repositório e rode `./install.sh` (Linux/macOS) ou `install.bat` (Windows), com o Python 3 do sistema, em vez do executável. O executável não traz a pasta `firmware/`. Clonado, o repositório vira a própria pasta de instalação, e o instalador pode gerar o `firmware/.env` para você.
 
 ### Execute
 
@@ -74,16 +101,16 @@ O mesmo arquivo serve para qualquer distribuição Linux. Para saber se o seu Li
 - **macOS:** abra o Terminal na pasta do download e rode (troque `arm64` por `x86_64` em Macs Intel):
 
   ```bash
-  chmod +x elex-instalador-macos-arm64
-  xattr -d com.apple.quarantine elex-instalador-macos-arm64
-  ./elex-instalador-macos-arm64
+  chmod +x elex-installer-macos-arm64
+  xattr -d com.apple.quarantine elex-installer-macos-arm64
+  ./elex-installer-macos-arm64
   ```
 
 - **Linux:**
 
   ```bash
-  chmod +x elex-instalador-linux-x86_64
-  ./elex-instalador-linux-x86_64
+  chmod +x elex-installer-linux-x86_64
+  ./elex-installer-linux-x86_64
   ```
 
 ### Responda às perguntas
@@ -100,7 +127,7 @@ O executável instala em `~/ELEX20` (no Windows, `C:\Users\<você>\ELEX20`). Ao 
 
 **Guarde o arquivo `.env` da pasta de instalação e não o compartilhe.**
 
-Pode rodar o instalador de novo a qualquer momento: ele só completa o que falta. Opções de linha de comando: `--dir PASTA`, `--nao-interativo`, `--sem-modelo`, `--set CHAVE=VALOR` e `--dry-run` (só mostra os comandos do Docker).
+Pode rodar o instalador de novo a qualquer momento: ele só completa o que falta. Opções de linha de comando: `--dir PASTA`, `--non-interactive`, `--skip-model`, `--set KEY=VALUE` e `--dry-run` (só mostra os comandos do Docker).
 
 ### Abra os serviços
 
@@ -114,11 +141,9 @@ Pode rodar o instalador de novo a qualquer momento: ele só completa o que falta
 
 Os logins `admin` / `password` servem só para uso na sua máquina: [troque-os](#trocar-senhas) antes de qualquer outro uso.
 
----
+### Teste sem sensor
 
-## 2. Teste sem sensor
-
-Para confirmar que o caminho inteiro funciona antes de montar o hardware, publique uma detecção de teste. Rode na pasta de instalação, em um terminal Linux, macOS, Git Bash ou WSL2:
+Para confirmar que o caminho inteiro funciona antes de gravar o firmware, publique uma detecção de teste. Rode na pasta de instalação, em um terminal Linux, macOS, Git Bash ou WSL2:
 
 ```bash
 docker compose exec mosquitto sh -c 'mosquitto_pub -h localhost -u device -P "$(cat /run/secrets/mqtt_device/value)" -t sound/inference/teste-01 -m "{\"label\":\"siren\",\"confidence\":0.9}"'
@@ -130,27 +155,7 @@ Se nada aparecer, veja [Solução de problemas](#solução-de-problemas).
 
 ---
 
-## Ligar o sensor
-
-### Hardware
-
-- 1 ESP32-S3 com 16 MB de flash e 8 MB de PSRAM (N16R8);
-- 4 microfones I2S INMP441;
-- 4 motores de vibração, cada um acionado por um MOSFET;
-- cabo USB e rede Wi-Fi de **2,4 GHz**, a mesma do computador ou com rota até ele.
-
-### Ligações
-
-Alimente os microfones com **3,3 V** e GND. Eles compartilham os sinais de clock, e o pino L/R define o canal de cada um:
-
-| Posição  | SCK    | WS     | SD     | L/R   | Motor (via MOSFET) |
-| -------- | ------ | ------ | ------ | ----- | ------------------ |
-| Frente   | GPIO 4 | GPIO 5 | GPIO 6 | GND   | GPIO 18            |
-| Trás     | GPIO 4 | GPIO 5 | GPIO 6 | 3,3 V | GPIO 16            |
-| Direita  | GPIO 4 | GPIO 5 | GPIO 7 | GND   | GPIO 17            |
-| Esquerda | GPIO 4 | GPIO 5 | GPIO 7 | 3,3 V | GPIO 15            |
-
-Os pinos ficam em `firmware/platformio.ini`. O firmware assume os microfones a 9 cm do centro (`MIC_RADIUS_M`): ajuste esse valor se o seu arranjo for diferente, porque ele entra no cálculo da direção.
+## 3. Grave o firmware
 
 ### Libere o MQTT na rede
 
@@ -235,7 +240,11 @@ Um rótulo fora da tabela é gravado sem urgência e não gera alerta, direção
 
 ---
 
-## Usar o sistema
+## 4. Use o sistema
+
+### Sensor — feedback motor
+
+Com o modelo gravado, quando o sensor reconhece um som com urgência acima de 0, ele estima a direção e aciona o motor daquele lado (frente, direita, trás ou esquerda), ou os dois motores vizinhos nas diagonais. A intensidade cresce com a urgência. Os ajustes de sensibilidade e vibração estão na tabela de chaves do Hermes, mais abaixo.
 
 ### Grafana — painéis
 
@@ -382,10 +391,10 @@ Para conferir a origem, use o [cosign](https://docs.sigstore.dev/cosign/system_c
 
 ```bash
 cosign verify-blob \
-  --bundle elex-instalador-linux-x86_64.sigstore.json \
+  --bundle elex-installer-linux-x86_64.sigstore.json \
   --certificate-identity "https://github.com/Chan-28/ELEX20/.github/workflows/release.yml@refs/tags/<versão>" \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-  elex-instalador-linux-x86_64
+  elex-installer-linux-x86_64
 ```
 
 ### O que o instalador faz
@@ -454,7 +463,7 @@ pio test -e native       # testes sem hardware (direção do som, comandos)
 pio run -e esp32s3       # build
 ```
 
-Use `uv add` / `uv remove` para mudar dependências (atualiza o `uv.lock`); nunca edite o `uv.lock` à mão. Para gerar o executável do instalador localmente: `uvx --from "pyinstaller>=6.11" pyinstaller installer/elex_instalador.spec`.
+Use `uv add` / `uv remove` para mudar dependências (atualiza o `uv.lock`); nunca edite o `uv.lock` à mão. Para gerar o executável do instalador localmente: `uvx --from "pyinstaller>=6.11" pyinstaller installer/elex_installer.spec`.
 
 ## Flags de saúde
 

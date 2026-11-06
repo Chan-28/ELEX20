@@ -33,10 +33,10 @@ from pathlib import Path
 
 
 def ler_versao() -> str:
-    """Versão gravada pelo CI (versao.txt, a partir da tag); '0.0.0-dev' fora de um build de release."""
+    """Versão gravada pelo CI (version.txt, a partir da tag); '0.0.0-dev' fora de um build de release."""
     pasta = Path(sys._MEIPASS) if getattr(sys, "frozen", False) else Path(__file__).resolve().parent  # type: ignore[attr-defined]  # noqa: SLF001
     try:
-        return (pasta / "versao.txt").read_text(encoding="utf-8").strip() or "dev"
+        return (pasta / "version.txt").read_text(encoding="utf-8").strip() or "dev"
     except OSError:
         return "dev"
 
@@ -634,27 +634,27 @@ def main(argv: list[str] | None = None) -> int:
         "--dir", type=Path, help="pasta de instalação (padrão: ~/ELEX20 no executável; o repositório, no código-fonte)"
     )
     parser.add_argument(
-        "--nao-interativo", "-y", action="store_true", help="não pergunta nada; usa os padrões e os --set"
+        "--non-interactive", "-y", action="store_true", help="não pergunta nada; usa os padrões e os --set"
     )
     parser.add_argument(
         "--set",
         action="append",
         default=[],
-        metavar="CHAVE=VALOR",
+        metavar="KEY=VALUE",
         help="define uma variável do .env (ex.: OPENROUTER_API_KEY=...)",
     )
-    parser.add_argument("--sem-modelo", action="store_true", help="não baixa o modelo local do Ollama")
+    parser.add_argument("--skip-model", action="store_true", help="não baixa o modelo local do Ollama")
     parser.add_argument(
         "--dry-run", action="store_true", help="cria os arquivos, mas só mostra os comandos do Docker sem executá-los"
     )
-    parser.add_argument("--versao", action="version", version=f"elex-installer {VERSAO}")
+    parser.add_argument("--version", action="version", version=f"elex-installer {VERSAO}")
     args = parser.parse_args(argv)
 
     extras: dict[str, str] = {}
     for item in args.set:
         chave, separador, valor = item.partition("=")
         if not separador or not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", chave):
-            parser.error(f"--set espera CHAVE=VALOR, recebi: {item!r}")
+            parser.error(f"--set espera KEY=VALUE, recebi: {item!r}")
         extras[chave] = valor
 
     origem = raiz_do_projeto()
@@ -662,13 +662,13 @@ def main(argv: list[str] | None = None) -> int:
     destino.mkdir(parents=True, exist_ok=True)
 
     print(f"ELEX20 — instalador {VERSAO} ({platform.system()} {platform.machine()})")
-    instalador = Instalador(origem, destino, args.nao_interativo, args.dry_run, extras, args.sem_modelo)
+    instalador = Instalador(origem, destino, args.non_interactive, args.dry_run, extras, args.skip_model)
     try:
         codigo = instalador.executar()
     except KeyboardInterrupt:
         print("\nInterrompido.")
         codigo = 130
-    if getattr(sys, "frozen", False) and platform.system() == "Windows" and not args.nao_interativo:
+    if getattr(sys, "frozen", False) and platform.system() == "Windows" and not args.non_interactive:
         input("\nPressione Enter para fechar...")
     return codigo
 

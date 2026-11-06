@@ -25,15 +25,15 @@ jobs:
         include:
           # glibc antigo: o binário roda em Ubuntu, Debian, Mint, Fedora, Arch, openSUSE...
           - runner: ubuntu-22.04
-            asset: elex-instalador-linux-x86_64
+            asset: elex-installer-linux-x86_64
           - runner: ubuntu-22.04-arm
-            asset: elex-instalador-linux-arm64
+            asset: elex-installer-linux-arm64
           - runner: windows-latest
-            asset: elex-instalador-windows-x86_64.exe
+            asset: elex-installer-windows-x86_64.exe
           - runner: macos-latest
-            asset: elex-instalador-macos-arm64
+            asset: elex-installer-macos-arm64
           - runner: macos-15-intel
-            asset: elex-instalador-macos-x86_64
+            asset: elex-installer-macos-x86_64
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -51,15 +51,15 @@ jobs:
         shell: bash
         env:
           VERSION: ${{ inputs.version }}
-        run: printf '%s\n' "${VERSION#v}" > installer/versao.txt
+        run: printf '%s\n' "${VERSION#v}" > installer/version.txt
 
       - name: Build executable
         shell: bash
         env:
           ASSET: ${{ matrix.asset }}
         run: |
-          uvx --from "pyinstaller>=6.11" pyinstaller installer/elex_instalador.spec --noconfirm
-          if [ -f dist/elex-instalador.exe ]; then mv dist/elex-instalador.exe "dist/${ASSET}"; else mv dist/elex-instalador "dist/${ASSET}"; fi
+          uvx --from "pyinstaller>=6.11" pyinstaller installer/elex_installer.spec --noconfirm
+          if [ -f dist/elex-installer.exe ]; then mv dist/elex-installer.exe "dist/${ASSET}"; else mv dist/elex-installer "dist/${ASSET}"; fi
           ls -la dist
 
       - name: Smoke (versão e simulação de instalação)
@@ -68,11 +68,11 @@ jobs:
           ASSET: ${{ matrix.asset }}
           VERSION: ${{ inputs.version }}
         run: |
-          test "$("./dist/${ASSET}" --versao)" = "elex-installer ${VERSION#v}"
-          "./dist/${ASSET}" --dry-run -y --sem-modelo --dir "${RUNNER_TEMP}/ELEX20"
+          test "$("./dist/${ASSET}" --version)" = "elex-installer ${VERSION#v}"
+          "./dist/${ASSET}" --dry-run -y --skip-model --dir "${RUNNER_TEMP}/ELEX20"
           test -f "${RUNNER_TEMP}/ELEX20/.env"
           test -f "${RUNNER_TEMP}/ELEX20/docker-compose.yaml"
-          test -f "${RUNNER_TEMP}/ELEX20/n8n/workflows/ingestao-mqtt.json"
+          test -f "${RUNNER_TEMP}/ELEX20/n8n/workflows/mqtt-ingest.json"
           # Scripts montados em containers Linux não podem ter CRLF (o checkout no Windows poderia trazê-lo)
           if grep -l $'\r' "${RUNNER_TEMP}/ELEX20/mosquitto/entrypoint.sh" "${RUNNER_TEMP}/ELEX20/timescaledb/db-init.sh"; then
             echo "::error ::CRLF em script copiado pelo instalador"; exit 1

@@ -34,13 +34,13 @@ O objetivo é fechar o projeto como o relatório o descreve:
    segunda às 9h" é só um exemplo de uso, não um requisito.
 5. **Modelo de áudio integrado**: o modelo YAMNet já treinado no Edge Impulse
    Studio passa a rodar no firmware no lugar do mock.
-5. **Análise dos sensores**: "os sensores estão funcionando?", respondida com
+6. **Análise dos sensores**: "os sensores estão funcionando?", respondida com
    dados reais de heartbeat (última vez visto, RSSI, heap, atraso dos eventos).
-6. **Direção do som**: firmware com 4 INMP441, estimativa por GCC-PHAT, 8 setores
+7. **Direção do som**: firmware com 4 INMP441, estimativa por GCC-PHAT, 8 setores
    de 45°, publicada no MQTT, gravada no banco e consultável pelo Hermes.
-7. **Feedback háptico** no firmware: motor correspondente ao setor quando um som
+8. **Feedback háptico** no firmware: motor correspondente ao setor quando um som
    de alerta é detectado.
-8. **Comandos para o dispositivo** por MQTT (sensibilidade, limiares), disparados
+9. **Comandos para o dispositivo** por MQTT (sensibilidade, limiares), disparados
    pelo n8n a pedido do Hermes.
 
 ## Não objetivos

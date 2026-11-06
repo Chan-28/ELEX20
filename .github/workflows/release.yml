@@ -42,7 +42,7 @@ jobs:
       - name: Download installers
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          pattern: elex-instalador-*
+          pattern: elex-installer-*
           merge-multiple: true
           path: dist
 
@@ -58,9 +58,9 @@ jobs:
         env:
           TAG: ${{ github.ref_name }}
         run: |
-          for f in elex-instalador-linux-x86_64 elex-instalador-linux-arm64 \
-                   elex-instalador-windows-x86_64.exe elex-instalador-macos-arm64 \
-                   elex-instalador-macos-x86_64 "elex20-${TAG}.tar.gz"; do
+          for f in elex-installer-linux-x86_64 elex-installer-linux-arm64 \
+                   elex-installer-windows-x86_64.exe elex-installer-macos-arm64 \
+                   elex-installer-macos-x86_64 "elex20-${TAG}.tar.gz"; do
             test -s "dist/${f}" || { echo "::error ::arquivo ausente: ${f}"; exit 1; }
           done
           ls -la dist
@@ -93,7 +93,7 @@ jobs:
           cat > notes.md <<'EOF'
           Release automática (código-fonte da tag e instaladores para Windows, macOS e Linux).
 
-          **Instalador:** baixe o arquivo `elex-instalador-<sistema>` do seu computador, execute-o e
+          **Instalador:** baixe o arquivo `elex-installer-<sistema>` do seu computador, execute-o e
           siga as perguntas. Precisa do Docker instalado; o instalador explica como instalar se faltar.
           Guia completo no README.
 
