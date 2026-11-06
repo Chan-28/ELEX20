@@ -68,8 +68,8 @@ jobs:
           ASSET: ${{ matrix.asset }}
           VERSION: ${{ inputs.version }}
         run: |
-          test "$("./dist/${ASSET}" --versao)" = "elex-installer ${VERSION#v}"
-          "./dist/${ASSET}" --dry-run -y --sem-modelo --dir "${RUNNER_TEMP}/ELEX20"
+          test "$("./dist/${ASSET}" --version)" = "elex-installer ${VERSION#v}"
+          "./dist/${ASSET}" --dry-run -y --skip-model --dir "${RUNNER_TEMP}/ELEX20"
           test -f "${RUNNER_TEMP}/ELEX20/.env"
           test -f "${RUNNER_TEMP}/ELEX20/docker-compose.yaml"
           test -f "${RUNNER_TEMP}/ELEX20/n8n/workflows/mqtt-ingest.json"

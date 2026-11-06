@@ -127,7 +127,7 @@ O executável instala em `~/ELEX20` (no Windows, `C:\Users\<você>\ELEX20`). Ao 
 
 **Guarde o arquivo `.env` da pasta de instalação e não o compartilhe.**
 
-Pode rodar o instalador de novo a qualquer momento: ele só completa o que falta. Opções de linha de comando: `--dir PASTA`, `--nao-interativo`, `--sem-modelo`, `--set CHAVE=VALOR` e `--dry-run` (só mostra os comandos do Docker).
+Pode rodar o instalador de novo a qualquer momento: ele só completa o que falta. Opções de linha de comando: `--dir PASTA`, `--non-interactive`, `--skip-model`, `--set KEY=VALUE` e `--dry-run` (só mostra os comandos do Docker).
 
 ### Abra os serviços
 

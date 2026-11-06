@@ -65,7 +65,7 @@ Documentação e arquivos `.md/.json/.yaml` não exigem build. O Prettier format
 - Ruff com regras `E, F, I, B, S, UP, C4, ARG, N` (inclui segurança `S`). Imports organizados pelo Ruff; não rode `black` nem `isort`, mesmo estando no grupo `dev`.
 - Python ≥ 3.11 (`.python-version`). Não crie `requirements.txt`.
 - Comentários e docstrings em português, como no resto do projeto.
-- Nomes de arquivos em inglês. Executáveis e arquivos de release usam os nomes convencionais da comunidade (`install.sh`, `installer`).
+- Nomes de arquivos e flags de linha de comando em inglês. Executáveis e arquivos de release usam os nomes convencionais da comunidade (`install.sh`, `installer`).
 
 ## Testes
 

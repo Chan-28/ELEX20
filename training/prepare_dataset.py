@@ -7,7 +7,7 @@ Nada aqui envia dados a um serviço externo.
 
 Uso:
   uv run python training/prepare_dataset.py --fsd50k <dir> --urbansound8k <dir> \
-      --esc50 <dir> --saida <dir> [--sem-nc] [--somente-relatorio]
+      --esc50 <dir> --output <dir> [--no-nc] [--report-only]
 """
 
 import argparse
@@ -245,9 +245,9 @@ def main() -> None:
     parser.add_argument("--fsd50k", type=Path, required=True)
     parser.add_argument("--urbansound8k", type=Path, required=True)
     parser.add_argument("--esc50", type=Path, required=True)
-    parser.add_argument("--saida", type=Path, required=True)
-    parser.add_argument("--sem-nc", action="store_true", help="usa só licenças que permitem uso comercial")
-    parser.add_argument("--somente-relatorio", action="store_true", help="não converte os áudios")
+    parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--no-nc", action="store_true", help="usa só licenças que permitem uso comercial")
+    parser.add_argument("--report-only", action="store_true", help="não converte os áudios")
     args = parser.parse_args()
 
     categorias = carregar_categorias()
@@ -258,7 +258,7 @@ def main() -> None:
     )
     clipes = separar_grupos_do_teste(clipes)
     clipes = [c for c in clipes if c.licenca != "desconhecida"]
-    if args.sem_nc:
+    if args.no_nc:
         clipes = [c for c in clipes if c.licenca in ("CC0", "CC-BY")]
 
     selecionados: list[tuple[Clipe, float]] = []
@@ -267,15 +267,15 @@ def main() -> None:
         for particao, limite in (("treino", LIMITE_TREINO_S), ("teste", LIMITE_TESTE_S)):
             selecionados += selecionar([c for c in da_categoria if c.particao == particao], limite)
 
-    args.saida.mkdir(parents=True, exist_ok=True)
+    args.output.mkdir(parents=True, exist_ok=True)
     mantidos: list[tuple[Clipe, float]] = []
-    with (args.saida / "manifesto.csv").open("w", encoding="utf-8", newline="") as arquivo:
+    with (args.output / "manifesto.csv").open("w", encoding="utf-8", newline="") as arquivo:
         escritor = csv.writer(arquivo)
         escritor.writerow(["arquivo", "rotulo", "particao", "fonte", "id", "licenca", "grupo", "segundos"])
         for clipe, segundos in selecionados:
             nome = f"{clipe.rotulo}.{clipe.fonte}_{clipe.identificador}.wav"
-            if not args.somente_relatorio:
-                pasta = args.saida / clipe.particao
+            if not args.report_only:
+                pasta = args.output / clipe.particao
                 pasta.mkdir(exist_ok=True)
                 converter(clipe.caminho, pasta / nome)
                 if clipe_mudo(pasta / nome):
@@ -289,7 +289,9 @@ def main() -> None:
             mantidos.append((clipe, segundos))
 
     dados = relatorio(mantidos, categorias)
-    (args.saida / "relatorio.json").write_text(json.dumps(dados, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    (args.output / "relatorio.json").write_text(
+        json.dumps(dados, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
     for rotulo, item in dados.items():
         minutos = f"treino {item['minutos_treino']:5} min  teste {item['minutos_teste']:5} min"
         print(f"{rotulo:15} {minutos}  {item['por_fonte']}")
