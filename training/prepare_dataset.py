@@ -1,8 +1,8 @@
 """Monta o dataset local das categorias de som a partir de FSD50K, UrbanSound8K e ESC-50.
 
-A lista vem de classes/sound_classes.json. A saída tem WAVs de 16 kHz mono em treino/ e
-teste/, com o rótulo antes do primeiro ponto do nome, como o Edge Impulse espera, mais
-manifesto.csv (origem e licença de cada clipe) e relatorio.json (contagens).
+A lista vem de classes/sound_classes.json. A saída tem WAVs de 16 kHz mono em train/ e
+test/, com o rótulo antes do primeiro ponto do nome, como o Edge Impulse espera, mais
+manifest.csv (origem e licença de cada clipe) e report.json (contagens).
 Nada aqui envia dados a um serviço externo.
 
 Uso:
@@ -41,7 +41,7 @@ class Clipe:
     fonte: str
     identificador: str
     caminho: Path
-    particao: str  # treino ou teste
+    particao: str  # train ou test
     licenca: str
     grupo: str  # gravação de origem: nunca aparece em treino e teste ao mesmo tempo
 
@@ -75,7 +75,7 @@ def categoria_fsd(rotulos_clipe: set[str], categorias: list[dict]) -> str | None
 
 def particao_por_grupo(grupo: str) -> str:
     """Sorteio estável por grupo, para a mesma gravação cair sempre na mesma partição."""
-    return "teste" if zlib.crc32(grupo.encode()) % 100 < PERCENTUAL_TESTE_GRUPOS else "treino"
+    return "test" if zlib.crc32(grupo.encode()) % 100 < PERCENTUAL_TESTE_GRUPOS else "train"
 
 
 def normalizar_licenca(url: str) -> str:
@@ -97,7 +97,7 @@ def clipes_fsd50k(raiz: Path, categorias: list[dict]) -> list[Clipe]:
         "eval": json.loads((raiz / "FSD50K.metadata" / "eval_clips_info_FSD50K.json").read_text(encoding="utf-8")),
     }
     clipes = []
-    for parte, particao in (("dev", "treino"), ("eval", "teste")):
+    for parte, particao in (("dev", "train"), ("eval", "test")):
         with (raiz / "FSD50K.ground_truth" / f"{parte}.csv").open(encoding="utf-8", newline="") as arquivo:
             for linha in csv.DictReader(arquivo):
                 rotulo = categoria_fsd(set(linha["labels"].split(",")), categorias)
@@ -133,7 +133,7 @@ def clipes_urbansound8k(raiz: Path, categorias: list[dict]) -> list[Clipe]:
                     "urbansound8k",
                     Path(linha["slice_file_name"]).stem,
                     raiz / "audio" / f"fold{pasta}" / linha["slice_file_name"],
-                    "teste" if pasta == PASTA_TESTE_US8K else "treino",
+                    "test" if pasta == PASTA_TESTE_US8K else "train",
                     LICENCA_US8K,
                     f"us8k:{linha['fsID']}",
                 )
@@ -155,7 +155,7 @@ def clipes_esc50(raiz: Path, categorias: list[dict]) -> list[Clipe]:
                     "esc50",
                     Path(linha["filename"]).stem,
                     raiz / "audio" / linha["filename"],
-                    "teste" if int(linha["fold"]) == PASTA_TESTE_ESC50 else "treino",
+                    "test" if int(linha["fold"]) == PASTA_TESTE_ESC50 else "train",
                     LICENCA_ESC50,
                     f"esc50:{linha['src_file']}",
                 )
@@ -165,8 +165,8 @@ def clipes_esc50(raiz: Path, categorias: list[dict]) -> list[Clipe]:
 
 def separar_grupos_do_teste(clipes: list[Clipe]) -> list[Clipe]:
     """Descarta do treino qualquer clipe cuja gravação de origem esteja no teste."""
-    no_teste = {c.grupo for c in clipes if c.particao == "teste"}
-    return [c for c in clipes if c.particao == "teste" or c.grupo not in no_teste]
+    no_teste = {c.grupo for c in clipes if c.particao == "test"}
+    return [c for c in clipes if c.particao == "test" or c.grupo not in no_teste]
 
 
 def duracao_s(caminho: Path) -> float:
@@ -230,10 +230,10 @@ def relatorio(selecionados: list[tuple[Clipe, float]], categorias: list[dict]) -
             por_licenca[clipe.licenca] = por_licenca.get(clipe.licenca, 0) + 1
         saida[categoria["rotulo"]] = {
             "urgencia": categoria["urgencia"],
-            "clipes_treino": sum(c.particao == "treino" for c, _ in itens),
-            "clipes_teste": sum(c.particao == "teste" for c, _ in itens),
-            "minutos_treino": round(sum(s for c, s in itens if c.particao == "treino") / 60, 1),
-            "minutos_teste": round(sum(s for c, s in itens if c.particao == "teste") / 60, 1),
+            "clipes_treino": sum(c.particao == "train" for c, _ in itens),
+            "clipes_teste": sum(c.particao == "test" for c, _ in itens),
+            "minutos_treino": round(sum(s for c, s in itens if c.particao == "train") / 60, 1),
+            "minutos_teste": round(sum(s for c, s in itens if c.particao == "test") / 60, 1),
             "por_fonte": por_fonte,
             "por_licenca": por_licenca,
         }
@@ -264,12 +264,12 @@ def main() -> None:
     selecionados: list[tuple[Clipe, float]] = []
     for categoria in categorias:
         da_categoria = [c for c in clipes if c.rotulo == categoria["rotulo"]]
-        for particao, limite in (("treino", LIMITE_TREINO_S), ("teste", LIMITE_TESTE_S)):
+        for particao, limite in (("train", LIMITE_TREINO_S), ("test", LIMITE_TESTE_S)):
             selecionados += selecionar([c for c in da_categoria if c.particao == particao], limite)
 
     args.output.mkdir(parents=True, exist_ok=True)
     mantidos: list[tuple[Clipe, float]] = []
-    with (args.output / "manifesto.csv").open("w", encoding="utf-8", newline="") as arquivo:
+    with (args.output / "manifest.csv").open("w", encoding="utf-8", newline="") as arquivo:
         escritor = csv.writer(arquivo)
         escritor.writerow(["arquivo", "rotulo", "particao", "fonte", "id", "licenca", "grupo", "segundos"])
         for clipe, segundos in selecionados:
@@ -289,9 +289,7 @@ def main() -> None:
             mantidos.append((clipe, segundos))
 
     dados = relatorio(mantidos, categorias)
-    (args.output / "relatorio.json").write_text(
-        json.dumps(dados, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
-    )
+    (args.output / "report.json").write_text(json.dumps(dados, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     for rotulo, item in dados.items():
         minutos = f"treino {item['minutos_treino']:5} min  teste {item['minutos_teste']:5} min"
         print(f"{rotulo:15} {minutos}  {item['por_fonte']}")

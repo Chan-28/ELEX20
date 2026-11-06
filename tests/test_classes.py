@@ -72,7 +72,7 @@ def test_gravacao_do_teste_nao_fica_no_treino():
     def clipe(identificador, particao, grupo):
         return preparar.Clipe("sirene", "us8k", identificador, Path("x.wav"), particao, "CC0", grupo)
 
-    clipes = [clipe("a", "teste", "g1"), clipe("b", "treino", "g1"), clipe("c", "treino", "g2")]
+    clipes = [clipe("a", "test", "g1"), clipe("b", "train", "g1"), clipe("c", "train", "g2")]
     assert [c.identificador for c in preparar.separar_grupos_do_teste(clipes)] == ["a", "c"]
 
 
@@ -85,7 +85,7 @@ def test_licencas_normalizadas():
 
 def test_selecao_respeita_limite_e_mantem_as_duas_fontes():
     clipes = [
-        preparar.Clipe("sirene", fonte, str(i), Path("x.wav"), "treino", "CC0", f"{fonte}{i}")
+        preparar.Clipe("sirene", fonte, str(i), Path("x.wav"), "train", "CC0", f"{fonte}{i}")
         for fonte in ("fsd50k", "esc50")
         for i in range(50)
     ]
