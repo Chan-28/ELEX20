@@ -1,24 +1,41 @@
 # ELEX20 - Análise e Reconhecimento de Sons Locais
 
-Projeto para captura, classificação e visualização de sons urbanos em tempo real, usando ESP32 com Edge Impulse (inferência local), MQTT, n8n, TimescaleDB, Grafana e um assistente de IA (Hermes) que conversa pelo Telegram e pelo Discord.
+O ELEX20 escuta o ambiente com um sensor ESP32-S3, reconhece sons urbanos (sirenes, buzinas, tiros e outros), estima de que direção eles vêm e avisa você. O sensor classifica o som no próprio aparelho e vibra para indicar a direção. No computador, um painel mostra o histórico ao vivo, e um assistente de IA (Hermes) responde perguntas e envia alertas pelo Telegram e pelo Discord.
 
 ```text
-ESP32 (Edge Impulse, classificação de sons urbanos + direção do som)
-
-    → [MQTT / WiFi] → Mosquitto
-    → [trigger]     → n8n (automação)
-    → [insert]      → TimescaleDB
-    → [query]       → Grafana (dashboards ao vivo)
-                    → Hermes (consultas, alertas e comandos pelo chat)
+Sensor ESP32-S3 (reconhece o som e a direção)
+    → [MQTT / Wi-Fi] → Mosquitto
+    → [automação]    → n8n
+    → [gravação]     → TimescaleDB
+    → [consulta]     → Grafana (painéis ao vivo)
+                     → Hermes (perguntas, alertas e comandos pelo chat)
 ```
+
+## Antes de começar
+
+O ELEX20 tem duas partes, e você pode começar só pela primeira:
+
+| Parte                     | O que faz                                       | O que você precisa                                                                                      |
+| ------------------------- | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| **Servidor** (computador) | Recebe, guarda e mostra os dados; envia alertas | Windows, macOS ou Linux com Docker e alguns GB livres para as imagens                                   |
+| **Sensor** (opcional)     | Capta o som e classifica no aparelho            | O hardware listado em [Ligar o sensor](#ligar-o-sensor), o repositório clonado e um modelo Edge Impulse |
+
+> **Importante:** o modelo que reconhece os sons **não vem neste repositório**. Sem ele, o sensor conecta e informa o próprio estado, mas não publica classificações. Veja [Usar um modelo real](#usar-um-modelo-real).
+
+**Roteiro:**
+
+1. [Instale o servidor](#1-instale-o-servidor).
+2. [Teste sem sensor](#2-teste-sem-sensor).
+3. [Ligue o sensor](#ligar-o-sensor), se tiver o hardware.
+4. [Use o sistema](#usar-o-sistema).
 
 ---
 
-## Instalação rápida (recomendada)
+## 1. Instale o servidor
 
-Funciona em **Windows, macOS e Linux**. Você não precisa saber programar: o instalador sobe todos os serviços e configura o n8n sozinho, e as senhas internas são geradas automaticamente.
+Você não precisa saber programar: o instalador sobe todos os serviços e configura o n8n sozinho, e as senhas internas são geradas automaticamente.
 
-### 1. Instale o Docker
+### Instale o Docker
 
 O Docker é o único programa que precisa estar instalado antes.
 
@@ -35,7 +52,7 @@ No **Linux**, depois de instalar: `sudo systemctl enable --now docker` e `sudo u
 
 Confira com `docker compose version`. Se faltar algo, o instalador também explica o que fazer.
 
-### 2. Baixe o instalador
+### Baixe o instalador
 
 Na página de [Releases](https://github.com/Chan-28/ELEX20/releases), baixe o arquivo do seu sistema:
 
@@ -47,12 +64,14 @@ Na página de [Releases](https://github.com/Chan-28/ELEX20/releases), baixe o ar
 | Linux (PC comum)                    | `elex-instalador-linux-x86_64`       |
 | Linux (ARM: Raspberry Pi 4/5, etc.) | `elex-instalador-linux-arm64`        |
 
-O mesmo arquivo serve para qualquer distribuição Linux (Ubuntu, Debian, Mint, Fedora, Arch, openSUSE...). Para saber se o seu Linux é x86_64 ou ARM, rode `uname -m`.
+O mesmo arquivo serve para qualquer distribuição Linux. Para saber se o seu Linux é x86_64 ou ARM, rode `uname -m`.
 
-### 3. Execute
+> **Vai gravar o sensor?** Clone o repositório e rode `./instalar.sh` (Linux/macOS) ou `instalar.bat` (Windows), com o Python 3 do sistema, em vez do executável. O executável não traz a pasta `firmware/`. Clonado, o repositório vira a própria pasta de instalação, e o instalador pode gerar o `firmware/.env` para você.
 
-- **Windows:** dê dois cliques no arquivo. Se o SmartScreen avisar "O Windows protegeu seu computador", clique em **Mais informações** e depois em **Executar assim mesmo** (o executável não tem assinatura paga da Microsoft; veja como verificar a assinatura mais abaixo).
-- **macOS:** abra o Terminal na pasta do download e rode:
+### Execute
+
+- **Windows:** dê dois cliques no arquivo. Se o SmartScreen avisar "O Windows protegeu seu computador", clique em **Mais informações** e depois em **Executar assim mesmo** (o executável não tem assinatura paga da Microsoft; veja [como verificar o download](#verificar-o-download-opcional)).
+- **macOS:** abra o Terminal na pasta do download e rode (troque `arm64` por `x86_64` em Macs Intel):
 
   ```bash
   chmod +x elex-instalador-macos-arm64
@@ -67,137 +86,199 @@ O mesmo arquivo serve para qualquer distribuição Linux (Ubuntu, Debian, Mint, 
   ./elex-instalador-linux-x86_64
   ```
 
-### 4. Responda às perguntas
+### Responda às perguntas
 
-O instalador pergunta só o que é opcional (você pode apertar Enter para pular tudo):
+Tudo é opcional, e você pode apertar Enter para pular:
 
 - se vai ligar o sensor ESP32 na sua rede (ele descobre o IP do computador);
 - chave do OpenRouter (IA na nuvem; sem ela o Hermes usa o modelo local);
 - bot do Telegram e/ou do Discord (token, o seu ID e o chat que recebe os alertas);
-- se quer baixar o modelo local de IA (cerca de 2 GB).
+- se quer baixar o modelo local de IA (cerca de 2 GB);
+- se quer gerar o `firmware/.env`, quando há a pasta `firmware/`.
 
-Ele instala em `~/ELEX20` (no Windows, `C:\Users\<você>\ELEX20`) e, ao final, mostra os endereços e os logins. Os logins do Grafana e do Hermes começam como `admin` / `password` (placeholders: troque-os); as senhas internas (banco, MQTT e tokens entre n8n e Hermes) são **geradas sozinhas** e você não precisa configurar nada. **Guarde o arquivo `.env` dessa pasta e não o compartilhe.**
+O executável instala em `~/ELEX20` (no Windows, `C:\Users\<você>\ELEX20`). Ao final, o instalador mostra os endereços e os logins. Na primeira vez, o Docker baixa alguns GB de imagens, o que pode levar vários minutos.
 
-Na primeira vez, o Docker baixa alguns GB de imagens; pode levar vários minutos.
+**Guarde o arquivo `.env` da pasta de instalação e não o compartilhe.**
 
-### O que o instalador faz
+Pode rodar o instalador de novo a qualquer momento: ele só completa o que falta. Opções de linha de comando: `--dir PASTA`, `--nao-interativo`, `--sem-modelo`, `--set CHAVE=VALOR` e `--dry-run` (só mostra os comandos do Docker).
 
-1. Confere se o Docker está instalado e ligado.
-2. Copia os arquivos da stack para a pasta de instalação.
-3. Cria o `.env` com os padrões (nunca troca um `.env` que já existe). As senhas internas são geradas pela própria stack na primeira subida (serviço `secrets-init`) e ficam em volumes do Docker.
-4. Executa `docker compose up -d` e espera o n8n e o Grafana responderem.
-5. Baixa o modelo local do Ollama (opcional).
-6. Cria no n8n as credenciais do Postgres e do MQTT, importa os workflows e os ativa.
-
-Pode rodar de novo a qualquer momento: ele só completa o que falta. Opções úteis (linha de comando): `--dir PASTA`, `--nao-interativo`, `--sem-modelo`, `--set CHAVE=VALOR` e `--dry-run` (só mostra os comandos do Docker).
-
-### Verificar o download (opcional)
-
-A release traz um `SHA256SUMS` com os hashes de todos os arquivos, e cada arquivo tem seu `.sigstore.json`. Para conferir o hash do que você baixou (com o `SHA256SUMS` na mesma pasta):
-
-```bash
-sha256sum --check --ignore-missing SHA256SUMS
-```
-
-Para conferir a origem, use o [cosign](https://docs.sigstore.dev/cosign/system_config/installation/):
-
-```bash
-cosign verify-blob \
-  --bundle elex-instalador-linux-x86_64.sigstore.json \
-  --certificate-identity "https://github.com/Chan-28/ELEX20/.github/workflows/release.yml@refs/tags/<versão>" \
-  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-  elex-instalador-linux-x86_64
-```
-
-### Já clonou o repositório?
-
-Rode o instalador direto da pasta, com o Python 3 do sistema: `./instalar.sh` (Linux/macOS) ou `instalar.bat` (Windows). Ele usa o repositório como pasta de instalação.
-
----
-
-## Serviços
+### Abra os serviços
 
 | Serviço                              | Endereço                    | Usuário             | Senha                            |
 | ------------------------------------ | --------------------------- | ------------------- | -------------------------------- |
-| **Grafana** — dashboards e métricas  | <http://localhost:3000>     | `admin`             | `password` (placeholder, troque) |
+| **Grafana** — painéis e métricas     | <http://localhost:3000>     | `admin`             | `password` (placeholder, troque) |
 | **n8n** — automação de fluxos        | <http://localhost:5678>     | criado no 1º acesso | —                                |
 | **Hermes Dashboard** — assistente IA | <http://localhost:9119>     | `admin`             | `password` (placeholder, troque) |
-| **Mosquitto** — broker MQTT (ESP32)  | `mqtt://localhost:1883`     | `device` / `n8n`    | gerada sozinha (veja abaixo)     |
+| **Mosquitto** — broker MQTT (sensor) | `mqtt://localhost:1883`     | `device` / `n8n`    | gerada sozinha                   |
 | **TimescaleDB** — banco de dados     | interno (sem porta exposta) | `postgres`          | `POSTGRES_PASSWORD` (no `.env`)  |
 
-> Os logins `admin` / `password` são placeholders para uso só na sua máquina: troque-os antes de qualquer outro uso. Os segredos internos (papéis do banco, usuários do MQTT e tokens n8n ↔ Hermes) são aleatórios e gerados automaticamente, com ou sem instalador, e nenhum serviço enxerga os segredos dos outros.
->
-> **Senha do sensor (ESP32):** é a do usuário `device` do MQTT. Para vê-la, rode na pasta de instalação: `docker compose exec mosquitto cat /run/secrets/mqtt_device/value`. Use-a como `MQTT_PASS` no `firmware/.env`.
-
-### Compatibilidade de sistemas operacionais
-
-| Recurso                         | Linux | macOS             | Windows                                                           |
-| ------------------------------- | ----- | ----------------- | ----------------------------------------------------------------- |
-| Instalador (executável)         | ✅    | ✅                | ✅                                                                |
-| Docker Compose (stack completa) | ✅    | ✅ Docker Desktop | ✅ Docker Desktop + WSL2                                          |
-| Coleta de logs (Alloy)          | ✅    | ➖ desligada      | ➖ desligada (ligue com `COMPOSE_PROFILES=logs` se quiser testar) |
-| Python / uv / firmware          | ✅    | ✅                | ✅                                                                |
-| direnv (`.envrc`)               | ✅    | ✅                | ⚠️ não disponível — use `set DOCKER_HOST=...` no WSL2 ou ignore   |
-| Commits com Husky               | ✅    | ✅                | ✅ Git Bash ou WSL2                                               |
-
-> A coleta de logs (Alloy) lê caminhos do Docker que só existem no Linux; por isso o instalador a liga apenas lá. O restante da stack é igual nos três sistemas.
->
-> **Windows:** se o sensor ESP32 não conectar, libere a porta **1883** no Firewall do Windows. O ESP32 só usa Wi-Fi de **2,4 GHz**.
+Os logins `admin` / `password` servem só para uso na sua máquina: [troque-os](#trocar-senhas) antes de qualquer outro uso.
 
 ---
 
-## Instalação manual (avançado)
+## 2. Teste sem sensor
 
-Quem prefere não usar o instalador faz os mesmos passos à mão:
+Para confirmar que o caminho inteiro funciona antes de montar o hardware, publique uma detecção de teste. Rode na pasta de instalação, em um terminal Linux, macOS, Git Bash ou WSL2:
 
 ```bash
+docker compose exec mosquitto sh -c 'mosquitto_pub -h localhost -u device -P "$(cat /run/secrets/mqtt_device/value)" -t sound/inference/teste-01 -m "{\"label\":\"siren\",\"confidence\":0.9}"'
+```
+
+Depois abra o painel **Sons Urbanos — ELEX20** no Grafana: um evento `siren` do dispositivo `teste-01` deve aparecer. Como `siren` tem urgência 3, o alerta também segue para o chat configurado no Hermes. Esse evento de teste fica no histórico.
+
+Se nada aparecer, veja [Solução de problemas](#solução-de-problemas).
+
+---
+
+## Ligar o sensor
+
+### Hardware
+
+- 1 ESP32-S3 com 16 MB de flash e 8 MB de PSRAM (N16R8);
+- 4 microfones I2S INMP441;
+- 4 motores de vibração, cada um acionado por um MOSFET;
+- cabo USB e rede Wi-Fi de **2,4 GHz**, a mesma do computador ou com rota até ele.
+
+### Ligações
+
+Alimente os microfones com **3,3 V** e GND. Eles compartilham os sinais de clock, e o pino L/R define o canal de cada um:
+
+| Posição  | SCK    | WS     | SD     | L/R   | Motor (via MOSFET) |
+| -------- | ------ | ------ | ------ | ----- | ------------------ |
+| Frente   | GPIO 4 | GPIO 5 | GPIO 6 | GND   | GPIO 18            |
+| Trás     | GPIO 4 | GPIO 5 | GPIO 6 | 3,3 V | GPIO 16            |
+| Direita  | GPIO 4 | GPIO 5 | GPIO 7 | GND   | GPIO 17            |
+| Esquerda | GPIO 4 | GPIO 5 | GPIO 7 | 3,3 V | GPIO 15            |
+
+Os pinos ficam em `firmware/platformio.ini`. O firmware assume os microfones a 9 cm do centro (`MIC_RADIUS_M`): ajuste esse valor se o seu arranjo for diferente, porque ele entra no cálculo da direção.
+
+### Libere o MQTT na rede
+
+Por segurança, o Mosquitto só aceita conexões do próprio computador. Se você respondeu "sim" à pergunta do sensor no instalador, isso já está feito. Caso contrário, coloque o IP do computador na rede em `MQTT_BIND`, no `.env`, e aplique:
+
+```bash
+docker compose up -d mosquitto
+```
+
+Use o IP real da rede, nunca `0.0.0.0`. No Windows, libere também a porta **1883** no Firewall.
+
+### Grave o firmware
+
+Instale o [PlatformIO](https://platformio.org/install/cli) e, na pasta do repositório clonado, prepare as credenciais. Se o instalador já gerou o `firmware/.env`, pule a cópia:
+
+```bash
+cd firmware
 cp .env.example .env
 ```
 
-O `.env` é opcional: sem ele a stack sobe com os padrões (logins `admin` / `password`). Nenhuma senha precisa ser criada à mão: o serviço `secrets-init` gera os segredos internos na primeira subida. Preencha o `.env` só para o que for seu: tokens dos bots, `MQTT_BIND` com o IP do computador na rede (o padrão `127.0.0.1` só aceita conexões locais, necessário para o ESP32) e, no macOS e no Windows, `COMPOSE_PROFILES=` vazio.
+Preencha `WIFI_SSID`, `WIFI_PASS`, `MQTT_HOST` (o IP do computador) e `MQTT_PASS`. Essa senha é gerada pela stack; para vê-la, rode na pasta de instalação:
 
 ```bash
-docker compose up -d
-docker compose ps        # espere 30–60 s: tudo deve estar running ou healthy
+docker compose exec mosquitto cat /run/secrets/mqtt_device/value
 ```
 
-Depois, ligue o n8n ao banco e ao MQTT:
+Conecte a placa pela USB, grave e acompanhe o log:
 
 ```bash
-# crie as credenciais e importe/ative os workflows (o instalador faz isto sozinho)
-docker compose exec n8n n8n import:workflow --separate --input=/workflows
+pio run -e esp32s3 -t upload && pio device monitor
 ```
 
-e, no n8n, crie as credenciais **Postgres** `TimescaleDB (n8n_app)` (host `timescaledb`, banco `POSTGRES_DB`, usuário `n8n_app`, senha em `docker compose exec n8n cat /run/secrets/n8n_db/value`) e **MQTT** `Mosquitto (usuário n8n)` (host `mosquitto`, porta 1883, usuário `n8n`, senha em `docker compose exec n8n cat /run/secrets/mqtt_n8n/value`), e ative os dois workflows. Por fim, baixe a reserva local do Hermes: `docker compose exec ollama ollama pull qwen2.5:3b`.
+O build falha de propósito se alguma credencial estiver vazia. Com tudo certo, o log mostra:
+
+```text
+[WiFi] IP: 192.168.x.x  RSSI: -55 dBm
+[MQTT] Conectado.
+[EI] Sem modelo em lib/ei-model/: janelas descartadas (use esp32s3_debug para o mock)
+```
+
+A última linha é esperada enquanto não houver modelo: o sensor já aparece como conectado, mas ainda não envia detecções.
+
+### Usar um modelo real
+
+O ELEX20 usa uma biblioteca exportada do [Edge Impulse](https://edgeimpulse.com/). Treine ou escolha um projeto com janela de áudio de 975 ms a 16 kHz e:
+
+1. No Edge Impulse, exporte em **Deployment → Arduino library**.
+2. Extraia o `.zip` em `firmware/lib/ei-model/`, pasta que não é versionada.
+3. Em `firmware/platformio.ini`, troque `EI_MODEL_HEADER` pelo header gerado (por exemplo, `meu_projeto_inferencing.h`).
+4. Acrescente um ambiente que inclua a biblioteca, trocando `NOME` pela pasta extraída:
+
+   ```ini
+   [env:esp32s3_model]
+   extends  = env:esp32s3
+   lib_deps =
+       ${env:esp32s3.lib_deps}
+       symlink://lib/ei-model/NOME
+   build_flags =
+       ${env:esp32s3.build_flags}
+       -Ilib/ei-model/NOME/src/edge-impulse-sdk/porting/espressif/esp-dsp/modules/fft/include
+       -I${platformio.packages_dir}/framework-arduinoespressif32-esp32s3-libs/include/xtensa/esp32s3/include
+   ```
+
+5. Grave com `pio run -e esp32s3_model -t upload` e confirme que a mensagem `[EI] Sem modelo` sumiu. Só mudar o header no ambiente `esp32s3` compila com sucesso, mas **sem** o modelo.
+
+**Os nomes das classes precisam coincidir.** Urgência e alertas dependem do rótulo, e a tabela inicial conhece só estes:
+
+| Urgência | Rótulos                                             |
+| -------- | --------------------------------------------------- |
+| 3 (alta) | `siren`, `car_horn`, `gun_shot`                     |
+| 2        | `dog_bark`, `drilling`, `jackhammer`                |
+| 1        | `engine_idling`, `children_playing`, `street_music` |
+| 0        | `air_conditioner`                                   |
+
+Um rótulo fora da tabela é gravado sem urgência e não gera alerta, direção nem vibração. Para usar outros nomes, altere `sound_classes` no banco com `UPDATE`/`INSERT` e a mesma tabela em `firmware/lib/elex_core/settings.cpp`.
+
+> O ambiente `esp32s3_debug` envia detecções simuladas para testar o Wi-Fi e o MQTT sem modelo. Elas são marcadas com `mock` e **a ingestão as descarta de propósito**: nunca aparecem no Grafana. Para vê-las, observe o tráfego do broker:
+>
+> ```bash
+> docker compose exec mosquitto sh -c 'mosquitto_sub -h localhost -u n8n -P "$(cat /run/secrets/mqtt_n8n/value)" -t "sound/#" -v'
+> ```
 
 ---
 
-## Primeiro uso de cada serviço
+## Usar o sistema
 
-### Grafana — dashboards
+### Grafana — painéis
 
-1. Acesse <http://localhost:3000>
-2. Entre com `admin` / `password` (ou os valores de `GRAFANA_ADMIN_USER` e `GRAFANA_ADMIN_PASSWORD` do `.env`) e troque a senha
-3. Os dashboards de sons urbanos já estão pré-configurados na seção **Dashboards**
+1. Acesse <http://localhost:3000>.
+2. Entre com `admin` / `password` (ou `GRAFANA_ADMIN_USER` e `GRAFANA_ADMIN_PASSWORD` do `.env`) e troque a senha.
+3. Abra **Dashboards → Sons Urbanos — ELEX20**.
 
-### n8n — automação de fluxos
+### n8n — automação
 
-O n8n exige a criação de uma conta **apenas na primeira abertura**:
+O n8n pede a criação de uma conta **apenas na primeira abertura**:
 
-1. Acesse <http://localhost:5678>
-2. Preencha o formulário com nome, e-mail e senha (qualquer valor — é local)
-3. Clique em **Get started**
+1. Acesse <http://localhost:5678>.
+2. Preencha nome, e-mail e senha (qualquer valor: a conta é local).
+3. Clique em **Get started**.
 
-Os workflows **ELEX20 - Ingestão MQTT** e **ELEX20 - Comando ao dispositivo** já estão importados e ativos (o instalador cuida disso).
+Os workflows **ELEX20 - Ingestão MQTT** e **ELEX20 - Comando ao dispositivo** já ficam importados e ativos pelo instalador. Você não precisa mexer neles para usar o sistema.
 
 ### Hermes — assistente de IA
 
-1. Acesse <http://localhost:9119> e entre com `admin` / `password` (ou `HERMES_DASHBOARD_USER` e `HERMES_DASHBOARD_PASS` do `.env`)
-2. Fale com o bot no Telegram ou no Discord (só os IDs listados em `TELEGRAM_ALLOWED_USERS` e `DISCORD_ALLOWED_USERS` são atendidos)
-3. Ferramentas que ele tem: `sensores_status`, `eventos_recentes`, `resumo_sons`, `direcao_predominante`, `classes_urgencia` e `enviar_comando`. Ele lê o banco só com o papel `hermes_ro` e nunca fala direto com o MQTT: os comandos passam pelo n8n, que valida chave e faixa.
-4. Os alertas de urgência alta chegam ao chat definido em `TELEGRAM_HOME_CHANNEL`.
+1. Acesse <http://localhost:9119> e entre com `admin` / `password` (ou `HERMES_DASHBOARD_USER` e `HERMES_DASHBOARD_PASS` do `.env`).
+2. Fale com o bot no Telegram ou no Discord. Só os IDs de `TELEGRAM_ALLOWED_USERS` e `DISCORD_ALLOWED_USERS` são atendidos.
+3. Os alertas de urgência alta chegam ao chat de `TELEGRAM_HOME_CHANNEL`.
 
-A reserva local do Hermes usa o modelo `qwen2.5:3b`; as alternativas estão comentadas em `hermes/config.yaml`. Os níveis de urgência por tipo de som (`sound_classes`) são uma proposta inicial: ajuste com `UPDATE` e mantenha a mesma tabela em `firmware/lib/elex_core/settings.cpp`.
+O Hermes consulta o banco só para leitura e nunca fala direto com o sensor: os comandos passam pelo n8n, que valida chave e faixa.
+
+| Pergunte sobre          | Ferramenta usada                       |
+| ----------------------- | -------------------------------------- |
+| Sensores conectados     | `sensores_status`                      |
+| Últimos sons            | `eventos_recentes`                     |
+| Resumo por período      | `resumo_sons`                          |
+| De onde vêm os sons     | `direcao_predominante`                 |
+| Urgência de cada rótulo | `classes_urgencia`                     |
+| Ajustes do sensor       | `enviar_comando`, com as chaves abaixo |
+
+| Chave           | Valor       | O que ajusta                                                             |
+| --------------- | ----------- | ------------------------------------------------------------------------ |
+| `threshold`     | 0,30 a 0,99 | Confiança mínima para uma detecção                                       |
+| `doa_enabled`   | 0 ou 1      | Estimativa de direção                                                    |
+| `motor_enabled` | 0 ou 1      | Vibração                                                                 |
+| `motor_max_ms`  | 100 a 2000  | Duração máxima da vibração                                               |
+| `port1_skew`    | -8 a 8      | Atraso, em amostras, do segundo par de microfones em relação ao primeiro |
+
+Sem chave do OpenRouter, o Hermes usa o modelo local `qwen2.5:3b`; as alternativas estão comentadas em `hermes/config.yaml`.
 
 ---
 
@@ -212,13 +293,13 @@ docker compose restart grafana   # reinicia um serviço
 docker compose down      # remove os containers (os dados nos volumes ficam)
 ```
 
-> **Os dados não são perdidos** ao parar ou remover containers — ficam em volumes Docker. Só `docker compose down -v` apaga os volumes: **nunca use esse comando** sem backup.
+> **Os dados não são perdidos** ao parar ou remover containers: ficam em volumes do Docker. Só `docker compose down -v` apaga os volumes. **Nunca use esse comando** sem backup: ele apaga o histórico e as senhas internas, e o sensor precisaria ser regravado.
 
 Para atualizar as imagens: `docker compose pull` e depois `docker compose up -d`.
 
 ### Trocar senhas
 
-Os logins (Grafana e Hermes) ficam no `.env`; edite e reinicie os serviços afetados:
+Os logins do Grafana e do Hermes ficam no `.env`. Edite e reinicie os serviços afetados:
 
 ```bash
 docker compose up -d grafana hermes-agent timescaledb
@@ -226,7 +307,7 @@ docker compose up -d grafana hermes-agent timescaledb
 
 > `POSTGRES_PASSWORD`, `GRAFANA_ADMIN_PASSWORD` e a conta do n8n só valem na primeira criação dos dados; mudar depois exige trocar a senha dentro do próprio serviço.
 >
-> Os segredos internos são gerados uma vez e ficam em volumes do Docker (não em arquivos do repositório). Para fixar um valor, defina a variável no `.env` (por exemplo `MQTT_DEVICE_PASS=...`); ela sobrescreve o volume. **`docker compose down -v` apaga esses volumes**: os segredos são gerados de novo e o sensor precisa ser regravado com a nova senha MQTT.
+> Os segredos internos (banco, MQTT e tokens entre n8n e Hermes) são gerados uma vez e ficam em volumes do Docker. Para fixar um valor, defina a variável no `.env` (por exemplo, `MQTT_DEVICE_PASS=...`); ela sobrescreve o volume.
 
 ---
 
@@ -235,6 +316,23 @@ docker compose up -d grafana hermes-agent timescaledb
 ### O instalador diz que o Docker não está rodando
 
 Abra o Docker Desktop (Windows e macOS) e espere o ícone ficar verde. No Linux: `sudo systemctl start docker`. Se aparecer "permission denied", rode `sudo usermod -aG docker $USER` e entre de novo na sessão.
+
+### O sensor não conecta ao MQTT
+
+- Confira se o log do monitor mostra `[WiFi] IP:`. O ESP32 só usa Wi-Fi de **2,4 GHz**.
+- Confira se `MQTT_BIND` no `.env` é o IP atual do computador e igual a `MQTT_HOST` no `firmware/.env`. O IP pode mudar: reserve-o no roteador.
+- Depois de mudar `MQTT_BIND`, rode `docker compose up -d mosquitto`. Depois de mudar `firmware/.env`, grave o firmware de novo.
+- `rc=4` ou `rc=5` no log indicam senha ou usuário errado. No Windows, libere a porta **1883** no Firewall.
+
+### O sensor conecta, mas nada aparece no Grafana
+
+- `[EI] Sem modelo` no log: o firmware foi gravado sem modelo; veja [Usar um modelo real](#usar-um-modelo-real).
+- Firmware `esp32s3_debug`: as leituras simuladas são descartadas de propósito.
+- Workflows inativos: abra o n8n e confira, ou rode o instalador de novo.
+
+### Os alertas não chegam
+
+Confira `TELEGRAM_HOME_CHANNEL` no `.env`, se os workflows do n8n estão ativos e se o rótulo tem urgência 3 na tabela. Rótulos fora da tabela não geram alerta.
 
 ### `docker compose up -d` falha com "port already in use"
 
@@ -264,9 +362,78 @@ docker logs hermes-agent --tail 20
 
 Se aparecer `The token ... was rejected`, o token do Telegram ou do Discord está inválido: corrija no `.env` e rode `docker compose restart hermes-agent`.
 
-### Os alertas não chegam no Telegram
+---
 
-Confira `TELEGRAM_HOME_CHANNEL` no `.env` e se os workflows do n8n estão ativos (<http://localhost:5678>).
+## Referência
+
+### Verificar o download (opcional)
+
+Cada release traz um `.sigstore.json` por arquivo e os hashes: um `.sha256` por arquivo na v1.0.0 e um `SHA256SUMS` único nas versões seguintes. Com o hash na mesma pasta do download, rode o comando que corresponde à sua versão:
+
+```bash
+sha256sum --check elex-instalador-linux-x86_64.sha256
+```
+
+```bash
+sha256sum --check --ignore-missing SHA256SUMS
+```
+
+Para conferir a origem, use o [cosign](https://docs.sigstore.dev/cosign/system_config/installation/):
+
+```bash
+cosign verify-blob \
+  --bundle elex-instalador-linux-x86_64.sigstore.json \
+  --certificate-identity "https://github.com/Chan-28/ELEX20/.github/workflows/release.yml@refs/tags/<versão>" \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  elex-instalador-linux-x86_64
+```
+
+### O que o instalador faz
+
+1. Confere se o Docker está instalado e ligado.
+2. Copia os arquivos da stack para a pasta de instalação.
+3. Cria o `.env` com os padrões (nunca troca um `.env` que já existe). As senhas internas são geradas pela própria stack na primeira subida (serviço `secrets-init`) e ficam em volumes do Docker.
+4. Executa `docker compose up -d` e espera o n8n e o Grafana responderem.
+5. Baixa o modelo local do Ollama (opcional).
+6. Cria no n8n as credenciais do Postgres e do MQTT, importa os workflows e os ativa.
+7. Gera o `firmware/.env` (opcional, se houver a pasta `firmware/`).
+
+### Compatibilidade de sistemas operacionais
+
+| Recurso                         | Linux | macOS             | Windows                                                           |
+| ------------------------------- | ----- | ----------------- | ----------------------------------------------------------------- |
+| Instalador (executável)         | ✅    | ✅                | ✅                                                                |
+| Docker Compose (stack completa) | ✅    | ✅ Docker Desktop | ✅ Docker Desktop + WSL2                                          |
+| Coleta de logs (Alloy)          | ✅    | ➖ desligada      | ➖ desligada (ligue com `COMPOSE_PROFILES=logs` se quiser testar) |
+| Python / uv / firmware          | ✅    | ✅                | ✅                                                                |
+| direnv (`.envrc`)               | ✅    | ✅                | ⚠️ não disponível — use `set DOCKER_HOST=...` no WSL2 ou ignore   |
+| Commits com Husky               | ✅    | ✅                | ✅ Git Bash ou WSL2                                               |
+
+A coleta de logs (Alloy) lê caminhos do Docker que só existem no Linux; por isso o instalador a liga apenas lá. O restante da stack é igual nos três sistemas.
+
+### Instalação manual (avançado)
+
+Quem prefere não usar o instalador faz os mesmos passos à mão:
+
+```bash
+cp .env.example .env
+```
+
+O `.env` é opcional: sem ele a stack sobe com os padrões (logins `admin` / `password`). Nenhuma senha precisa ser criada à mão: o serviço `secrets-init` gera os segredos internos na primeira subida. Preencha o `.env` só para o que for seu: tokens dos bots, `MQTT_BIND` com o IP do computador na rede (o padrão `127.0.0.1` só aceita conexões locais, e o sensor precisa do IP da rede) e, no macOS e no Windows, `COMPOSE_PROFILES=` vazio.
+
+```bash
+docker compose up -d
+docker compose ps        # espere 30–60 s: tudo deve estar running ou healthy
+```
+
+Depois, ligue o n8n ao banco e ao MQTT:
+
+```bash
+# importa os workflows (o instalador faz isto sozinho)
+docker compose exec n8n n8n import:workflow --separate --input=/workflows
+```
+
+No n8n, crie as credenciais **Postgres** `TimescaleDB (n8n_app)` (host `timescaledb`, banco `POSTGRES_DB`, usuário `n8n_app`, senha em `docker compose exec n8n cat /run/secrets/n8n_db/value`) e **MQTT** `Mosquitto (usuário n8n)` (host `mosquitto`, porta 1883, usuário `n8n`, senha em `docker compose exec n8n cat /run/secrets/mqtt_n8n/value`), e ative os dois workflows. Por fim, baixe a reserva local do Hermes: `docker compose exec ollama ollama pull qwen2.5:3b`.
 
 ---
 
