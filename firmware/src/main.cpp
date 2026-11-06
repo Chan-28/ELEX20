@@ -7,10 +7,23 @@
  *   → direção por GCC-PHAT (8 setores) quando há som de alerta
  *   → motor do setor + JSON MQTT → Mosquitto → n8n → TimescaleDB
  *
+ * Tarefas (a rede nunca bloqueia captura, inferência nem motor):
+ *   capture  (núcleo 0, prio 5)  lê os microfones e enche as janelas
+ *   loop()   (núcleo 1, prio 1)  classifica, estima a direção e pede a vibração
+ *   motor    (núcleo 1, prio 4)  liga e desliga os motores; preempta a inferência
+ *   net      (núcleo 0, prio 1)  Wi-Fi, MQTT, comandos, publicação e heartbeat
+ *
+ * Sem rede, o sensor segue vibrando. As detecções feitas nesse período são
+ * descartadas, não guardadas: o banco data cada evento pela chegada, então um
+ * reenvio tardio ficaria com a hora errada. O total sai em "offline_dropped".
+ * Só escapa o que ainda está na fila (poucas detecções recentes) quando a conexão volta.
+ * Comandos enviados sem o sensor conectado se perdem (sessão limpa, sem retain).
+ *
  * Tópicos (Mosquitto local):
  *   sound/inference/<DEVICE_ID>  {"label","confidence","ts","device",
  *                                  "direction_deg","sector","doa_confidence"[,"mock"]}
- *   sound/status/<DEVICE_ID>     {"uptime_s","heap","rssi","device",+ ajustes atuais}
+ *   sound/status/<DEVICE_ID>     {"uptime_s","heap","rssi","device","dropped",
+ *                                  "offline_dropped",+ ajustes atuais}
  *   sound/cmd/<DEVICE_ID>        (assinado) {"key":"threshold","value":0.7}
  *
  * Microfones (cada INMP441 em formato I2S, 32 bits, 16 kHz):
@@ -29,10 +42,14 @@
 #include <ArduinoJson.h>
 #include <PubSubClient.h>
 #include <WiFi.h>
+#include <atomic>
 #include <driver/gpio.h>
 #include <driver/i2s.h>
+#include <freertos/queue.h>
 
+#include "backoff.h"
 #include "doa.h"
+#include "motor_timer.h"
 #include "settings.h"
 
 #ifndef ESP_ARDUINO_VERSION_MAJOR
@@ -123,7 +140,30 @@ static const char TOPIC_CMD[]       = MQTT_TOPIC_CMD       "/" DEVICE_ID;
 // ── Objetos ──────────────────────────────────────────────────
 WiFiClient   wifiClient;
 PubSubClient mqtt(wifiClient);
+
+// A tarefa de rede é a única que escreve em settings (comandos MQTT). As demais
+// leem uma cópia com settingsSnapshot(): os campos mudam juntos sob a trava.
 static elex::Settings settings;
+static portMUX_TYPE settingsLock = portMUX_INITIALIZER_UNLOCKED;
+
+static elex::Settings settingsSnapshot() {
+    portENTER_CRITICAL(&settingsLock);
+    const elex::Settings copy = settings;
+    portEXIT_CRITICAL(&settingsLock);
+    return copy;
+}
+
+// Detecção a publicar: vai do laço principal à tarefa de rede por uma fila curta
+struct Detection {
+    char label[32];
+    float confidence;
+    uint32_t ts;
+    elex::DoaResult doa;
+    bool mock;
+};
+static constexpr size_t kDetectionQueueLen = 8;
+static QueueHandle_t detectionQueue = nullptr;
+static std::atomic<uint32_t> offlineDropped{0};  // detecções sem rede ou com a fila cheia
 
 // Janela de áudio: 4 canais + mistura mono. Duas janelas (ping-pong): a captura
 // continua enquanto a inferência processa a outra; se a inferência atrasa, a
@@ -214,7 +254,7 @@ static void captureTask(void*) {
         i2s_read(I2S_NUM_0, b0, sizeof(b0), &n0, pdMS_TO_TICKS(1000));
         i2s_read(I2S_NUM_1, b1, sizeof(b1), &n1, pdMS_TO_TICKS(1000));
         const size_t frames = min(n0, n1) / (2 * sizeof(int32_t));
-        if (frames == 0) continue;  // microfone parado: o heartbeat segue no loop()
+        if (frames == 0) continue;  // microfone parado: a tarefa de rede segue com o heartbeat
 
         AudioWindow& w = windows[writeWin];
         for (size_t f = 0; f < frames; f++) {
@@ -241,26 +281,6 @@ static void captureTask(void*) {
     }
 }
 
-// ── WiFi ─────────────────────────────────────────────────────
-static void connectWiFi() {
-    Serial.printf("[WiFi] Conectando a %s", WIFI_SSID);
-    WiFi.mode(WIFI_STA);
-    WiFi.begin(WIFI_SSID, WIFI_PASS);
-    uint8_t attempts = 0;
-    while (WiFi.status() != WL_CONNECTED && attempts < 30) {
-        delay(500);
-        Serial.print('.');
-        attempts++;
-    }
-    if (WiFi.status() == WL_CONNECTED) {
-        Serial.printf("\n[WiFi] IP: %s  RSSI: %d dBm\n",
-                      WiFi.localIP().toString().c_str(), WiFi.RSSI());
-    } else {
-        Serial.println("\n[WiFi] Falha. Reiniciando...");
-        ESP.restart();
-    }
-}
-
 // ── Comandos MQTT ────────────────────────────────────────────
 // Payload: {"key":"threshold","value":0.7}. Chave e faixa são validadas em settings_apply.
 static void onMqttMessage(char* topic, byte* payload, unsigned int length) {
@@ -276,32 +296,29 @@ static void onMqttMessage(char* topic, byte* payload, unsigned int length) {
         return;
     }
     const float value = doc["value"].as<float>();
-    if (elex::settings_apply(settings, key, value)) {
+    // Só esta tarefa escreve em settings: lê sem trava e troca tudo de uma vez
+    elex::Settings next = settings;
+    if (elex::settings_apply(next, key, value)) {
+        portENTER_CRITICAL(&settingsLock);
+        settings = next;
+        portEXIT_CRITICAL(&settingsLock);
         Serial.printf("[CMD] %s = %.3f\n", key, value);
     } else {
         Serial.printf("[CMD] %s=%.3f recusado (chave ou faixa inválida)\n", key, value);
     }
 }
 
-// ── MQTT ─────────────────────────────────────────────────────
-static void mqttReconnect() {
-    for (uint8_t i = 0; i < 5 && !mqtt.connected(); i++) {
-        Serial.printf("[MQTT] Conectando a %s:%d ...\n", MQTT_HOST, MQTT_PORT);
-        if (mqtt.connect(DEVICE_ID, MQTT_USER, MQTT_PASS)) {
-            Serial.println("[MQTT] Conectado.");
-            mqtt.subscribe(TOPIC_CMD, 1);
-        } else {
-            Serial.printf("[MQTT] rc=%d — aguardando 2s\n", mqtt.state());
-            delay(2000);
-        }
-    }
-}
-
 // ── Motores (PWM) ────────────────────────────────────────────
 static const uint8_t kMotorPins[elex::kNumMics] = {MOTOR_PIN_FRONT, MOTOR_PIN_RIGHT, MOTOR_PIN_BACK, MOTOR_PIN_LEFT};
-static uint32_t motorOffAtMs   = 0;
-static uint32_t motorFreeAtMs  = 0;  // intervalo mínimo entre vibrações
-static bool     motorActive    = false;
+
+// Pedido de vibração. Só a tarefa do motor toca nos motores e no temporizador.
+struct MotorRequest {
+    uint8_t sector;
+    uint8_t duty;
+    uint16_t duration_ms;
+};
+static QueueHandle_t motorQueue = nullptr;  // uma posição: vale o pedido mais recente
+static elex::MotorTimer motorTimer;
 
 static void motorWrite(uint8_t m, uint8_t duty) {
 #if ESP_ARDUINO_VERSION_MAJOR >= 3
@@ -325,66 +342,78 @@ static void motorsInit() {
 
 static void motorsOff() {
     for (uint8_t m = 0; m < elex::kNumMics; m++) motorWrite(m, 0);
-    motorActive = false;
 }
 
 // Setor cardinal aciona o motor correspondente; diagonal aciona os dois vizinhos.
-static void motorTrigger(uint8_t sector, uint8_t urgency) {
-    const uint8_t duty = elex::motor_duty_for_urgency(urgency);
-    const uint32_t now = millis();
-    if (!settings.motor_enabled || duty == 0 || now < motorFreeAtMs) return;
+static void motorsOn(const MotorRequest& req) {
+    if (!motorTimer.start(millis(), req.duration_ms)) return;  // vibrando ou em descanso
     motorsOff();
-    if (sector % 2 == 0) {
-        motorWrite(sector / 2, duty);
+    if (req.sector % 2 == 0) {
+        motorWrite(req.sector / 2, req.duty);
     } else {
-        motorWrite((sector - 1) / 2, duty);
-        motorWrite(((sector + 1) / 2) % elex::kNumMics, duty);
+        motorWrite((req.sector - 1) / 2, req.duty);
+        motorWrite(((req.sector + 1) / 2) % elex::kNumMics, req.duty);
     }
-    motorActive  = true;
-    motorOffAtMs = now + settings.motor_max_ms;
-    motorFreeAtMs = motorOffAtMs + 300;  // evita vibração contínua
 }
 
 static void motorsTick() {
-    if (motorActive && static_cast<int32_t>(millis() - motorOffAtMs) >= 0) motorsOff();
+    if (motorTimer.expired(millis())) motorsOff();
+}
+
+// Chamado pelo laço principal: só pede a vibração, nunca espera
+static void motorTrigger(uint8_t sector, uint8_t urgency, const elex::Settings& cfg) {
+    const uint8_t duty = elex::motor_duty_for_urgency(urgency);
+    if (!cfg.motor_enabled || duty == 0) return;
+    const MotorRequest req = {sector, duty, cfg.motor_max_ms};
+    xQueueOverwrite(motorQueue, &req);
+}
+
+// Dorme até o próximo pedido ou até a hora de desligar. Roda acima do laço principal
+// para o desligamento não esperar a inferência, que pode durar mais que a vibração.
+static void motorTask(void*) {
+    for (;;) {
+        const TickType_t wait = motorTimer.active()
+                                    ? pdMS_TO_TICKS(motorTimer.remaining_ms(millis()))
+                                    : portMAX_DELAY;
+        MotorRequest req;
+        if (xQueueReceive(motorQueue, &req, wait) == pdTRUE) motorsOn(req);
+        motorsTick();
+    }
 }
 
 // ── Publicar resultado ────────────────────────────────────────
 // mock=true marca leituras simuladas, para nunca se misturarem às reais no banco
-static void publishInference(const char* label, float confidence, const elex::DoaResult* doa, bool mock = false) {
+static bool publishInference(const Detection& d) {
     JsonDocument doc;
-    doc["label"]      = label;
-    doc["confidence"] = confidence;
-    doc["ts"]         = millis();
+    doc["label"]      = d.label;
+    doc["confidence"] = d.confidence;
+    doc["ts"]         = d.ts;
     doc["device"]     = DEVICE_ID;
-    if (doa != nullptr && doa->valid) {
-        doc["direction_deg"]  = static_cast<int>(doa->azimuth_deg + 0.5f) % 360;
-        doc["sector"]         = elex::sector_name(doa->sector);
-        doc["doa_confidence"] = doa->confidence;
+    if (d.doa.valid) {
+        doc["direction_deg"]  = static_cast<int>(d.doa.azimuth_deg + 0.5f) % 360;
+        doc["sector"]         = elex::sector_name(d.doa.sector);
+        doc["doa_confidence"] = d.doa.confidence;
     }
-    if (mock) doc["mock"] = true;
+    if (d.mock) doc["mock"] = true;
 
     char payload[256];
     const size_t n = serializeJson(doc, payload, sizeof(payload));
-    if (n == 0 || n >= sizeof(payload)) return;
-    mqtt.publish(TOPIC_INFERENCE, payload, false);
-
-    Serial.printf("[INF] %s  %.1f%%", label, confidence * 100.f);
-    if (doa != nullptr && doa->valid) Serial.printf("  %s (%.0f°)", elex::sector_name(doa->sector), doa->azimuth_deg);
-    Serial.println();
+    if (n == 0 || n >= sizeof(payload)) return false;
+    return mqtt.publish(TOPIC_INFERENCE, payload, false);
 }
 
 static void publishStatus() {
     JsonDocument doc;
-    doc["uptime_s"]      = millis() / 1000;
-    doc["heap"]          = ESP.getFreeHeap();
-    doc["rssi"]          = WiFi.RSSI();
-    doc["device"]        = DEVICE_ID;
-    doc["dropped"]       = droppedWindows;
-    doc["threshold"]     = settings.threshold;
-    doc["doa_enabled"]   = settings.doa_enabled;
-    doc["motor_enabled"] = settings.motor_enabled;
-    doc["port1_skew"]    = settings.port1_skew;
+    doc["uptime_s"]        = millis() / 1000;
+    doc["heap"]            = ESP.getFreeHeap();
+    doc["rssi"]            = WiFi.RSSI();
+    doc["device"]          = DEVICE_ID;
+    doc["dropped"]         = droppedWindows;
+    doc["offline_dropped"] = offlineDropped.load();
+    doc["threshold"]       = settings.threshold;
+    doc["doa_enabled"]     = settings.doa_enabled;
+    doc["motor_enabled"]   = settings.motor_enabled;
+    doc["port1_skew"]      = settings.port1_skew;
 
     char payload[320];
     const size_t n = serializeJson(doc, payload, sizeof(payload));
@@ -392,23 +421,119 @@ static void publishStatus() {
     mqtt.publish(TOPIC_STATUS, payload, true);
 }
 
+// ── Rede ─────────────────────────────────────────────────────
+// Roda inteira na tarefa de rede: mqtt.connect() e a resolução de nomes bloqueiam
+// por segundos, mas aqui isso só atrasa a própria rede. Nunca reinicia a placa.
+static constexpr uint32_t kNetTickMs        = 50;
+static constexpr uint32_t kStatusPeriodMs   = 5000;
+static constexpr uint8_t  kMqttSocketTimeoutS = 5;  // limita a espera pelo CONNACK
+
+// O mínimo do Wi-Fi é o tempo de uma associação: WiFi.begin() não espera por ela
+static elex::Backoff wifiBackoff(15000, 120000);
+static elex::Backoff mqttBackoff(2000, 60000);
+
+static bool wifiService() {
+    static bool wasUp = false;
+    const bool up = WiFi.status() == WL_CONNECTED;
+    if (up && !wasUp) {
+        Serial.printf("[WiFi] IP: %s  RSSI: %d dBm\n", WiFi.localIP().toString().c_str(), WiFi.RSSI());
+        wifiBackoff.connected();
+        mqttBackoff.connected();  // o broker pode ter ficado inalcançável só pelo Wi-Fi
+    } else if (!up && wasUp) {
+        Serial.println("[WiFi] Conexão perdida; o sensor segue sem rede");
+        mqtt.disconnect();  // solta o socket antigo antes da próxima conexão
+    }
+    wasUp = up;
+    if (up) return true;
+
+    const uint32_t now = millis();
+    if (wifiBackoff.due(now)) {
+        wifiBackoff.attempted(now);
+        Serial.printf("[WiFi] Conectando a %s (próxima em %lu s)\n", WIFI_SSID,
+                      static_cast<unsigned long>(wifiBackoff.wait_ms() / 1000));
+        WiFi.disconnect();
+        WiFi.begin(WIFI_SSID, WIFI_PASS);
+    }
+    return false;
+}
+
+static bool mqttService() {
+    if (mqtt.connected()) return true;
+    if (!mqttBackoff.due(millis())) return false;
+
+    Serial.printf("[MQTT] Conectando a %s:%d ...\n", MQTT_HOST, MQTT_PORT);
+    bool up = mqtt.connect(DEVICE_ID, MQTT_USER, MQTT_PASS);
+    if (up) {
+        // A sessão é limpa: sem assinar de novo, os comandos parariam de chegar
+        up = mqtt.subscribe(TOPIC_CMD, 1);
+        if (!up) mqtt.disconnect();
+    }
+    mqttBackoff.attempted(millis());  // conta do fim: a tentativa pode levar segundos
+    if (up) {
+        Serial.println("[MQTT] Conectado.");
+        mqttBackoff.connected();
+    } else {
+        Serial.printf("[MQTT] rc=%d — próxima em %lu s\n", mqtt.state(),
+                      static_cast<unsigned long>(mqttBackoff.wait_ms() / 1000));
+    }
+    return up;
+}
+
+static void netTask(void*) {
+    WiFi.persistent(false);         // credenciais vêm do build; não grava a flash a cada tentativa
+    WiFi.setAutoReconnect(false);   // quem reconecta é wifiBackoff, com recuo
+    WiFi.mode(WIFI_STA);
+    mqtt.setServer(MQTT_HOST, MQTT_PORT);
+    mqtt.setBufferSize(512);
+    mqtt.setKeepAlive(30);
+    mqtt.setSocketTimeout(kMqttSocketTimeoutS);
+    mqtt.setCallback(onMqttMessage);
+
+    uint32_t lastStatusMs = 0;
+    for (;;) {
+        const bool online = wifiService() && mqttService() && mqtt.loop();
+
+        // A fila dá o ritmo da tarefa: acorda na hora quando chega uma detecção
+        Detection d;
+        if (xQueueReceive(detectionQueue, &d, pdMS_TO_TICKS(kNetTickMs)) == pdTRUE) {
+            if (!online || !publishInference(d)) offlineDropped.fetch_add(1);
+        }
+
+        if (online && millis() - lastStatusMs >= kStatusPeriodMs) {
+            lastStatusMs = millis();
+            publishStatus();
+        }
+    }
+}
+
 // ── Direção e resposta háptica de uma detecção ───────────────
 static void handleDetection(const AudioWindow& w, const char* label, float confidence, bool mock) {
-    if (confidence < settings.threshold) return;
+    const elex::Settings cfg = settingsSnapshot();
+    if (confidence < cfg.threshold) return;
     const uint8_t urgency = elex::urgency_for_label(label);
 
-    elex::DoaResult doa;
-    if (!mock && settings.doa_enabled && urgency > 0) {
+    Detection d = {};
+    strlcpy(d.label, label, sizeof(d.label));
+    d.confidence = confidence;
+    d.ts = millis();
+    d.mock = mock;
+    if (!mock && cfg.doa_enabled && urgency > 0) {
         const size_t start = elex::doa_loudest_window(w.mono, AUDIO_WINDOW_SAMPLES);
         const int16_t* mics[elex::kNumMics] = {w.ch[0] + start, w.ch[1] + start, w.ch[2] + start, w.ch[3] + start};
-        elex::DoaConfig cfg;
-        cfg.sample_rate = AUDIO_SAMPLE_RATE;
-        cfg.radius_m = MIC_RADIUS_M;
-        cfg.port1_skew_samples = settings.port1_skew;
-        doa = elex::doa_estimate(mics, cfg);
-        if (doa.valid) motorTrigger(doa.sector, urgency);
+        elex::DoaConfig doaCfg;
+        doaCfg.sample_rate = AUDIO_SAMPLE_RATE;
+        doaCfg.radius_m = MIC_RADIUS_M;
+        doaCfg.port1_skew_samples = cfg.port1_skew;
+        d.doa = elex::doa_estimate(mics, doaCfg);
+        if (d.doa.valid) motorTrigger(d.doa.sector, urgency, cfg);
     }
-    publishInference(label, confidence, &doa, mock);
+
+    Serial.printf("[INF] %s  %.1f%%", label, confidence * 100.f);
+    if (d.doa.valid) Serial.printf("  %s (%.0f°)", elex::sector_name(d.doa.sector), d.doa.azimuth_deg);
+    Serial.println();
+
+    // A tarefa de rede publica ou, sem conexão, descarta. Nunca espera aqui.
+    if (xQueueSend(detectionQueue, &d, 0) != pdTRUE) offlineDropped.fetch_add(1);
 }
 
 // ── Inferência Edge Impulse ───────────────────────────────────
@@ -470,39 +595,32 @@ void setup() {
     Serial.printf("[MEM] 2 janelas de %u amostras x 5 canais (%s)\n",
                   static_cast<unsigned>(AUDIO_WINDOW_SAMPLES), psramFound() ? "PSRAM" : "heap");
 
+    detectionQueue = xQueueCreate(kDetectionQueueLen, sizeof(Detection));
+    motorQueue     = xQueueCreate(1, sizeof(MotorRequest));
+    if (detectionQueue == nullptr || motorQueue == nullptr) {
+        Serial.println("[MEM] ERRO: sem memória para as filas!");
+        ESP.restart();
+    }
+
     motorsInit();
     i2sInit();
+    xTaskCreatePinnedToCore(motorTask, "motor", 4096, nullptr, 4, nullptr, 1);
     xTaskCreatePinnedToCore(captureTask, "capture", 6144, nullptr, 5, nullptr, 0);
-    connectWiFi();
-
-    mqtt.setServer(MQTT_HOST, MQTT_PORT);
-    mqtt.setBufferSize(512);
-    mqtt.setKeepAlive(30);
-    mqtt.setCallback(onMqttMessage);
-    mqttReconnect();
+    xTaskCreatePinnedToCore(netTask, "net", 8192, nullptr, 1, nullptr, 0);
 }
 
 // ── Loop ──────────────────────────────────────────────────────
-static uint32_t lastStatusMs = 0;
-
+// Só áudio: rede e motores têm tarefas próprias
 void loop() {
-    if (WiFi.status() != WL_CONNECTED) connectWiFi();
-    if (!mqtt.connected())             mqttReconnect();
-    mqtt.loop();
-    motorsTick();
-
-    // Janela completa: classifica, estima direção e publica
     const int ready = readyWin;
-    if (ready >= 0) {
-        inferBusy = true;
-        runInference(windows[ready]);
-        readyWin  = -1;
-        inferBusy = false;
+    if (ready < 0) {
+        delay(1);  // sem janela pronta, libera o núcleo
+        return;
     }
 
-    // Heartbeat a cada 5 s
-    if (millis() - lastStatusMs >= 5000UL) {
-        lastStatusMs = millis();
-        publishStatus();
-    }
+    // Janela completa: classifica, estima a direção e pede a vibração
+    inferBusy = true;
+    runInference(windows[ready]);
+    readyWin  = -1;
+    inferBusy = false;
 }

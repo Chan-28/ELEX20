@@ -22,6 +22,8 @@ O ELEX20 tem duas partes, e você pode começar só pela primeira:
 
 > **Importante:** o modelo que reconhece os sons **não vem neste repositório**. Sem ele, o sensor conecta e informa o próprio estado, mas não publica classificações. Veja [Usar um modelo real](#usar-um-modelo-real).
 
+> **Sem rede:** o firmware foi feito para seguir classificando, estimando a direção e vibrando sem Wi-Fi ou Mosquitto, e para reconectar sozinho, com intervalos crescentes. Só o histórico, os alertas e os comandos dependem da rede. As detecções feitas sem conexão são descartadas, não reenviadas, e os comandos enviados nesse período se perdem. O campo `offline_dropped`, no status do sensor, conta as detecções que não chegaram ao servidor. Esse comportamento ainda não foi validado em hardware.
+
 **Roteiro:**
 
 1. [Instale o servidor](#1-instale-o-servidor).
@@ -320,6 +322,7 @@ Abra o Docker Desktop (Windows e macOS) e espere o ícone ficar verde. No Linux:
 ### O sensor não conecta ao MQTT
 
 - Confira se o log do monitor mostra `[WiFi] IP:`. O ESP32 só usa Wi-Fi de **2,4 GHz**.
+- A falta de rede não reinicia o sensor: ele tenta de novo sozinho, a cada 15 s a 2 min no Wi-Fi e a cada 2 s a 1 min no MQTT.
 - Confira se `MQTT_BIND` no `.env` é o IP atual do computador e igual a `MQTT_HOST` no `firmware/.env`. O IP pode mudar: reserve-o no roteador.
 - Depois de mudar `MQTT_BIND`, rode `docker compose up -d mosquitto`. Depois de mudar `firmware/.env`, grave o firmware de novo.
 - `rc=4` ou `rc=5` no log indicam senha ou usuário errado. No Windows, libere a porta **1883** no Firewall.
