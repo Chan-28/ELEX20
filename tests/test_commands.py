@@ -1,9 +1,9 @@
-"""Testes da validação de comandos ao dispositivo (hermes/mcp/comandos.py)."""
+"""Testes da validação de comandos ao dispositivo (hermes/mcp/commands.py)."""
 
 import math
 
 import pytest
-from comandos import COMANDOS, validar_comando
+from commands import COMANDOS, validar_comando
 
 
 def test_comando_valido_normaliza_o_valor():

@@ -6,7 +6,7 @@ manifesto.csv (origem e licença de cada clipe) e relatorio.json (contagens).
 Nada aqui envia dados a um serviço externo.
 
 Uso:
-  uv run python training/preparar_dataset.py --fsd50k <dir> --urbansound8k <dir> \
+  uv run python training/prepare_dataset.py --fsd50k <dir> --urbansound8k <dir> \
       --esc50 <dir> --saida <dir> [--sem-nc] [--somente-relatorio]
 """
 

@@ -33,10 +33,10 @@ from pathlib import Path
 
 
 def ler_versao() -> str:
-    """Versão gravada pelo CI (versao.txt, a partir da tag); '0.0.0-dev' fora de um build de release."""
+    """Versão gravada pelo CI (version.txt, a partir da tag); '0.0.0-dev' fora de um build de release."""
     pasta = Path(sys._MEIPASS) if getattr(sys, "frozen", False) else Path(__file__).resolve().parent  # type: ignore[attr-defined]  # noqa: SLF001
     try:
-        return (pasta / "versao.txt").read_text(encoding="utf-8").strip() or "dev"
+        return (pasta / "version.txt").read_text(encoding="utf-8").strip() or "dev"
     except OSError:
         return "dev"
 

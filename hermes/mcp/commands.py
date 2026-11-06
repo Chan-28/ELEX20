@@ -1,7 +1,7 @@
 """Validação dos comandos que o Hermes pode pedir ao dispositivo (lista fechada).
 
 As faixas espelham firmware/lib/elex_core/settings.cpp e o Code node do workflow
-n8n/workflows/comando-dispositivo.json; mudou uma, confira as outras duas.
+n8n/workflows/device-command.json; mudou uma, confira as outras duas.
 """
 
 import math

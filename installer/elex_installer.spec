@@ -1,7 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
 # Empacota o instalador num executável único (Windows, macOS e Linux) com os arquivos
 # da stack embutidos. Build, a partir da raiz do repositório:
-#   uvx --from "pyinstaller>=6.11" pyinstaller installer/elex_instalador.spec --noconfirm
+#   uvx --from "pyinstaller>=6.11" pyinstaller installer/elex_installer.spec --noconfirm
 import sys
 from pathlib import Path
 
@@ -27,7 +27,7 @@ def arquivos_embutidos():
 a = Analysis(  # noqa: F821
     [str(pasta_do_spec / "elex_installer.py")],
     pathex=[str(pasta_do_spec)],
-    datas=[*arquivos_embutidos(), (str(pasta_do_spec / "versao.txt"), ".")],
+    datas=[*arquivos_embutidos(), (str(pasta_do_spec / "version.txt"), ".")],
     excludes=["tkinter", "unittest", "pydoc", "test"],
 )
 pyz = PYZ(a.pure)  # noqa: F821
@@ -37,7 +37,7 @@ exe = EXE(  # noqa: F821
     a.binaries,
     a.datas,
     [],
-    name="elex-instalador",
+    name="elex-installer",
     console=True,
     upx=False,
 )

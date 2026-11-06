@@ -8,7 +8,7 @@ from pathlib import Path
 
 RAIZ = Path(__file__).resolve().parent.parent
 LISTA = json.loads((RAIZ / "classes" / "sound_classes.json").read_text(encoding="utf-8"))
-ESPEC = importlib.util.spec_from_file_location("preparar_dataset", RAIZ / "training" / "preparar_dataset.py")
+ESPEC = importlib.util.spec_from_file_location("prepare_dataset", RAIZ / "training" / "prepare_dataset.py")
 preparar = importlib.util.module_from_spec(ESPEC)
 ESPEC.loader.exec_module(preparar)
 CATEGORIAS = LISTA["categorias"]

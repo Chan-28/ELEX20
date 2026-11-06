@@ -16,7 +16,7 @@ from typing import Any
 
 import asyncpg
 import httpx
-from comandos import validar_comando
+from commands import validar_comando
 from mcp.server.mcpserver import MCPServer
 
 # Sem sinal há mais que isso = offline (o firmware publica um heartbeat a cada 5 s)
