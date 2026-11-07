@@ -1,0 +1,11 @@
+# Regras padrão do Gitleaks, sem os falsos positivos das pastas legadas R-Portable/ e
+# python-embed/ (R e Python embutidos de uma versão antiga). Elas já saíram do repositório,
+# mas continuam no histórico, que a varredura agendada percorre inteiro. São exemplos e
+# testes de pacotes de terceiros; achados reais em qualquer outro caminho continuam bloqueando.
+# "[allowlist]" e não "[[allowlists]]": o gitleaks 8.24 do gitleaks-action ignora a forma nova.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Pastas legadas: R portátil e Python embutido"
+paths = ['''^R-Portable/''', '''^python-embed/''']

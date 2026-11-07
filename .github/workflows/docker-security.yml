@@ -5,11 +5,14 @@ on:
     branches: [main]
     paths:
       - "docker-compose.yaml"
+      - ".gitleaks.toml"
       - ".github/workflows/docker-security.yml"
   pull_request:
     branches: [main]
     paths:
       - "docker-compose.yaml"
+      - ".gitleaks.toml"
+      - ".github/workflows/docker-security.yml"
   schedule:
     # Varredura às 12:00 UTC
     - cron: "0 12 * * *"
@@ -62,38 +65,41 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
 
-  # 3. Varre cada imagem do compose
+  # 3. Varre cada imagem do compose. A lista sai do próprio compose (com digest), para
+  #    a varredura nunca ficar numa versão diferente da que roda. Jobs de uma vez
+  #    (restart: "no") usam imagens já cobertas ou o busybox.
+
+  list-images:
+    name: List compose images
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.images.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Read images from docker-compose.yaml
+        id: images
+        env:
+          COMPOSE_PROFILES: logs
+        run: |
+          MATRIX=$(docker compose --env-file .env.example -f docker-compose.yaml config --format json \
+            | jq -c '.services | to_entries | map(select(.value.restart != "no") | {image: .value.image, alias: .key}) | sort_by(.alias)')
+          echo "$MATRIX" | jq .
+          echo "matrix=$MATRIX" >> "$GITHUB_OUTPUT"
 
   grype-scan:
-    name: Grype Image Scan (${{ matrix.image }})
+    name: Grype Image Scan (${{ matrix.alias }})
     runs-on: ubuntu-latest
+    needs: list-images
     permissions:
       contents: read
       security-events: write # upload do SARIF ao GitHub Security
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - image: "timescale/timescaledb:2.31.0-pg16"
-            alias: timescaledb
-          - image: "docker.n8n.io/n8nio/n8n:2.46.3"
-            alias: n8n
-          - image: "ollama/ollama:0.40.13"
-            alias: ollama
-          - image: "grafana/grafana:13.3.0"
-            alias: grafana
-          - image: "grafana/loki:3.7.9"
-            alias: loki
-          - image: "grafana/alloy:v1.21.3"
-            alias: alloy
-          - image: "grafana/pyroscope:2.4.2"
-            alias: pyroscope
-          - image: "eclipse-mosquitto:2.1.2-alpine"
-            alias: mosquitto
-          - image: "lightpanda/browser:1.0.2"
-            alias: lightpanda
-          - image: "nousresearch/hermes-agent:v0.22.5"
-            alias: hermes-agent
+        include: ${{ fromJSON(needs.list-images.outputs.matrix) }}
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

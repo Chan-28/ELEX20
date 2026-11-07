@@ -28,7 +28,7 @@ services:
       - sec_n8n_command:/secrets/n8n_command
 
   timescaledb:
-    image: timescale/timescaledb:2.31.0-pg16
+    image: timescale/timescaledb:2.31.0-pg16@sha256:322ae364eca3321cf2a48f1ef31213b87843413b3cf8feeebf54e999a26bb731
     container_name: timescaledb
     restart: unless-stopped
     # Porta não exposta ao host — acesso apenas pela rede interna 'monitoring'
@@ -54,7 +54,7 @@ services:
   # Aplica papéis de privilégio mínimo (grafana_ro, n8n_app), o banco do n8n e as
   # restrições de dados. Idempotente: roda a cada `up`, em volumes novos e antigos.
   db-init:
-    image: timescale/timescaledb:2.31.0-pg16
+    image: timescale/timescaledb:2.31.0-pg16@sha256:322ae364eca3321cf2a48f1ef31213b87843413b3cf8feeebf54e999a26bb731
     container_name: db-init
     restart: "no"
     environment:
@@ -79,7 +79,7 @@ services:
         condition: service_completed_successfully
 
   n8n:
-    image: docker.n8n.io/n8nio/n8n:2.46.3
+    image: docker.n8n.io/n8nio/n8n:2.46.3@sha256:1a6e1865c5e917945ede13a05b71381e69bbf52f3a60cbaf22a1809760338091
     container_name: n8n
     restart: unless-stopped
     ports:
@@ -214,7 +214,7 @@ services:
         condition: service_started
 
   grafana:
-    image: grafana/grafana:13.3.0
+    image: grafana/grafana:13.3.0@sha256:488984b716c0862639f91a698adbe2862677a5a07bad42da5f03f3030883b205
     container_name: grafana
     restart: unless-stopped
     ports:
@@ -253,7 +253,7 @@ services:
         condition: service_completed_successfully
 
   loki:
-    image: grafana/loki:3.7.9
+    image: grafana/loki:3.7.9@sha256:0db216b630ae1f348a1584c67f3cead8b4c1fc839169a39501db664744158e28
     container_name: loki
     restart: unless-stopped
     # Porta não exposta ao host — acesso apenas pela rede interna
