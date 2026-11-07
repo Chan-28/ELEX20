@@ -46,7 +46,9 @@ async def espera(piloto, condicao):
 
 
 async def espera_tela(app, piloto, classe):
-    await espera(piloto, lambda: isinstance(app.screen, classe))
+    # app.screen já aponta para a tela nova antes de ela montar os filhos; o
+    # botão #next vem por último no compose de todas as telas.
+    await espera(piloto, lambda: isinstance(app.screen, classe) and app.screen.query("#next"))
 
 
 async def proximo(app, piloto, classe):
@@ -207,3 +209,29 @@ def test_flag_uninstall_abre_direto_na_tela_de_remocao(tmp_path):
             assert not app.screen.query_one("#back").display
 
     asyncio.run(principal())
+
+
+def test_modelo_do_edge_impulse_entra_no_firmware(tmp_path):
+    estado = montar(tmp_path)
+    exportacao = tmp_path / "Meu_Modelo_inferencing"
+    (exportacao / "src").mkdir(parents=True)
+    (exportacao / "library.properties").write_text("name=Meu_Modelo_inferencing\n", encoding="utf-8")
+    (exportacao / "src" / "Meu_Modelo_inferencing.h").write_text("", encoding="utf-8")
+
+    async def cenario(app, piloto):
+        await ate_o_wifi(app, piloto)
+        app.screen.query_one("#fw", Switch).value = False
+        app.screen.query_one("#ei", Switch).value = True
+        await piloto.pause()
+        app.screen.query_one("#ei-path", Input).value = str(tmp_path / "nada.zip")
+        app.screen.query_one("#next").press()
+        await piloto.pause(0.1)
+        assert "does not exist" in str(app.screen.query_one("#ei-path-error", Static).render())
+        app.screen.query_one("#ei-path", Input).value = str(exportacao)
+        await proximo(app, piloto, tui.TelaRevisao)
+        assert ("Firmware sound model", str(exportacao)) in app.screen.linhas()
+        await proximo(app, piloto, tui.TelaFim)
+        assert app.screen.codigo == 0
+
+    rodar(cenario, estado)
+    assert (estado.pasta / "firmware" / "lib" / "ei-model" / "Meu_Modelo_inferencing" / "library.properties").is_file()
