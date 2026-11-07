@@ -63,18 +63,47 @@ ALTER TABLE sound_events ADD COLUMN IF NOT EXISTS sector TEXT CHECK (sector IN (
 ALTER TABLE sound_events ADD COLUMN IF NOT EXISTS doa_confidence FLOAT4 CHECK (doa_confidence BETWEEN 0 AND 1);
 ALTER TABLE sound_events ADD COLUMN IF NOT EXISTS urgency SMALLINT CHECK (urgency BETWEEN 0 AND 3);
 
--- Urgência por rótulo do modelo. A fonte é classes/sound_classes.json, e tests/test_classes.py confere.
--- Valores iniciais são uma proposta; ajuste com UPDATE (o seed não sobrescreve).
+-- Urgência por rótulo, em inglês. A fonte é classes/sound_classes.json, e tests/test_classes.py confere.
+-- O seed manda: cada subida restaura a urgência da lista e tira os rótulos que saíram dela.
 CREATE TABLE IF NOT EXISTS sound_classes (
     label    TEXT     PRIMARY KEY CHECK (char_length(label) BETWEEN 1 AND 64),
     urgency  SMALLINT NOT NULL CHECK (urgency BETWEEN 0 AND 3)
 );
 INSERT INTO sound_classes (label, urgency) VALUES
-    ('sirene', 3), ('buzina', 3), ('alarme', 3), ('tiro_explosao', 3), ('grito', 3),
-    ('impacto', 2), ('trem', 2), ('ferramenta', 1), ('veiculo', 1),
-    ('aeronave', 0), ('animal', 0), ('clima', 0), ('fala_multidao', 0),
-    ('musica', 0), ('silencio', 0)
-ON CONFLICT (label) DO NOTHING;
+    ('siren', 3), ('horn', 3), ('alarm', 3), ('gunshot_explosion', 3), ('scream', 3),
+    ('impact', 2), ('train', 2), ('power_tool', 1), ('vehicle', 1),
+    ('aircraft', 0), ('animal', 0), ('weather', 0), ('speech_crowd', 0),
+    ('music', 0), ('silence', 0)
+ON CONFLICT (label) DO UPDATE SET urgency = EXCLUDED.urgency;
+
+-- Migração idempotente dos rótulos em português (rotulo_legado no JSON), usados antes
+-- da troca para inglês: traduz os eventos já gravados e preenche a urgência que faltar.
+CREATE TEMP TABLE legacy_labels (legacy TEXT PRIMARY KEY, label TEXT NOT NULL);
+INSERT INTO legacy_labels (legacy, label) VALUES
+    ('sirene', 'siren'), ('buzina', 'horn'), ('alarme', 'alarm'), ('tiro_explosao', 'gunshot_explosion'),
+    ('grito', 'scream'), ('impacto', 'impact'), ('trem', 'train'), ('ferramenta', 'power_tool'),
+    ('veiculo', 'vehicle'), ('aeronave', 'aircraft'), ('clima', 'weather'),
+    ('fala_multidao', 'speech_crowd'), ('musica', 'music'), ('silencio', 'silence');
+
+WITH migrados AS (
+    UPDATE sound_events e
+    SET label = l.label, urgency = COALESCE(e.urgency, c.urgency)
+    FROM legacy_labels l
+    JOIN sound_classes c ON c.label = l.label
+    WHERE e.label = l.legacy
+    RETURNING 1
+)
+SELECT count(*) > 0 AS rotulos_migrados FROM migrados \gset
+-- A agregação por hora só se refaz sozinha para os últimos 7 dias
+\if :rotulos_migrados
+CALL refresh_continuous_aggregate('sound_events_hourly', NULL, NULL);
+\endif
+DROP TABLE legacy_labels;
+
+DELETE FROM sound_classes
+WHERE label NOT IN ('siren', 'horn', 'alarm', 'gunshot_explosion', 'scream', 'impact', 'train',
+                    'power_tool', 'vehicle', 'aircraft', 'animal', 'weather', 'speech_crowd',
+                    'music', 'silence');
 
 -- Estado dos sensores: heartbeat de sound/status/<device_id>, gravado pelo n8n
 CREATE TABLE IF NOT EXISTS device_status (
@@ -89,8 +118,27 @@ SELECT create_hypertable('device_status', 'time', if_not_exists => TRUE);
 CREATE INDEX IF NOT EXISTS idx_device_status_device_time ON device_status (device_id, time DESC);
 SELECT add_retention_policy('device_status', INTERVAL '30 days', if_not_exists => TRUE);
 
+-- Desempenho do sensor (migração idempotente): tempos em ms dos últimos 5 s (média e
+-- máximo da janela inteira; DSP e classificação do Edge Impulse), memória, folga de
+-- pilha da tarefa mais apertada, reconexões e descartes desde o boot e temperatura.
+ALTER TABLE device_status ADD COLUMN IF NOT EXISTS win_ms_avg      REAL   CHECK (win_ms_avg BETWEEN 0 AND 600000);
+ALTER TABLE device_status ADD COLUMN IF NOT EXISTS win_ms_max      REAL   CHECK (win_ms_max BETWEEN 0 AND 600000);
+ALTER TABLE device_status ADD COLUMN IF NOT EXISTS dsp_ms          REAL   CHECK (dsp_ms BETWEEN 0 AND 600000);
+ALTER TABLE device_status ADD COLUMN IF NOT EXISTS nn_ms           REAL   CHECK (nn_ms BETWEEN 0 AND 600000);
+ALTER TABLE device_status ADD COLUMN IF NOT EXISTS heap_min        BIGINT CHECK (heap_min >= 0);
+ALTER TABLE device_status ADD COLUMN IF NOT EXISTS psram_free      BIGINT CHECK (psram_free >= 0);
+ALTER TABLE device_status ADD COLUMN IF NOT EXISTS stack_min       INTEGER CHECK (stack_min >= 0);
+ALTER TABLE device_status ADD COLUMN IF NOT EXISTS wifi_connects   BIGINT CHECK (wifi_connects >= 0);
+ALTER TABLE device_status ADD COLUMN IF NOT EXISTS mqtt_connects   BIGINT CHECK (mqtt_connects >= 0);
+ALTER TABLE device_status ADD COLUMN IF NOT EXISTS dropped         BIGINT CHECK (dropped >= 0);
+ALTER TABLE device_status ADD COLUMN IF NOT EXISTS offline_dropped BIGINT CHECK (offline_dropped >= 0);
+ALTER TABLE device_status ADD COLUMN IF NOT EXISTS temp_c          REAL   CHECK (temp_c BETWEEN -40 AND 150);
+
+-- Colunas novas só no fim: CREATE OR REPLACE VIEW não reordena as existentes
 CREATE OR REPLACE VIEW device_last_status AS
-SELECT DISTINCT ON (device_id) device_id, time, uptime_s, heap, rssi
+SELECT DISTINCT ON (device_id) device_id, time, uptime_s, heap, rssi,
+       win_ms_avg, win_ms_max, dsp_ms, nn_ms, heap_min, psram_free, stack_min,
+       wifi_connects, mqtt_connects, dropped, offline_dropped, temp_c
 FROM device_status
 ORDER BY device_id, time DESC;
 

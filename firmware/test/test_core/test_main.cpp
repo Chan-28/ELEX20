@@ -6,7 +6,9 @@
 
 #include "backoff.h"
 #include "doa.h"
+#include "mic_stats.h"
 #include "motor_timer.h"
+#include "perf_stats.h"
 #include "settings.h"
 
 using namespace elex;
@@ -181,15 +183,79 @@ void test_comandos_validos_e_invalidos() {
 }
 
 void test_urgencia_e_motor() {
-    TEST_ASSERT_EQUAL_UINT8(3, urgency_for_label("sirene"));
-    TEST_ASSERT_EQUAL_UINT8(3, urgency_for_label("tiro_explosao"));
-    TEST_ASSERT_EQUAL_UINT8(2, urgency_for_label("impacto"));
-    TEST_ASSERT_EQUAL_UINT8(1, urgency_for_label("ferramenta"));
-    TEST_ASSERT_EQUAL_UINT8(0, urgency_for_label("musica"));
+    TEST_ASSERT_EQUAL_UINT8(3, urgency_for_label("siren"));
+    TEST_ASSERT_EQUAL_UINT8(3, urgency_for_label("gunshot_explosion"));
+    TEST_ASSERT_EQUAL_UINT8(2, urgency_for_label("impact"));
+    TEST_ASSERT_EQUAL_UINT8(1, urgency_for_label("power_tool"));
+    TEST_ASSERT_EQUAL_UINT8(0, urgency_for_label("music"));
     TEST_ASSERT_EQUAL_UINT8(0, urgency_for_label("rotulo_inexistente"));
     TEST_ASSERT_EQUAL_UINT8(0, urgency_for_label(nullptr));
     TEST_ASSERT_EQUAL_UINT8(0, motor_duty_for_urgency(0));
     TEST_ASSERT_TRUE(motor_duty_for_urgency(3) > motor_duty_for_urgency(1));
+}
+
+void test_rotulo_legado_vira_ingles() {
+    TEST_ASSERT_EQUAL_STRING("siren", canonical_label("sirene"));
+    TEST_ASSERT_EQUAL_STRING("gunshot_explosion", canonical_label("tiro_explosao"));
+    TEST_ASSERT_EQUAL_STRING("siren", canonical_label("siren"));
+    TEST_ASSERT_EQUAL_STRING("outro", canonical_label("outro"));
+    TEST_ASSERT_NULL(canonical_label(nullptr));
+    TEST_ASSERT_EQUAL_UINT8(3, urgency_for_label(canonical_label("sirene")));
+}
+
+void test_tempos_media_e_maximo_por_periodo() {
+    PerfStats s;
+    PerfWindow vazio = s.take();
+    TEST_ASSERT_EQUAL_UINT32(0, vazio.count);
+    s.add(100.f);
+    s.add(300.f);
+    s.add(-5.f);    // relógio errado: ignorada
+    s.add(NAN);     // idem
+    PerfWindow w = s.take();
+    TEST_ASSERT_EQUAL_UINT32(2, w.count);
+    TEST_ASSERT_FLOAT_WITHIN(0.01f, 200.f, w.avg_ms);
+    TEST_ASSERT_FLOAT_WITHIN(0.01f, 300.f, w.max_ms);
+    // take() zera: o próximo período começa do nada
+    s.add(50.f);
+    w = s.take();
+    TEST_ASSERT_EQUAL_UINT32(1, w.count);
+    TEST_ASSERT_FLOAT_WITHIN(0.01f, 50.f, w.max_ms);
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 123.5f, round1(123.456f));
+}
+
+void test_microfone_seno_tem_rms_esperado() {
+    // Seno de 1 kHz com amplitude 16384 (-6 dBFS de pico, -9 dBFS RMS) e DC de 100
+    MicStats m(16000);
+    static int16_t x[16000];
+    for (int i = 0; i < 16000; i++) x[i] = static_cast<int16_t>(100 + 16384 * sin(2 * M_PI * 1000 * i / 16000.0));
+    m.add(x, 16000);
+    MicReport r = m.take();
+    TEST_ASSERT_EQUAL_UINT32(16000, r.samples);
+    TEST_ASSERT_FLOAT_WITHIN(1.f, 100.f, r.dc);
+    TEST_ASSERT_FLOAT_WITHIN(0.2f, -9.03f, r.rms_dbfs);
+    TEST_ASSERT_FLOAT_WITHIN(0.2f, -6.0f, r.peak_dbfs);
+    TEST_ASSERT_EQUAL_FLOAT(0.f, r.clip_pct);
+    TEST_ASSERT_TRUE(r.hum_db < -40.f);  // 1 kHz não é zumbido
+    // take() zera
+    TEST_ASSERT_EQUAL_UINT32(0, m.take().samples);
+}
+
+void test_microfone_detecta_zumbido_saturacao_e_canal_morto() {
+    MicStats m(16000);
+    static int16_t x[16000];
+    for (int i = 0; i < 16000; i++) x[i] = static_cast<int16_t>(3000 * sin(2 * M_PI * 60 * i / 16000.0));
+    m.add(x, 16000);
+    TEST_ASSERT_TRUE(m.take().hum_db > -1.f);  // a energia toda está em 60 Hz
+
+    for (int i = 0; i < 16000; i++) x[i] = (i % 2) ? 32767 : -32768;
+    m.add(x, 16000);
+    TEST_ASSERT_FLOAT_WITHIN(0.01f, 100.f, m.take().clip_pct);
+
+    for (int i = 0; i < 16000; i++) x[i] = 0;
+    m.add(x, 16000);
+    MicReport morto = m.take();
+    TEST_ASSERT_FLOAT_WITHIN(0.01f, 100.f, morto.zero_pct);
+    TEST_ASSERT_EQUAL_FLOAT(-120.f, morto.rms_dbfs);
 }
 
 void test_recuo_primeira_tentativa_imediata() {
@@ -316,6 +382,10 @@ int main(int, char**) {
     RUN_TEST(test_setores);
     RUN_TEST(test_comandos_validos_e_invalidos);
     RUN_TEST(test_urgencia_e_motor);
+    RUN_TEST(test_rotulo_legado_vira_ingles);
+    RUN_TEST(test_tempos_media_e_maximo_por_periodo);
+    RUN_TEST(test_microfone_seno_tem_rms_esperado);
+    RUN_TEST(test_microfone_detecta_zumbido_saturacao_e_canal_morto);
     RUN_TEST(test_recuo_primeira_tentativa_imediata);
     RUN_TEST(test_recuo_dobra_ate_o_teto);
     RUN_TEST(test_recuo_recomeca_ao_conectar);

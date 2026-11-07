@@ -17,7 +17,11 @@ struct Settings {
 // Retorna false (sem alterar nada) para chave desconhecida ou valor fora da faixa.
 bool settings_apply(Settings& s, const char* key, float value);
 
-// Urgência do rótulo: 0 nenhuma, 1 baixa, 2 média, 3 alta. Rótulo desconhecido = 0.
+// Rótulo publicado (inglês). Traduz o rótulo em português de um modelo antigo;
+// qualquer outro volta igual.
+const char* canonical_label(const char* label);
+
+// Urgência do rótulo (em inglês): 0 nenhuma, 1 baixa, 2 média, 3 alta. Rótulo desconhecido = 0.
 // Mantenha igual ao seed de sound_classes em timescaledb/db-init.sql.
 uint8_t urgency_for_label(const char* label);
 

@@ -201,14 +201,15 @@ Só uma instalação cabe em cada computador, porque os nomes dos containers sã
 
 Sem Python, sem internet para baixar a biblioteca [Textual](https://textual.textualize.io/) ou com `--no-tui`, o instalador usa perguntas em texto simples. No Debian e no Ubuntu, instale `python3-venv` para ter a tela cheia pelo `./install.sh`.
 
-| Opção               | Efeito                                                |
-| ------------------- | ----------------------------------------------------- |
-| `--dir PASTA`       | Define a pasta e pula a escolha                       |
-| `--non-interactive` | Não pergunta nada; usa os padrões e os `--set`        |
-| `--skip-model`      | Não baixa o modelo local do Ollama                    |
-| `--set KEY=VALUE`   | Define uma variável do `.env`                         |
-| `--dry-run`         | Cria os arquivos, mas só mostra os comandos do Docker |
-| `--no-tui`          | Usa perguntas em texto simples                        |
+| Opção                | Efeito                                                         |
+| -------------------- | -------------------------------------------------------------- |
+| `--dir PASTA`        | Define a pasta e pula a escolha                                |
+| `--non-interactive`  | Não pergunta nada; usa os padrões e os `--set`                 |
+| `--skip-model`       | Não baixa o modelo local do Ollama                             |
+| `--ei-model ARQUIVO` | Coloca um modelo do Edge Impulse (`.zip` ou pasta) no firmware |
+| `--set KEY=VALUE`    | Define uma variável do `.env`                                  |
+| `--dry-run`          | Cria os arquivos, mas só mostra os comandos do Docker          |
+| `--no-tui`           | Usa perguntas em texto simples                                 |
 
 ### Abra os serviços
 
@@ -228,10 +229,10 @@ Sem Python, sem internet para baixar a biblioteca [Textual](https://textual.text
 Para confirmar o caminho inteiro antes de gravar o firmware, publique uma detecção de teste. Rode na pasta de instalação, em um terminal Linux, macOS, Git Bash ou WSL2:
 
 ```bash
-docker compose exec mosquitto sh -c 'mosquitto_pub -h localhost -u device -P "$(cat /run/secrets/mqtt_device/value)" -t sound/inference/teste-01 -m "{\"label\":\"sirene\",\"confidence\":0.9}"'
+docker compose exec mosquitto sh -c 'mosquitto_pub -h localhost -u device -P "$(cat /run/secrets/mqtt_device/value)" -t sound/inference/teste-01 -m "{\"label\":\"siren\",\"confidence\":0.9}"'
 ```
 
-Depois abra o painel **Sons Urbanos — ELEX20** no Grafana: um evento `sirene` do dispositivo `teste-01` deve aparecer. Como `sirene` tem urgência 3, o alerta também segue para o chat configurado no Hermes. Esse evento de teste fica no histórico.
+Depois abra o painel **Sons Urbanos — ELEX20** no Grafana: um evento `siren` do dispositivo `teste-01` deve aparecer. Como `siren` tem urgência 3, o alerta também segue para o chat configurado no Hermes. Esse evento de teste fica no histórico.
 
 Se nada aparecer, veja [Solução de problemas](#solução-de-problemas).
 
@@ -386,7 +387,9 @@ Os pinos ficam em `firmware/platformio.ini`. O firmware assume os microfones a 9
 
 ### Usar um modelo real
 
-O ELEX20 usa uma biblioteca exportada do [Edge Impulse](https://edgeimpulse.com/). Treine ou escolha um projeto com janela de áudio de 975 ms a 16 kHz e:
+O ELEX20 usa uma biblioteca exportada do [Edge Impulse](https://edgeimpulse.com/). Treine ou escolha um projeto com janela de áudio de 975 ms a 16 kHz.
+
+Num clone do repositório, o instalador faz os passos 2 e 3: na etapa do dispositivo, ligue **Add an Edge Impulse sound model to the firmware** e informe o `.zip` exportado (ou use `--ei-model ARQUIVO`). Ele recusa modelos que não sejam de 16 kHz, troca o modelo anterior e avisa sobre rótulos que o ELEX20 não conhece. Para fazer à mão:
 
 1. No Edge Impulse, exporte em **Deployment → Arduino library**.
 2. Extraia o `.zip` em `firmware/lib/ei-model/`, pasta que não é versionada.
@@ -406,18 +409,20 @@ O ELEX20 usa uma biblioteca exportada do [Edge Impulse](https://edgeimpulse.com/
 
 ### Rótulos e urgência
 
-Os nomes das classes precisam coincidir, porque urgência e alertas dependem do rótulo. A tabela inicial conhece só estes:
+Os rótulos publicados e gravados são em inglês. Urgência e alertas dependem deles. A tabela conhece estes:
 
-| Urgência | Rótulos                                                              |
-| -------- | -------------------------------------------------------------------- |
-| 3 (alta) | `sirene`, `buzina`, `alarme`, `tiro_explosao`, `grito`               |
-| 2        | `impacto`, `trem`                                                    |
-| 1        | `ferramenta`, `veiculo`                                              |
-| 0        | `aeronave`, `animal`, `clima`, `fala_multidao`, `musica`, `silencio` |
+| Urgência | Rótulos                                                             |
+| -------- | ------------------------------------------------------------------- |
+| 3 (alta) | `siren`, `horn`, `alarm`, `gunshot_explosion`, `scream`             |
+| 2        | `impact`, `train`                                                   |
+| 1        | `power_tool`, `vehicle`                                             |
+| 0        | `aircraft`, `animal`, `weather`, `speech_crowd`, `music`, `silence` |
 
 Um rótulo fora da tabela é gravado sem urgência e não gera alerta, direção nem vibração.
 
-Para usar outros nomes, altere `classes/sound_classes.json`, a tabela em `firmware/lib/elex_core/settings.cpp` e `sound_classes` em `timescaledb/db-init.sql`. Em um banco já criado, a subida acrescenta os rótulos novos, mas não muda a urgência dos existentes: use `UPDATE`.
+Modelos treinados antes da troca devolvem os nomes em português (`sirene`, `tiro_explosao`...). O firmware os traduz antes de publicar, e a subida do banco traduz os eventos já gravados. O nome antigo de cada categoria está em `rotulo_legado`.
+
+Para usar outros nomes, altere `classes/sound_classes.json`, as tabelas em `firmware/lib/elex_core/settings.cpp` e `sound_classes` em `timescaledb/db-init.sql`. A cada subida o banco volta a ter exatamente a lista e as urgências do seed.
 
 ### Detecções simuladas
 
@@ -432,6 +437,22 @@ docker compose exec mosquitto sh -c 'mosquitto_sub -h localhost -u n8n -P "$(cat
 ### Sensor
 
 Com o modelo gravado, quando o sensor reconhece um som com urgência acima de 0, ele estima a direção e aciona o motor daquele lado (frente, direita, trás ou esquerda), ou os dois motores vizinhos nas diagonais. A intensidade cresce com a urgência. Os ajustes de sensibilidade e vibração estão em [Hermes](#hermes).
+
+A cada 5 s o sensor publica em `sound/status/<DEVICE_ID>` um heartbeat com o próprio desempenho, gravado em `device_status` (a view `device_last_status` traz o último de cada sensor):
+
+| Campo                            | O que mede                                                                    |
+| -------------------------------- | ----------------------------------------------------------------------------- |
+| `win_ms_avg`, `win_ms_max`       | Tempo para processar cada janela de áudio (média e pior caso nos últimos 5 s) |
+| `dsp_ms`, `nn_ms`                | Extração de features e classificação do Edge Impulse (média, só com modelo)   |
+| `heap`, `heap_min`               | Memória livre agora e a menor desde o boot                                    |
+| `psram_free`                     | PSRAM livre                                                                   |
+| `stack_min`                      | Menor folga de pilha entre as tarefas, em bytes (`stack_task` diz qual)       |
+| `dropped`                        | Janelas descartadas porque a anterior ainda estava sendo classificada         |
+| `offline_dropped`                | Detecções descartadas sem rede                                                |
+| `wifi_connects`, `mqtt_connects` | Conexões desde o boot: crescer rápido indica rede instável                    |
+| `temp_c`                         | Temperatura do chip                                                           |
+
+A janela tem 975 ms: com `win_ms_max` acima disso, a placa não acompanha o áudio e `dropped` sobe.
 
 ### Grafana
 
@@ -571,6 +592,13 @@ Se aparecer "permission denied", rode `sudo usermod -aG docker $USER` e entre de
 - `[EI] Sem modelo` no log: o firmware foi gravado sem modelo; veja [Usar um modelo real](#usar-um-modelo-real).
 - Firmware `esp32s3_debug`: as leituras simuladas são descartadas de propósito.
 - Workflows inativos: abra o n8n e confira, ou rode o instalador de novo.
+- Workflow ativo, mas sem execuções: se o Mosquitto estava fora do ar quando o n8n subiu, o gatilho MQTT falha (`EAI_AGAIN mosquitto` no log do n8n) e não tenta de novo. Rode o instalador de novo ou destrave à mão:
+
+  ```bash
+  docker compose exec n8n n8n unpublish:workflow --id=elex-ingestao-mqtt
+  docker compose exec n8n n8n publish:workflow --id=elex-ingestao-mqtt
+  docker compose restart n8n
+  ```
 
 </details>
 
@@ -678,6 +706,8 @@ A coleta de logs (Alloy) lê caminhos do Docker que só existem no Linux; por is
 ## Desenvolvimento
 
 Para mexer no código, você precisa de Python 3.11+, [uv](https://docs.astral.sh/uv/), Git e, para o firmware, [PlatformIO](https://platformio.org/). A estrutura do repositório, os comandos e as convenções estão em [AGENTS.md](../AGENTS.md).
+
+Para testar o hardware na bancada (qualidade dos microfones, ordem dos canais, gravação em WAV, motores), simular sensores no MQTT ou avaliar a saúde dos sensores pelos heartbeats, veja [debug/README.md](../debug/README.md).
 
 Instale o uv e as dependências:
 

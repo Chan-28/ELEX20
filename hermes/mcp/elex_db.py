@@ -66,13 +66,16 @@ def _limitar(valor: int, minimo: int, maximo: int) -> int:
 
 @mcp.tool()
 async def sensores_status() -> list[dict[str, Any]]:
-    """Estado de cada sensor: último sinal, se está online, intensidade do Wi-Fi e memória livre."""
+    """Estado de cada sensor: último sinal, online, Wi-Fi, memória, latência da classificação e temperatura."""
     try:
         rows = await _consultar(
             """
             SELECT d.device_id, d.name AS nome, d.location AS local, s.time AS ultimo_sinal,
                    EXTRACT(EPOCH FROM now() - s.time)::float8 AS segundos_desde_ultimo_sinal,
-                   s.rssi AS rssi_dbm, s.heap AS memoria_livre_bytes, s.uptime_s
+                   s.rssi AS rssi_dbm, s.heap AS memoria_livre_bytes, s.uptime_s,
+                   s.heap_min AS menor_memoria_livre_bytes, s.win_ms_avg AS tempo_por_janela_ms,
+                   s.win_ms_max AS pior_tempo_por_janela_ms, s.temp_c AS temperatura_c,
+                   s.dropped AS janelas_descartadas
             FROM device_last_status s
             FULL JOIN devices d USING (device_id)
             ORDER BY device_id
