@@ -11,3 +11,6 @@ dependency_manager.log
 
 # Rascunho de handoff entre sessões do Claude Code
 HANDOFF.md
+
+# Modelo Edge Impulse: exportado à parte, não é versionado
+firmware/lib/ei-model
