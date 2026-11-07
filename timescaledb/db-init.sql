@@ -63,17 +63,17 @@ ALTER TABLE sound_events ADD COLUMN IF NOT EXISTS sector TEXT CHECK (sector IN (
 ALTER TABLE sound_events ADD COLUMN IF NOT EXISTS doa_confidence FLOAT4 CHECK (doa_confidence BETWEEN 0 AND 1);
 ALTER TABLE sound_events ADD COLUMN IF NOT EXISTS urgency SMALLINT CHECK (urgency BETWEEN 0 AND 3);
 
--- Urgência por rótulo do modelo (classes do projeto no Edge Impulse Studio).
+-- Urgência por rótulo do modelo. A fonte é classes/sound_classes.json, e tests/test_classes.py confere.
 -- Valores iniciais são uma proposta; ajuste com UPDATE (o seed não sobrescreve).
 CREATE TABLE IF NOT EXISTS sound_classes (
     label    TEXT     PRIMARY KEY CHECK (char_length(label) BETWEEN 1 AND 64),
     urgency  SMALLINT NOT NULL CHECK (urgency BETWEEN 0 AND 3)
 );
 INSERT INTO sound_classes (label, urgency) VALUES
-    ('siren', 3), ('car_horn', 3), ('gun_shot', 3),
-    ('dog_bark', 2), ('drilling', 2), ('jackhammer', 2),
-    ('engine_idling', 1), ('children_playing', 1), ('street_music', 1),
-    ('air_conditioner', 0)
+    ('sirene', 3), ('buzina', 3), ('alarme', 3), ('tiro_explosao', 3), ('grito', 3),
+    ('impacto', 2), ('trem', 2), ('ferramenta', 1), ('veiculo', 1),
+    ('aeronave', 0), ('animal', 0), ('clima', 0), ('fala_multidao', 0),
+    ('musica', 0), ('silencio', 0)
 ON CONFLICT (label) DO NOTHING;
 
 -- Estado dos sensores: heartbeat de sound/status/<device_id>, gravado pelo n8n

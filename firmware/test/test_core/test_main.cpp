@@ -181,8 +181,11 @@ void test_comandos_validos_e_invalidos() {
 }
 
 void test_urgencia_e_motor() {
-    TEST_ASSERT_EQUAL_UINT8(3, urgency_for_label("siren"));
-    TEST_ASSERT_EQUAL_UINT8(0, urgency_for_label("air_conditioner"));
+    TEST_ASSERT_EQUAL_UINT8(3, urgency_for_label("sirene"));
+    TEST_ASSERT_EQUAL_UINT8(3, urgency_for_label("tiro_explosao"));
+    TEST_ASSERT_EQUAL_UINT8(2, urgency_for_label("impacto"));
+    TEST_ASSERT_EQUAL_UINT8(1, urgency_for_label("ferramenta"));
+    TEST_ASSERT_EQUAL_UINT8(0, urgency_for_label("musica"));
     TEST_ASSERT_EQUAL_UINT8(0, urgency_for_label("rotulo_inexistente"));
     TEST_ASSERT_EQUAL_UINT8(0, urgency_for_label(nullptr));
     TEST_ASSERT_EQUAL_UINT8(0, motor_duty_for_urgency(0));

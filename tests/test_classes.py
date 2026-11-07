@@ -3,6 +3,7 @@
 import array
 import importlib.util
 import json
+import re
 import wave
 from pathlib import Path
 
@@ -137,3 +138,14 @@ def test_selecao_respeita_limite_e_mantem_as_duas_fontes():
     escolhidos = preparar.selecionar(clipes, 100.0, duracao=lambda _caminho: 10.0)
     assert sum(s for _, s in escolhidos) == 100.0
     assert {c.fonte for c, _ in escolhidos} == {"fsd50k", "esc50"}
+
+
+def test_firmware_e_banco_conhecem_os_rotulos_do_modelo():
+    """Rótulo fora da tabela vira urgência 0 no firmware e NULL no banco, sem motor nem alerta."""
+    esperado = {c["rotulo"]: c["urgencia"] for c in CATEGORIAS}
+    firmware = (RAIZ / "firmware" / "lib" / "elex_core" / "settings.cpp").read_text(encoding="utf-8")
+    tabela = re.search(r"kUrgencies\[\] = \{(.*?)\n\};", firmware, re.S).group(1)
+    assert {r: int(u) for r, u in re.findall(r'\{"(\w+)", (\d)\}', tabela)} == esperado
+    banco = (RAIZ / "timescaledb" / "db-init.sql").read_text(encoding="utf-8")
+    seed = re.search(r"INSERT INTO sound_classes.*?VALUES(.*?)ON CONFLICT", banco, re.S).group(1)
+    assert {r: int(u) for r, u in re.findall(r"\('(\w+)', (\d)\)", seed)} == esperado
