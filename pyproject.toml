@@ -35,6 +35,9 @@ requires = ["uv_build>=0.12.13,<0.14.0"]
 build-backend = "uv_build"
 
 [dependency-groups]
+debug = [
+    "pyserial>=3.5",
+]
 dev = [
     "black>=26.5.1",
     "isort>=9.0.1",
@@ -71,7 +74,7 @@ ignore = []
 combine-as-imports = true
 
 [tool.pytest.ini_options]
-pythonpath = ["hermes/mcp", "installer"]
+pythonpath = ["hermes/mcp", "installer", "debug"]
 testpaths = ["tests"]
 
 [tool.mypy]
