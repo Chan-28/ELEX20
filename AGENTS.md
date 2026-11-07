@@ -70,7 +70,7 @@ Documentação e arquivos `.md/.json/.yaml` não exigem build. O Prettier format
 
 ## Testes
 
-- Python: `uv run pytest` (`tests/`: comandos do Hermes e instalador). Firmware: `cd firmware && pio test -e native`. Faixas de comando e urgência por rótulo existem em três lugares (`hermes/mcp/commands.py`, `n8n/workflows/device-command.json`, `firmware/lib/elex_core/settings.cpp`; urgência também em `timescaledb/db-init.sql`): mudou um, confira os outros.
+- Python: `uv run pytest` (`tests/`: comandos do Hermes e instalador). Firmware: `cd firmware && pio test -e native`. Rótulos e urgência vêm de `classes/sound_classes.json`; `tests/test_classes.py` confere o firmware e o banco. Faixas de comando e urgência por rótulo existem em três lugares (`hermes/mcp/commands.py`, `n8n/workflows/device-command.json`, `firmware/lib/elex_core/settings.cpp`; urgência também em `timescaledb/db-init.sql`): mudou um, confira os outros.
 - Mudou compose, `mosquitto/` ou `timescaledb/`? Rode `bash scripts/infra-smoke.sh` (precisa de Docker; falha se já houver containers `timescaledb`/`mosquitto`).
 
 ## Git, commits e PRs

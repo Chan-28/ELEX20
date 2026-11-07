@@ -12,11 +12,12 @@ struct LabelUrgency {
     uint8_t urgency;
 };
 
+// Rótulos do modelo. A fonte é classes/sound_classes.json, e tests/test_classes.py confere.
 const LabelUrgency kUrgencies[] = {
-    {"siren", 3},         {"car_horn", 3},        {"gun_shot", 3},
-    {"dog_bark", 2},      {"drilling", 2},        {"jackhammer", 2},
-    {"engine_idling", 1}, {"children_playing", 1}, {"street_music", 1},
-    {"air_conditioner", 0},
+    {"sirene", 3},   {"buzina", 3},     {"alarme", 3}, {"tiro_explosao", 3}, {"grito", 3},
+    {"impacto", 2},  {"trem", 2},       {"ferramenta", 1}, {"veiculo", 1},
+    {"aeronave", 0}, {"animal", 0},     {"clima", 0},  {"fala_multidao", 0},
+    {"musica", 0},   {"silencio", 0},
 };
 
 bool in_range(float v, float lo, float hi) { return isfinite(v) && v >= lo && v <= hi; }

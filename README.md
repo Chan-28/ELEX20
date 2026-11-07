@@ -147,10 +147,10 @@ Os logins `admin` / `password` servem só para uso na sua máquina: [troque-os](
 Para confirmar que o caminho inteiro funciona antes de gravar o firmware, publique uma detecção de teste. Rode na pasta de instalação, em um terminal Linux, macOS, Git Bash ou WSL2:
 
 ```bash
-docker compose exec mosquitto sh -c 'mosquitto_pub -h localhost -u device -P "$(cat /run/secrets/mqtt_device/value)" -t sound/inference/teste-01 -m "{\"label\":\"siren\",\"confidence\":0.9}"'
+docker compose exec mosquitto sh -c 'mosquitto_pub -h localhost -u device -P "$(cat /run/secrets/mqtt_device/value)" -t sound/inference/teste-01 -m "{\"label\":\"sirene\",\"confidence\":0.9}"'
 ```
 
-Depois abra o painel **Sons Urbanos — ELEX20** no Grafana: um evento `siren` do dispositivo `teste-01` deve aparecer. Como `siren` tem urgência 3, o alerta também segue para o chat configurado no Hermes. Esse evento de teste fica no histórico.
+Depois abra o painel **Sons Urbanos — ELEX20** no Grafana: um evento `sirene` do dispositivo `teste-01` deve aparecer. Como `sirene` tem urgência 3, o alerta também segue para o chat configurado no Hermes. Esse evento de teste fica no histórico.
 
 Se nada aparecer, veja [Solução de problemas](#solução-de-problemas).
 
@@ -205,33 +205,20 @@ O ELEX20 usa uma biblioteca exportada do [Edge Impulse](https://edgeimpulse.com/
 
 1. No Edge Impulse, exporte em **Deployment → Arduino library**.
 2. Extraia o `.zip` em `firmware/lib/ei-model/`, pasta que não é versionada.
-3. Em `firmware/platformio.ini`, troque `EI_MODEL_HEADER` pelo header gerado (por exemplo, `meu_projeto_inferencing.h`).
-4. Acrescente um ambiente que inclua a biblioteca, trocando `NOME` pela pasta extraída:
-
-   ```ini
-   [env:esp32s3_model]
-   extends  = env:esp32s3
-   lib_deps =
-       ${env:esp32s3.lib_deps}
-       symlink://lib/ei-model/NOME
-   build_flags =
-       ${env:esp32s3.build_flags}
-       -Ilib/ei-model/NOME/src/edge-impulse-sdk/porting/espressif/esp-dsp/modules/fft/include
-       -I${platformio.packages_dir}/framework-arduinoespressif32-esp32s3-libs/include/xtensa/esp32s3/include
-   ```
-
+3. Se a pasta extraída for `ELEX20_Categorias_inferencing`, nada muda: `firmware/platformio.ini` já traz o ambiente `esp32s3_model` para ela.
+4. Com outro nome, troque em `firmware/platformio.ini` o valor de `EI_MODEL_HEADER` pelo header gerado e o nome da pasta nas linhas do ambiente `esp32s3_model`. Troque também o include desativado no início de `firmware/src/main.cpp`: sem ele, o build passa, mas sem o modelo.
 5. Grave com `pio run -e esp32s3_model -t upload` e confirme que a mensagem `[EI] Sem modelo` sumiu. Só mudar o header no ambiente `esp32s3` compila com sucesso, mas **sem** o modelo.
 
 **Os nomes das classes precisam coincidir.** Urgência e alertas dependem do rótulo, e a tabela inicial conhece só estes:
 
-| Urgência | Rótulos                                             |
-| -------- | --------------------------------------------------- |
-| 3 (alta) | `siren`, `car_horn`, `gun_shot`                     |
-| 2        | `dog_bark`, `drilling`, `jackhammer`                |
-| 1        | `engine_idling`, `children_playing`, `street_music` |
-| 0        | `air_conditioner`                                   |
+| Urgência | Rótulos                                                              |
+| -------- | -------------------------------------------------------------------- |
+| 3 (alta) | `sirene`, `buzina`, `alarme`, `tiro_explosao`, `grito`               |
+| 2        | `impacto`, `trem`                                                    |
+| 1        | `ferramenta`, `veiculo`                                              |
+| 0        | `aeronave`, `animal`, `clima`, `fala_multidao`, `musica`, `silencio` |
 
-Um rótulo fora da tabela é gravado sem urgência e não gera alerta, direção nem vibração. Para usar outros nomes, altere `sound_classes` no banco com `UPDATE`/`INSERT` e a mesma tabela em `firmware/lib/elex_core/settings.cpp`.
+Um rótulo fora da tabela é gravado sem urgência e não gera alerta, direção nem vibração. Para usar outros nomes, altere `classes/sound_classes.json`, a tabela em `firmware/lib/elex_core/settings.cpp` e `sound_classes` em `timescaledb/db-init.sql`. Em um banco já criado, a subida acrescenta os rótulos novos, mas não muda a urgência dos existentes: use `UPDATE`.
 
 > O ambiente `esp32s3_debug` envia detecções simuladas para testar o Wi-Fi e o MQTT sem modelo. Elas são marcadas com `mock` e **a ingestão as descarta de propósito**: nunca aparecem no Grafana. Para vê-las, observe o tráfego do broker:
 >

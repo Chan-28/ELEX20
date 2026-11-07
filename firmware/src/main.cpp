@@ -56,6 +56,11 @@
 #  define ESP_ARDUINO_VERSION_MAJOR 2
 #endif
 
+// O LDF do PlatformIO lê o texto dos includes, não expande EI_MODEL_HEADER nem avalia #if.
+// Sem esta linha, esp32s3_model compila com sucesso, mas sem o modelo.
+#if 0
+#  include <ELEX20_Categorias_inferencing.h>
+#endif
 #if defined(EI_MODEL_HEADER) && __has_include(EI_MODEL_HEADER)
 #  include EI_MODEL_HEADER
 #  define ELEX_HAS_EI_MODEL 1
@@ -567,7 +572,7 @@ static void runInference(const AudioWindow& w) {
 // Simulador — só compilado com -DELEX_MOCK_INFERENCE (env esp32s3_debug).
 // Não vai para o firmware de produção: publicaria rótulos aleatórios no banco.
 static void runInference(const AudioWindow& w) {
-    static const char* sounds[] = {"siren", "car_horn", "dog_bark", "drilling", "street_music", "air_conditioner"};
+    static const char* sounds[] = {"sirene", "buzina", "impacto", "ferramenta", "musica", "clima"};
     static uint8_t idx = 0;
     const float conf = 0.75f + (random(0, 25) / 100.f);
     handleDetection(w, sounds[idx++ % 6], conf, true);
