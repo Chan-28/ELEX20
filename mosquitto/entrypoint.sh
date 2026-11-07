@@ -7,6 +7,9 @@ MQTT_DEVICE_PASS=$(cat /run/secrets/mqtt_device/value)
 MQTT_N8N_PASS=$(cat /run/secrets/mqtt_n8n/value)
 
 PASSWD=/mosquitto/config/passwd
+# No reinício do container o arquivo da subida anterior continua lá, e o
+# mosquitto_passwd 2.1 recusa sobrescrevê-lo com -c (o broker entrava em loop).
+rm -f "$PASSWD"
 mosquitto_passwd -b -c "$PASSWD" device "$MQTT_DEVICE_PASS"
 mosquitto_passwd -b "$PASSWD" n8n "$MQTT_N8N_PASS"
 # O broker roda como usuário "mosquitto" e precisa ler o arquivo
