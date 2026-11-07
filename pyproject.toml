@@ -42,6 +42,10 @@ dev = [
     "mypy>=1.15.0",
     "scipy-stubs>=1.5.1",
     "pytest>=9.2.0",
+    { include-group = "installer" },
+]
+installer = [
+    "textual==8.2.8",
 ]
 
 [tool.ruff]

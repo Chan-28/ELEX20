@@ -1,4 +1,5 @@
 .venv/
+.installer-venv/
 node_modules/
 .env
 .env.local

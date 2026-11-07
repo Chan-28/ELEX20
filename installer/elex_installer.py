@@ -1,21 +1,27 @@
 """Instalador do ELEX20 para Windows, macOS e Linux.
 
-Só usa a biblioteca padrão do Python, para virar um executável único (PyInstaller).
+Separa o motor (este arquivo, só biblioteca padrão, para o .spec poder importá-lo no build) da
+interface em tela cheia (elex_tui.py, com Textual). Sem terminal interativo, com --non-interactive
+ou sem o Textual, ele usa perguntas e saída em texto simples.
+
 O que ele faz, nesta ordem:
-  1. confere se o Docker está instalado e ligado (e, se não, explica como instalar);
-  2. cria o .env com todas as senhas geradas aleatoriamente;
+  1. coleta todas as respostas antes de mudar qualquer coisa;
+  2. confere o Docker, prepara a pasta e grava o .env;
   3. sobe a stack com `docker compose up -d` e espera ficar de pé;
   4. baixa o modelo local do Ollama (opcional);
-  5. cria as credenciais e ativa os workflows do n8n, sem passos manuais.
+  5. cria as credenciais e ativa os workflows do n8n;
+  6. grava o firmware/.env (opcional).
 
-Rodando a partir do repositório (python installer/elex_installer.py) ele instala ali mesmo.
-Rodando como executável, ele copia os arquivos embutidos para uma pasta (padrão ~/ELEX20).
+Rodando como executável, ele copia os arquivos embutidos para a pasta escolhida.
+
+Com --uninstall, remove os containers. Dados, imagens e arquivos só saem se o usuário pedir.
 """
 
 from __future__ import annotations
 
 import argparse
 import getpass
+import ipaddress
 import json
 import os
 import platform
@@ -29,19 +35,45 @@ import tempfile
 import time
 import urllib.error
 import urllib.request
+from dataclasses import dataclass, field
 from pathlib import Path
+
+NOMES_DE_SISTEMA = {"Darwin": "macOS"}
+
+
+def versao_do_git(pasta: Path) -> str | None:
+    """Última tag de release do repositório, sem o v; None fora de um clone."""
+    git = shutil.which("git")
+    if git is None:
+        return None
+    r = subprocess.run(  # noqa: S603
+        [git, "tag", "--list", "v[0-9]*", "--sort=-v:refname"],
+        cwd=pasta, capture_output=True, text=True, check=False,
+    )  # fmt: skip
+    tags = r.stdout.split() if r.returncode == 0 else []
+    return tags[0].removeprefix("v") if tags else None
 
 
 def ler_versao() -> str:
-    """Versão gravada pelo CI (version.txt, a partir da tag); '0.0.0-dev' fora de um build de release."""
-    pasta = Path(sys._MEIPASS) if getattr(sys, "frozen", False) else Path(__file__).resolve().parent  # type: ignore[attr-defined]  # noqa: SLF001
+    """Versão gravada pelo CI em version.txt; fora de um build de release, a última tag do Git."""
+    congelado = getattr(sys, "frozen", False)
+    pasta = Path(sys._MEIPASS) if congelado else Path(__file__).resolve().parent  # type: ignore[attr-defined]  # noqa: SLF001
     try:
-        return (pasta / "version.txt").read_text(encoding="utf-8").strip() or "dev"
+        versao = (pasta / "version.txt").read_text(encoding="utf-8").strip()
     except OSError:
-        return "dev"
+        versao = ""
+    if versao and not versao.endswith("-dev"):
+        return versao
+    return (None if congelado else versao_do_git(pasta)) or "dev"
 
 
 VERSAO = ler_versao()
+
+
+def titulo_do_instalador(versao: str | None = None, sistema: str | None = None) -> str:
+    sistema = sistema or platform.system()
+    return f"ELEX20 — installer {versao or VERSAO} ({NOMES_DE_SISTEMA.get(sistema, sistema)})"
+
 
 # Segredos internos: o serviço secrets-init (init/secrets-init.sh) gera cada um sozinho na primeira
 # subida e os guarda em volumes. nome do arquivo em /run/secrets/<nome>/value -> variável do .env que
@@ -105,12 +137,12 @@ def ler_env(texto: str) -> dict[str, str]:
 def formatar_valor_env(valor: str) -> str:
     """Põe aspas só quando o valor tem espaço, #, $ ou aspas (o compose interpreta esses caracteres)."""
     if "\n" in valor or "\r" in valor:
-        raise ValueError("valor com quebra de linha")
+        raise ValueError("value with a line break")
     if not re.search(r"[\s#$'\"\\`]", valor):
         return valor
     if "'" not in valor:
         return f"'{valor}'"
-    raise ValueError("valor com aspa simples e caracteres especiais não é suportado")
+    raise ValueError("values with a single quote and special characters are not supported")
 
 
 def aplicar_env(modelo: str, valores: dict[str, str]) -> str:
@@ -170,19 +202,19 @@ def instrucoes_docker(sistema: str, distro: str = "", parecidas: list[str] | Non
     familia = {distro, *(parecidas or [])}
     if sistema == "Windows":
         return [
-            "Instale o Docker Desktop: https://www.docker.com/products/docker-desktop/",
-            "Na instalação, deixe marcada a opção 'WSL 2'. Reinicie o computador se ele pedir.",
-            "Abra o Docker Desktop, espere o ícone ficar verde e rode este instalador de novo.",
+            "Install Docker Desktop: https://www.docker.com/products/docker-desktop/",
+            "During setup, keep the 'WSL 2' option checked. Restart the computer if asked.",
+            "Open Docker Desktop, wait for the green icon and run this installer again.",
         ]
     if sistema == "Darwin":
         return [
-            "Instale o Docker Desktop: https://www.docker.com/products/docker-desktop/",
-            "Abra o Docker Desktop, espere ele iniciar e rode este instalador de novo.",
-            "Com Homebrew: brew install --cask docker",
+            "Install Docker Desktop: https://www.docker.com/products/docker-desktop/",
+            "Open Docker Desktop, wait for it to start and run this installer again.",
+            "With Homebrew: brew install --cask docker",
         ]
     passos_pos = [
         "sudo systemctl enable --now docker",
-        "sudo usermod -aG docker $USER   # depois, saia da sessão e entre de novo",
+        "sudo usermod -aG docker $USER   # then log out and back in",
     ]
     if familia & {"arch", "manjaro", "endeavouros", "cachyos"}:
         return ["sudo pacman -S docker docker-compose", *passos_pos]
@@ -190,17 +222,17 @@ def instrucoes_docker(sistema: str, distro: str = "", parecidas: list[str] | Non
         return ["sudo zypper install docker docker-compose", *passos_pos]
     if familia & {"fedora", "rhel", "centos", "rocky", "almalinux"}:
         return [
-            "Guia oficial: https://docs.docker.com/engine/install/fedora/",
-            "curl -fsSL https://get.docker.com | sudo sh   # script de conveniência oficial",
+            "Official guide: https://docs.docker.com/engine/install/fedora/",
+            "curl -fsSL https://get.docker.com | sudo sh   # official convenience script",
             *passos_pos,
         ]
     if familia & {"ubuntu", "debian", "linuxmint", "pop", "zorin", "elementary", "raspbian"}:
         return [
-            "Guia oficial: https://docs.docker.com/engine/install/ubuntu/ (ou /debian/)",
-            "curl -fsSL https://get.docker.com | sudo sh   # script de conveniência oficial",
+            "Official guide: https://docs.docker.com/engine/install/ubuntu/ (or /debian/)",
+            "curl -fsSL https://get.docker.com | sudo sh   # official convenience script",
             *passos_pos,
         ]
-    return ["Guia oficial: https://docs.docker.com/engine/install/", *passos_pos]
+    return ["Official guide: https://docs.docker.com/engine/install/", *passos_pos]
 
 
 def credenciais_n8n(valores: dict[str, str]) -> list[dict]:
@@ -244,8 +276,8 @@ def credenciais_n8n(valores: dict[str, str]) -> list[dict]:
 def descrever_senha(valor: str | None) -> str:
     """Texto do resumo final: senha real nunca vai para o terminal, só o placeholder conhecido."""
     if valor in (None, "", "password"):
-        return "password (placeholder: troque)"
-    return "a definida no .env"
+        return "password (change it)"
+    return "set in .env"
 
 
 def nome_do_projeto(pasta: Path) -> str:
@@ -263,122 +295,368 @@ def detectar_ip_lan() -> str | None:
     return None if ip.startswith("127.") else ip
 
 
-# ── Entrada e saída ──────────────────────────────────────────────────────────
+# ── Validação das respostas (usada pelas duas interfaces) ────────────────────
 
 
-class Instalador:
-    def __init__(
-        self,
-        raiz_origem: Path,
-        destino: Path,
-        nao_interativo: bool,
-        dry_run: bool,
-        extras: dict[str, str],
-        pular_modelo: bool = False,
-    ):
-        self.origem = raiz_origem
-        self.pular_modelo = pular_modelo
-        self.ip_lan: str | None = None
-        self.destino = destino
-        self.nao_interativo = nao_interativo
-        self.dry_run = dry_run
-        self.extras = extras
-        self.sistema = platform.system()
+def validar_ip(valor: str) -> str | None:
+    try:
+        ip = ipaddress.ip_address(valor.strip())
+    except ValueError:
+        return "Enter a valid IP address, such as 192.168.0.10."
+    if ip.is_unspecified or ip.is_loopback:
+        return "Use this computer's address on your network, not 0.0.0.0 or 127.0.0.1."
+    return None
 
-    # saída
-    def titulo(self, texto: str) -> None:
+
+def validar_ssid(valor: str) -> str | None:
+    texto = valor.strip()
+    if not texto:
+        return "Enter the name of your Wi-Fi network."
+    if len(texto.encode("utf-8")) > 32:
+        return "A Wi-Fi network name has at most 32 bytes."
+    if re.fullmatch(r"\d{1,3}(\.\d{1,3}){3}", texto):
+        return "This looks like an IP address. Enter the network name shown on your phone or computer."
+    return None
+
+
+def validar_senha_wifi(valor: str) -> str | None:
+    if not 8 <= len(valor) <= 63:
+        return "A Wi-Fi password has 8 to 63 characters."
+    return None
+
+
+def validar_ids(valor: str) -> str | None:
+    """IDs numéricos separados por vírgula (ID de grupo no Telegram é negativo)."""
+    if not re.fullmatch(r"\s*-?\d+\s*(,\s*-?\d+\s*)*", valor):
+        return "Enter a numeric ID. Separate several IDs with commas."
+    return None
+
+
+def validar_obrigatorio(valor: str) -> str | None:
+    return None if valor.strip() else "This field is required."
+
+
+def validar_pasta(texto: str) -> str | None:
+    if not texto.strip():
+        return "Choose a folder."
+    pasta = Path(texto.strip()).expanduser()
+    if pasta.exists() and not pasta.is_dir():
+        return "This path is a file, not a folder."
+    existente = next((p for p in (pasta, *pasta.parents) if p.exists()), None)
+    if existente is None or not os.access(existente, os.W_OK):
+        return "You do not have permission to write to this folder."
+    return None
+
+
+def mascarar(valor: str, atual: str | None = None) -> str:
+    """Texto da revisão: um segredo nunca aparece na tela."""
+    if valor:
+        return "•••••• (new)"
+    return "•••••• (unchanged)" if atual else "not set"
+
+
+# ── Respostas e resumo ───────────────────────────────────────────────────────
+
+
+@dataclass
+class Firmware:
+    ssid: str
+    senha: str
+    host: str
+
+
+@dataclass
+class Respostas:
+    """Tudo o que o usuário decide, coletado antes da instalação começar."""
+
+    destino: Path
+    ip_lan: str | None = None
+    extras: dict[str, str] = field(default_factory=dict)
+    baixar_modelo: bool = True
+    firmware: Firmware | None = None
+
+
+@dataclass
+class Remocao:
+    """O que a desinstalação apaga além dos containers; nada disso é o padrão."""
+
+    dados: bool = False
+    imagens: bool = False
+    arquivos: bool = False
+
+    @property
+    def exige_confirmacao(self) -> bool:
+        return self.dados or self.arquivos
+
+
+def dados_do_resumo(valores: dict[str, str], destino: Path) -> dict:
+    """Conteúdo do resumo final; senhas reais nunca entram aqui."""
+    return {
+        "title": "ELEX20 installed",
+        "folder": str(destino),
+        "services": [
+            (
+                "Grafana",
+                URL_GRAFANA,
+                valores.get("GRAFANA_ADMIN_USER", "admin"),
+                descrever_senha(valores.get("GRAFANA_ADMIN_PASSWORD")),
+            ),
+            (
+                "Hermes",
+                URL_HERMES,
+                valores.get("HERMES_DASHBOARD_USER", "admin"),
+                descrever_senha(valores.get("HERMES_DASHBOARD_PASS")),
+            ),
+            ("n8n", URL_N8N, "create on first visit", "create on first visit"),
+        ],
+        "device": [
+            ("MQTT_HOST", valores.get("MQTT_BIND", "127.0.0.1")),
+            ("MQTT_USER", "device"),
+            ("MQTT_PASS", "docker compose exec mosquitto cat /run/secrets/mqtt_device/value"),
+        ],
+        "notes": [
+            "Change the admin/password logins in .env and in each service.",
+            "Internal passwords were generated automatically and stay in Docker volumes.",
+            "Keep the .env file safe and do not share it.",
+            "Stop: docker compose stop   Start again: docker compose start",
+        ],
+    }
+
+
+# ── Saída em texto simples ───────────────────────────────────────────────────
+
+
+class Saida:
+    """Saída em texto; a interface em tela cheia a substitui pela dela."""
+
+    def etapa(self, chave: str, texto: str) -> None:  # noqa: ARG002
         print(f"\n== {texto}")
+
+    def concluir_etapa(self, chave: str, ok: bool = True) -> None:
+        pass
 
     def info(self, texto: str) -> None:
         print(f"   {texto}")
 
+    def aviso(self, texto: str) -> None:
+        print(f"   [WARNING] {texto}")
+
     def erro(self, texto: str) -> None:
-        print(f"\n[ERRO] {texto}", file=sys.stderr)
+        print(f"\n[ERROR] {texto}", file=sys.stderr)
 
-    # entrada
-    def perguntar(self, texto: str, padrao: str = "", segredo: bool = False) -> str:
-        if self.nao_interativo:
-            return padrao
-        sufixo = f" [{padrao}]" if padrao and not segredo else ""
+    def detalhe(self, texto: str) -> None:
+        print(f"   {texto}")
+
+
+def imprimir_resumo(dados: dict) -> None:
+    linha = "=" * 64
+    print(f"\n{linha}\n {dados['title']}\n{linha}\n Folder: {dados['folder']}")
+    if dados["services"]:
+        print("\n Services")
+    for nome, url, usuario, senha in dados["services"]:
+        print(f"   {nome:<8} {url:<24} user: {usuario}  password: {senha}")
+    if dados["device"]:
+        print("\n Device settings")
+    for chave, valor in dados["device"]:
+        print(f"   {chave:<10} {valor}")
+    print("\n Notes")
+    for nota in dados["notes"]:
+        print(f"   - {nota}")
+
+
+# ── Motor ────────────────────────────────────────────────────────────────────
+
+
+def checar_docker() -> tuple[bool, str]:
+    """Confere o Docker sem mudar nada; devolve (ok, mensagem)."""
+    if shutil.which("docker") is None:
+        return False, "Docker is not installed."
+    versao = subprocess.run(["docker", "compose", "version"], capture_output=True, text=True, check=False)  # noqa: S603, S607
+    if versao.returncode != 0:
+        return False, "Docker is installed, but the Compose v2 plugin is missing."
+    info = subprocess.run(["docker", "info"], capture_output=True, text=True, check=False)  # noqa: S603, S607
+    if info.returncode != 0:
+        saida = (info.stderr or "") + (info.stdout or "")
+        if "permission denied" in saida.lower():
+            return False, "No permission to use Docker. On Linux: sudo usermod -aG docker $USER, then log in again."
+        return False, "Docker is not running. Open Docker Desktop or run: sudo systemctl start docker"
+    return True, "Docker and Compose are working."
+
+
+def como_instalar_docker() -> list[str]:
+    sistema = platform.system()
+    distro, parecidas = "", []
+    if sistema == "Linux":
         try:
-            leitura = getpass.getpass if segredo else input
-            resposta = leitura(f"   {texto}{sufixo}: ").strip()
-        except EOFError:
-            return padrao
-        return resposta or padrao
+            distro, parecidas = detectar_distro(Path("/etc/os-release").read_text(encoding="utf-8"))
+        except OSError:
+            pass
+    return instrucoes_docker(sistema, distro, parecidas)
 
-    def confirmar(self, texto: str, padrao: bool = True) -> bool:
-        if self.nao_interativo:
-            return padrao
-        dica = "S/n" if padrao else "s/N"
-        resposta = self.perguntar(f"{texto} ({dica})").lower()
-        if not resposta:
-            return padrao
-        return resposta.startswith(("s", "y"))
+
+def pilha_em_outra_pasta(destino: Path) -> str | None:
+    """Pasta de outra instalação: os nomes dos containers são fixos, então só cabe uma na máquina."""
+    docker = shutil.which("docker")
+    if docker is None:
+        return None
+    r = subprocess.run(  # noqa: S603
+        [docker, "inspect", "-f", '{{index .Config.Labels "com.docker.compose.project.working_dir"}}', "timescaledb"],
+        capture_output=True, text=True, check=False,
+    )  # fmt: skip
+    pasta = r.stdout.strip()
+    if r.returncode != 0 or not pasta or pasta == "<no value>":
+        return None
+    return None if Path(pasta).resolve() == destino.resolve() else pasta
+
+
+def pasta_da_pilha() -> Path | None:
+    """Pasta da instalação em uso, lida do container do banco."""
+    pasta = pilha_em_outra_pasta(Path("/nonexistent-elex20"))
+    return Path(pasta) if pasta else None
+
+
+def instalacao_valida(pasta: Path) -> bool:
+    """Evita tratar como ELEX20 uma pasta qualquer: a desinstalação apaga arquivos nela."""
+    return (pasta / "docker-compose.yaml").is_file() and (pasta / "timescaledb" / "db-init.sql").is_file()
+
+
+def e_repositorio(pasta: Path) -> bool:
+    return (pasta / ".git").exists()
+
+
+def remover_arquivos(pasta: Path, saida: Saida, manter_env: bool = False) -> None:
+    """Apaga só o que o instalador criou. Em um clone, os arquivos do projeto ficam.
+
+    Nunca apaga a pasta inteira de uma vez: ela foi escolhida pelo usuário e pode ter outras coisas.
+    """
+    alvos = ["firmware/.env"] if e_repositorio(pasta) else list(ARQUIVOS_DO_PROJETO)
+    if not manter_env:
+        alvos.append(".env")
+    raiz = pasta.resolve()
+    for relativo in alvos:
+        alvo = pasta / relativo
+        if alvo.is_symlink():
+            alvo.unlink()
+        elif not alvo.resolve().is_relative_to(raiz):
+            continue
+        elif alvo.is_dir():
+            shutil.rmtree(alvo)
+        elif alvo.exists():
+            alvo.unlink()
+    if e_repositorio(pasta):
+        saida.info("Deleted the configuration. The repository files stay in place.")
+        return
+    # Pastas que ficaram vazias, das mais fundas para a raiz
+    for sub in sorted((p for p in pasta.rglob("*") if p.is_dir()), key=lambda p: len(p.parts), reverse=True):
+        if sub.is_symlink() or any(sub.iterdir()):
+            continue
+        sub.rmdir()
+    if any(pasta.iterdir()):
+        saida.aviso(f"Other files remain in {pasta}; they were not created by the installer.")
+    else:
+        pasta.rmdir()
+        saida.info(f"Deleted {pasta}.")
+
+
+def resumo_da_remocao(pasta: Path, remocao: Remocao) -> dict:
+    notas = ["Containers and the network were removed."]
+    notas.append("All data was deleted." if remocao.dados else "Your data stays in Docker volumes.")
+    notas.append("Docker images were deleted." if remocao.imagens else "Docker images stay on this computer.")
+    if remocao.arquivos and not remocao.dados:
+        notas.append("The .env was kept because your data needs it. Keep it to use that data again.")
+    if not remocao.arquivos:
+        notas.append("Files and the .env stay in the folder. Run the installer there to set ELEX20 up again.")
+    if e_repositorio(pasta):
+        notas.append("The repository was kept. Delete the folder yourself if you no longer need it.")
+    return {"title": "ELEX20 uninstalled", "folder": str(pasta), "services": [], "device": [], "notes": notas}
+
+
+class Instalador:
+    def __init__(self, raiz_origem: Path, respostas: Respostas, dry_run: bool, saida: Saida | None = None):
+        self.origem = raiz_origem
+        self.respostas = respostas
+        self.destino = respostas.destino
+        self.dry_run = dry_run
+        self.saida = saida or Saida()
+        self.sistema = platform.system()
+        self.processo: subprocess.Popen | None = None
+        self.resumo: dict | None = None
+
+    def etapas(self) -> list[tuple[str, str]]:
+        etapas = [
+            ("docker", "Check Docker"),
+            ("files", "Prepare files"),
+            ("env", "Write configuration"),
+            ("stack", "Start services"),
+        ]
+        if self.respostas.baixar_modelo:
+            etapas.append(("model", "Download AI model"))
+        etapas.append(("n8n", "Configure n8n"))
+        if self.respostas.firmware:
+            etapas.append(("firmware", "Write device configuration"))
+        return etapas
+
+    def etapas_da_remocao(self, remocao: Remocao) -> list[tuple[str, str]]:
+        etapas = [("docker", "Check Docker"), ("stack", "Remove services")]
+        if remocao.dados:
+            etapas.append(("data", "Delete Hermes data"))
+        if remocao.arquivos:
+            etapas.append(("files", "Delete files"))
+        return etapas
 
     # comandos
-    def docker(self, *args: str, capturar: bool = False, check: bool = True, entrada: str | None = None):
+    def docker(self, *args: str, capturar: bool = False, check: bool = True):
         cmd = ["docker", *args]
         if self.dry_run:
-            self.info("(simulação) " + " ".join(cmd))
+            self.saida.info("(dry run) " + " ".join(cmd))
             return subprocess.CompletedProcess(cmd, 0, "", "")
-        return subprocess.run(  # noqa: S603
-            cmd, cwd=self.destino, check=check, text=True, capture_output=capturar, input=entrada
+        if capturar:
+            return subprocess.run(cmd, cwd=self.destino, check=check, text=True, capture_output=True)  # noqa: S603
+        self.processo = subprocess.Popen(  # noqa: S603
+            cmd, cwd=self.destino, text=True, errors="replace", stdout=subprocess.PIPE, stderr=subprocess.STDOUT
         )
+        for linha in self.processo.stdout:  # type: ignore[union-attr]
+            self.saida.detalhe(linha.rstrip())
+        codigo = self.processo.wait()
+        if check and codigo != 0:
+            raise subprocess.CalledProcessError(codigo, cmd)
+        return subprocess.CompletedProcess(cmd, codigo, "", "")
 
     def compose(self, *args: str, **kw):
         return self.docker("compose", *args, **kw)
 
+    def cancelar(self) -> None:
+        if self.processo and self.processo.poll() is None:
+            self.processo.terminate()
+
     # ── etapas ───────────────────────────────────────────────────────────────
 
     def verificar_docker(self) -> bool:
-        self.titulo("1/5  Conferindo o Docker")
         if self.dry_run:
-            self.info("(simulação) verificação do Docker ignorada")
+            self.saida.info("(dry run) Docker check skipped")
             return True
-        if shutil.which("docker") is None:
-            self.erro("O Docker não está instalado.")
-            self.mostrar_como_instalar()
+        ok, mensagem = checar_docker()
+        if not ok:
+            self.saida.erro(mensagem)
+            if shutil.which("docker") is None or "Compose" in mensagem:
+                self.saida.info("How to install Docker on this computer:")
+                for linha in como_instalar_docker():
+                    self.saida.info(linha)
             return False
-        versao = subprocess.run(["docker", "compose", "version"], capture_output=True, text=True, check=False)  # noqa: S603, S607
-        if versao.returncode != 0:
-            self.erro("O Docker está instalado, mas falta o 'docker compose' (plugin Compose v2).")
-            self.mostrar_como_instalar()
+        outra = pilha_em_outra_pasta(self.destino)
+        if outra:
+            self.saida.erro(f"ELEX20 is already installed in {outra}. Run the installer on that folder.")
             return False
-        info = subprocess.run(["docker", "info"], capture_output=True, text=True, check=False)  # noqa: S603, S607
-        if info.returncode != 0:
-            saida = (info.stderr or "") + (info.stdout or "")
-            if "permission denied" in saida.lower():
-                self.erro(
-                    "Sem permissão para usar o Docker. No Linux: sudo usermod -aG docker $USER e reinicie a sessão."
-                )
-            else:
-                self.erro(
-                    "O Docker está instalado, mas não está rodando. "
-                    "Abra o Docker Desktop (ou: sudo systemctl start docker)."
-                )
-            return False
-        self.info("Docker e Compose funcionando.")
+        self.saida.info(mensagem)
         return True
 
-    def mostrar_como_instalar(self) -> None:
-        distro, parecidas = "", []
-        if self.sistema == "Linux":
-            try:
-                distro, parecidas = detectar_distro(Path("/etc/os-release").read_text(encoding="utf-8"))
-            except OSError:
-                pass
-        print("\nComo instalar o Docker neste computador:")
-        for linha in instrucoes_docker(self.sistema, distro, parecidas):
-            print(f"   {linha}")
-
     def preparar_pasta(self) -> None:
-        self.titulo("2/5  Preparando os arquivos")
+        self.destino.mkdir(parents=True, exist_ok=True)
         if self.origem.resolve() != self.destino.resolve():
-            self.info(f"Copiando para {self.destino}")
+            self.saida.info(f"Copying files to {self.destino}")
             copiar_projeto(self.origem, self.destino)
         else:
-            self.info(f"Usando a pasta do repositório: {self.destino}")
+            self.saida.info(f"Using the repository folder: {self.destino}")
 
     def senha_padrao_do_banco_funciona(self) -> bool:
         """True se o banco já em execução aceita a senha padrão (stack subida sem .env)."""
@@ -399,7 +677,6 @@ class Instalador:
         return any(v.startswith(prefixo) and v.endswith("timescaledb_data") for v in r.stdout.split())
 
     def configurar_env(self) -> dict[str, str] | None:
-        self.titulo("3/5  Gerando as senhas e o arquivo .env")
         arquivo = self.destino / ".env"
         modelo_texto = (self.destino / ".env.example").read_text(encoding="utf-8")
         existente = ler_env(arquivo.read_text(encoding="utf-8")) if arquivo.exists() else {}
@@ -407,89 +684,66 @@ class Instalador:
         banco_ja_existe = False
         if not existente and self.volumes_antigos():
             if self.senha_padrao_do_banco_funciona():
-                self.info("A stack já roda com as senhas padrão (subida sem .env); elas serão mantidas.")
+                self.saida.info("The stack already uses the default passwords (no .env); they will be kept.")
                 banco_ja_existe = True
             else:
-                self.erro(
-                    "Existem dados de uma instalação anterior (volume do banco), mas não há .env.\n"
-                    "Um .env novo teria senhas diferentes e o banco antigo não abriria.\n"
-                    "Recupere o .env antigo, ou apague os dados antigos de propósito (docker compose down -v)."
+                self.saida.erro(
+                    "Data from a previous installation exists, but there is no .env file.\n"
+                    "A new .env would have different passwords and the old database would not open.\n"
+                    "Restore the old .env, or delete the old data on purpose (docker compose down -v)."
                 )
                 return None
 
-        ip_lan = None
-        extras = dict(self.extras)
-        if not existente:
-            ip = detectar_ip_lan()
-            if self.confirmar("Vai ligar o sensor ESP32 na sua rede Wi-Fi/rede local?", padrao=False):
-                ip_lan = self.perguntar("IP deste computador na rede", ip or "")
-            if self.confirmar("Quer configurar o Hermes com OpenRouter (chave de API)?", padrao=False):
-                extras.setdefault("OPENROUTER_API_KEY", self.perguntar("Chave OPENROUTER_API_KEY", segredo=True))
-            if self.confirmar("Quer configurar o bot do Telegram?", padrao=False):
-                extras.setdefault("TELEGRAM_BOT_TOKEN", self.perguntar("Token do bot (do @BotFather)", segredo=True))
-                extras.setdefault(
-                    "TELEGRAM_ALLOWED_USERS",
-                    self.perguntar("Seu ID de usuário no Telegram (quem pode falar com o bot)"),
-                )
-                extras.setdefault(
-                    "TELEGRAM_HOME_CHANNEL",
-                    self.perguntar("ID do chat que recebe os alertas", extras.get("TELEGRAM_ALLOWED_USERS", "")),
-                )
-            if self.confirmar("Quer configurar o bot do Discord?", padrao=False):
-                extras.setdefault("DISCORD_BOT_TOKEN", self.perguntar("Token do bot do Discord", segredo=True))
-                extras.setdefault("DISCORD_ALLOWED_USERS", self.perguntar("Seu ID de usuário no Discord"))
-                extras.setdefault("DISCORD_HOME_CHANNEL", self.perguntar("ID do canal que recebe os alertas"))
-
-        self.ip_lan = ip_lan
         modelo = ler_env(modelo_texto)
-        novos = montar_valores(existente, modelo, self.sistema, ip_lan, extras, banco_ja_existe)
+        novos = montar_valores(
+            existente, modelo, self.sistema, self.respostas.ip_lan, self.respostas.extras, banco_ja_existe
+        )
+        novos = {chave: valor for chave, valor in novos.items() if existente.get(chave) != valor}
         if existente and not novos:
-            self.info("O .env já está completo; nada foi alterado.")
+            self.saida.info("The .env file is already complete; nothing changed.")
         else:
             texto_base = arquivo.read_text(encoding="utf-8") if existente else modelo_texto
             arquivo.write_text(aplicar_env(texto_base, novos), encoding="utf-8")
             if os.name == "posix":
                 arquivo.chmod(0o600)
-            self.info(f"Arquivo .env {'atualizado' if existente else 'criado'} com {len(novos)} valor(es) novo(s).")
+            self.saida.info(f".env {'updated' if existente else 'created'} with {len(novos)} new value(s).")
         return {**modelo, **existente, **novos}
 
     def subir_stack(self) -> bool:
-        self.titulo("4/5  Subindo os serviços (a primeira vez baixa alguns GB)")
+        self.saida.info("The first run downloads a few GB and can take several minutes.")
         try:
             self.compose("up", "-d")
         except subprocess.CalledProcessError:
-            self.erro("O docker compose falhou. Veja a mensagem acima (portas ocupadas? pouco espaço em disco?).")
+            self.saida.erro("docker compose failed. Check the output above (port in use? low disk space?).")
             return False
         if self.dry_run:
             return True
-        self.info("Esperando o n8n e o Grafana ficarem prontos...")
+        self.saida.info("Waiting for n8n and Grafana to be ready...")
         pendentes = {"n8n": f"{URL_N8N}/healthz", "Grafana": f"{URL_GRAFANA}/api/health"}
         limite = time.monotonic() + 600
         while pendentes and time.monotonic() < limite:
             for nome, url in list(pendentes.items()):
                 if esperar_http(url):
-                    self.info(f"{nome} pronto.")
+                    self.saida.info(f"{nome} is ready.")
                     del pendentes[nome]
             if pendentes:
                 time.sleep(5)
         if pendentes:
-            self.erro(
-                f"Não respondeu a tempo: {', '.join(pendentes)}. "
-                f"Veja: docker compose logs {' '.join(n.lower() for n in pendentes)}"
+            self.saida.erro(
+                f"No response in time: {', '.join(pendentes)}. "
+                f"See: docker compose logs {' '.join(n.lower() for n in pendentes)}"
             )
             return False
         return True
 
-    def baixar_modelo(self) -> None:
-        if not self.confirmar(
-            f"Baixar o modelo local de IA {MODELO_OLLAMA} (~2 GB, serve de reserva sem internet)?", True
-        ):
-            return
-        self.info("Baixando o modelo; pode demorar...")
+    def baixar_modelo(self) -> bool:
+        self.saida.info(f"Downloading {MODELO_OLLAMA}; this can take a while...")
         try:
             self.compose("exec", "-T", "ollama", "ollama", "pull", MODELO_OLLAMA)
         except subprocess.CalledProcessError:
-            self.info(f"Não deu certo agora. Tente depois: docker compose exec ollama ollama pull {MODELO_OLLAMA}")
+            self.saida.aviso(f"Download failed. Try later: docker compose exec ollama ollama pull {MODELO_OLLAMA}")
+            return False
+        return True
 
     def ler_segredo(self, servico: str, nome: str) -> str:
         """Lê um segredo gerado pela stack, de dentro do container que o monta."""
@@ -499,7 +753,6 @@ class Instalador:
         return r.stdout.strip()
 
     def provisionar_n8n(self, valores: dict[str, str]) -> bool:
-        self.titulo("5/5  Configurando o n8n (credenciais e workflows)")
         n8n = ("exec", "-T", "n8n", "n8n")
         with tempfile.NamedTemporaryFile(prefix="elex-cred-", suffix=".json", dir=self.destino, delete=False) as tmp:
             arquivo = Path(tmp.name)
@@ -512,77 +765,116 @@ class Instalador:
                 "POSTGRES_DB": valores.get("POSTGRES_DB", "grafana"),
             }
             arquivo.write_text(json.dumps(credenciais_n8n(segredos)), encoding="utf-8")
-            self.compose("cp", str(arquivo), "n8n:/tmp/elex-cred.json")
+            self.compose("cp", str(arquivo), "n8n:/tmp/elex-cred.json", capturar=True)
             try:
                 self.compose(*n8n, "import:credentials", "--input=/tmp/elex-cred.json", capturar=True)
             finally:
-                self.compose("exec", "-T", "n8n", "rm", "-f", "/tmp/elex-cred.json", check=False)  # noqa: S108 (caminho no container)
+                self.compose("exec", "-T", "n8n", "rm", "-f", "/tmp/elex-cred.json", check=False, capturar=True)  # noqa: S108 (caminho no container)
             self.compose(*n8n, "import:workflow", "--separate", "--input=/workflows", capturar=True)
             for wid in WORKFLOWS_N8N:
                 self.compose(*n8n, "publish:workflow", f"--id={wid}", capturar=True)
             self.compose("restart", "n8n", capturar=True)
         except subprocess.CalledProcessError as exc:
-            self.erro(f"Falha ao configurar o n8n: {(exc.stderr or exc.stdout or exc)}")
+            self.saida.erro(f"n8n setup failed: {(exc.stderr or exc.stdout or exc)}")
             return False
         finally:
             arquivo.unlink(missing_ok=True)
-        self.info("Credenciais criadas e workflows ativados.")
+        self.saida.info("Credentials created and workflows activated.")
         return True
 
-    def gerar_env_firmware(self, ip_lan: str | None) -> None:
-        if not (self.destino / "firmware" / "platformio.ini").exists():
-            return
-        if not self.confirmar("Gerar o firmware/.env com Wi-Fi e senha MQTT para compilar o firmware?", padrao=False):
-            return
-        ssid = self.perguntar("Nome da rede Wi-Fi (SSID, só 2,4 GHz)")
-        senha = self.perguntar("Senha do Wi-Fi", segredo=True)
-        host = self.perguntar("IP deste computador na rede", ip_lan or detectar_ip_lan() or "")
+    def gerar_env_firmware(self) -> None:
+        dados = self.respostas.firmware
+        arquivo = self.destino / "firmware" / ".env"
+        atual = ler_env(arquivo.read_text(encoding="utf-8")) if arquivo.exists() else {}
         texto = (
-            f"WIFI_SSID={ssid}\nWIFI_PASS={senha}\nMQTT_HOST={host}\nMQTT_USER=device\n"
+            f"WIFI_SSID={dados.ssid}\nWIFI_PASS={dados.senha or atual.get('WIFI_PASS', '')}\n"
+            f"MQTT_HOST={dados.host}\nMQTT_USER=device\n"
             f"MQTT_PASS={self.ler_segredo('mosquitto', 'mqtt_device')}\n"
         )
-        arquivo = self.destino / "firmware" / ".env"
         arquivo.write_text(texto, encoding="utf-8")
         if os.name == "posix":
             arquivo.chmod(0o600)
-        self.info("firmware/.env criado.")
+        self.saida.info("firmware/.env created.")
 
-    def resumo(self, valores: dict[str, str]) -> None:
-        print("\n" + "=" * 64)
-        print(" ELEX20 instalado")
-        print("=" * 64)
-        print(f" Pasta:      {self.destino}")
-        print(
-            f" Grafana:    {URL_GRAFANA}   usuário {valores.get('GRAFANA_ADMIN_USER', 'admin')}"
-            f"  senha {descrever_senha(valores.get('GRAFANA_ADMIN_PASSWORD'))}"
-        )
-        print(
-            f" Hermes:     {URL_HERMES}   usuário {valores.get('HERMES_DASHBOARD_USER', 'admin')}"
-            f"  senha {descrever_senha(valores.get('HERMES_DASHBOARD_PASS'))}"
-        )
-        print(f" n8n:        {URL_N8N}   (crie sua conta na primeira abertura)")
-        print("\n Dados para gravar no sensor (firmware):")
-        print(f"   MQTT_HOST = {valores.get('MQTT_BIND', '127.0.0.1')}   MQTT_USER = device")
-        print("   MQTT_PASS: rode na pasta acima  docker compose exec mosquitto cat /run/secrets/mqtt_device/value")
-        print("\n Os logins admin/password são placeholders: troque-os (no .env e na tela de cada serviço).")
-        print(" As senhas internas (banco, MQTT, tokens) foram geradas sozinhas e ficam em volumes do Docker.")
-        print(" Guarde o arquivo .env da pasta acima e não o compartilhe.")
-        print(" Para parar: docker compose stop   |   Para iniciar de novo: docker compose start")
+    def remover_stack(self, remocao: Remocao) -> bool:
+        args = ["down", "--remove-orphans"]
+        if remocao.dados:
+            args.append("--volumes")
+        if remocao.imagens:
+            args += ["--rmi", "all"]
+        try:
+            self.compose(*args)
+        except subprocess.CalledProcessError:
+            self.saida.erro("docker compose failed. Check the output above.")
+            return False
+        return True
+
+    def remover_dados_do_hermes(self) -> bool:
+        """hermes_data é uma pasta montada, não um volume: o `down --volumes` não a alcança."""
+        pasta = self.destino / "hermes_data"
+        if self.dry_run:
+            self.saida.info(f"(dry run) would delete {pasta}")
+            return True
+        shutil.rmtree(pasta, ignore_errors=True)
+        if pasta.exists():
+            self.saida.aviso(f"Could not delete everything. Run: sudo rm -rf {pasta}")
+        return True
+
+    def remover_pasta(self, manter_env: bool = False) -> bool:
+        if self.dry_run:
+            self.saida.info(f"(dry run) would delete the installed files in {self.destino}")
+            return True
+        remover_arquivos(self.destino, self.saida, manter_env)
+        return True
+
+    def desinstalar(self, remocao: Remocao) -> int:
+        titulos = dict(self.etapas_da_remocao(remocao))
+
+        def etapa(chave: str, funcao, *args) -> bool:
+            self.saida.etapa(chave, titulos[chave])
+            ok = funcao(*args)
+            self.saida.concluir_etapa(chave, ok)
+            return ok
+
+        if not instalacao_valida(self.destino):
+            self.saida.erro(f"No ELEX20 installation found in {self.destino}.")
+            return 1
+        if not etapa("docker", self.verificar_docker):
+            return 1
+        if not etapa("stack", self.remover_stack, remocao):
+            return 1
+        if remocao.dados:
+            etapa("data", self.remover_dados_do_hermes)
+        if remocao.arquivos:
+            # Sem o .env, os dados guardados ficariam inacessíveis: a senha do banco está nele
+            etapa("files", self.remover_pasta, not remocao.dados)
+        self.resumo = resumo_da_remocao(self.destino, remocao)
+        return 0
+
+    def _etapa(self, chave: str, funcao, *args):
+        """Roda uma etapa e marca o resultado; False e None contam como falha."""
+        self.saida.etapa(chave, dict(self.etapas())[chave])
+        resultado = funcao(*args)
+        self.saida.concluir_etapa(chave, resultado not in (False, None) or funcao == self.gerar_env_firmware)
+        return resultado
 
     def executar(self) -> int:
-        if not self.verificar_docker():
+        if not self._etapa("docker", self.verificar_docker):
             return 1
+        self.saida.etapa("files", "Prepare files")
         self.preparar_pasta()
-        valores = self.configurar_env()
+        self.saida.concluir_etapa("files")
+        valores = self._etapa("env", self.configurar_env)
         if valores is None:
             return 1
-        if not self.subir_stack():
+        if not self._etapa("stack", self.subir_stack):
             return 1
-        if not self.pular_modelo:
-            self.baixar_modelo()
-        n8n_ok = self.provisionar_n8n(valores)
-        self.gerar_env_firmware(self.ip_lan)
-        self.resumo(valores)
+        if self.respostas.baixar_modelo:
+            self._etapa("model", self.baixar_modelo)
+        n8n_ok = self._etapa("n8n", self.provisionar_n8n, valores)
+        if self.respostas.firmware:
+            self._etapa("firmware", self.gerar_env_firmware)
+        self.resumo = dados_do_resumo(valores, self.destino)
         return 0 if n8n_ok else 2
 
 
@@ -622,6 +914,115 @@ def raiz_do_projeto() -> Path:
     return Path(__file__).resolve().parent.parent
 
 
+def pasta_padrao(origem: Path) -> Path:
+    return Path.home() / "ELEX20" if getattr(sys, "frozen", False) else origem
+
+
+# ── Perguntas em texto simples ───────────────────────────────────────────────
+
+
+def perguntar(texto: str, padrao: str = "", segredo: bool = False, validar=None) -> str:
+    sufixo = f" [{padrao}]" if padrao and not segredo else ""
+    while True:
+        try:
+            leitura = getpass.getpass if segredo else input
+            resposta = leitura(f"   {texto}{sufixo}: ").strip() or padrao
+        except EOFError:
+            return padrao
+        erro = validar(resposta) if validar else None
+        if not erro:
+            return resposta
+        print(f"   {erro}")
+
+
+def confirmar(texto: str, padrao: bool = True) -> bool:
+    resposta = perguntar(f"{texto} ({'Y/n' if padrao else 'y/N'})").lower()
+    return resposta.startswith("y") if resposta else padrao
+
+
+def coletar_respostas(destino: Path | None, origem: Path, extras: dict[str, str], pular_modelo: bool) -> Respostas:
+    """Perguntas em texto simples, para quando a interface em tela cheia não está disponível."""
+    print("\n== Install location")
+    pasta = destino or Path(perguntar("Install folder", str(pasta_padrao(origem)), validar=validar_pasta))
+    pasta = pasta.expanduser().resolve()
+    respostas = Respostas(destino=pasta, extras=dict(extras), baixar_modelo=not pular_modelo)
+
+    if not (pasta / ".env").exists():
+        print("\n== Services")
+        if confirmar("Will the ESP32 sensor connect through your network?", False):
+            respostas.ip_lan = perguntar("This computer's IP address", detectar_ip_lan() or "", validar=validar_ip)
+        if confirmar("Set up an OpenRouter API key for Hermes?", False):
+            respostas.extras.setdefault("OPENROUTER_API_KEY", perguntar("OpenRouter API key", segredo=True))
+        if confirmar("Set up the Telegram bot?", False):
+            respostas.extras.setdefault("TELEGRAM_BOT_TOKEN", perguntar("Bot token (from @BotFather)", segredo=True))
+            usuarios = perguntar("Your Telegram user ID", validar=validar_ids)
+            respostas.extras.setdefault("TELEGRAM_ALLOWED_USERS", usuarios)
+            respostas.extras.setdefault(
+                "TELEGRAM_HOME_CHANNEL", perguntar("Chat ID for alerts", usuarios, validar=validar_ids)
+            )
+        if confirmar("Set up the Discord bot?", False):
+            respostas.extras.setdefault("DISCORD_BOT_TOKEN", perguntar("Bot token", segredo=True))
+            respostas.extras.setdefault("DISCORD_ALLOWED_USERS", perguntar("Your Discord user ID", validar=validar_ids))
+            respostas.extras.setdefault("DISCORD_HOME_CHANNEL", perguntar("Channel ID for alerts", validar=validar_ids))
+
+    if not pular_modelo:
+        respostas.baixar_modelo = confirmar(f"Download the local AI model {MODELO_OLLAMA} (~2 GB)?", True)
+    if (pasta / "firmware" / "platformio.ini").exists() and confirmar("Create firmware/.env for the sensor?", False):
+        print("\n== Device")
+        respostas.firmware = Firmware(
+            ssid=perguntar("Wi-Fi network name (SSID, 2.4 GHz only)", validar=validar_ssid),
+            senha=perguntar("Wi-Fi password", segredo=True, validar=validar_senha_wifi),
+            host=perguntar(
+                "This computer's IP address", respostas.ip_lan or detectar_ip_lan() or "", validar=validar_ip
+            ),
+        )
+        respostas.ip_lan = respostas.ip_lan or respostas.firmware.host
+    return respostas
+
+
+def coletar_remocao(destino: Path | None, remocao: Remocao) -> tuple[Path, Remocao] | None:
+    """Perguntas da desinstalação em texto simples; None se o usuário desistir."""
+    print("\n== Uninstall")
+    padrao = destino or pasta_da_pilha() or pasta_padrao(raiz_do_projeto())
+    pasta = Path(perguntar("Installed folder", str(padrao))).expanduser().resolve()
+    remocao.dados = remocao.dados or confirmar("Delete all data, including history and passwords?", False)
+    remocao.imagens = remocao.imagens or confirmar("Delete downloaded Docker images?", False)
+    remocao.arquivos = remocao.arquivos or confirmar("Delete the installed files and .env?", False)
+    if remocao.exige_confirmacao and perguntar("This cannot be undone. Type delete to confirm") != "delete":
+        print("   Nothing was changed.")
+        return None
+    if not confirmar(f"Remove ELEX20 from {pasta}?", False):
+        print("   Nothing was changed.")
+        return None
+    return pasta, remocao
+
+
+def executar_remocao(args, origem: Path, elex_tui) -> tuple[int, dict | None]:
+    remocao = Remocao(args.delete_data, args.delete_images, args.delete_files)
+    if elex_tui:
+        padrao = pasta_da_pilha() or pasta_padrao(origem)
+        return elex_tui.executar(origem, args.dir, padrao, {}, True, args.dry_run, remocao)
+    print(titulo_do_instalador())
+    if args.non_interactive:
+        pasta = (args.dir or pasta_da_pilha() or pasta_padrao(origem)).expanduser().resolve()
+    else:
+        escolha = coletar_remocao(args.dir, remocao)
+        if escolha is None:
+            return 0, None
+        pasta, remocao = escolha
+    instalador = Instalador(origem, Respostas(destino=pasta), args.dry_run)
+    return instalador.desinstalar(remocao), instalador.resumo
+
+
+def verificar_interface() -> int:
+    """Abre a interface sem terminal e fecha: confirma que o executável traz o Textual completo."""
+    import elex_tui  # noqa: PLC0415
+
+    elex_tui.verificar()
+    print("ui ok")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     for fluxo in (sys.stdout, sys.stderr):
         try:
@@ -629,47 +1030,79 @@ def main(argv: list[str] | None = None) -> int:
         except (AttributeError, ValueError):
             pass
 
-    parser = argparse.ArgumentParser(description="Instala o ELEX20 (Docker, senhas, n8n) em Windows, macOS ou Linux.")
+    parser = argparse.ArgumentParser(description="Install ELEX20 (Docker, passwords, n8n) on Windows, macOS or Linux.")
+    parser.add_argument("--dir", type=Path, help="install folder (default: ask; ~/ELEX20 or this repository)")
     parser.add_argument(
-        "--dir", type=Path, help="pasta de instalação (padrão: ~/ELEX20 no executável; o repositório, no código-fonte)"
-    )
-    parser.add_argument(
-        "--non-interactive", "-y", action="store_true", help="não pergunta nada; usa os padrões e os --set"
+        "--non-interactive", "-y", action="store_true", help="ask nothing; use the defaults and --set values"
     )
     parser.add_argument(
         "--set",
         action="append",
         default=[],
         metavar="KEY=VALUE",
-        help="define uma variável do .env (ex.: OPENROUTER_API_KEY=...)",
+        help="set a .env variable (e.g. OPENROUTER_API_KEY=...)",
     )
-    parser.add_argument("--skip-model", action="store_true", help="não baixa o modelo local do Ollama")
+    parser.add_argument("--skip-model", action="store_true", help="do not download the local Ollama model")
+    parser.add_argument("--dry-run", action="store_true", help="create the files, but only show the Docker commands")
+    parser.add_argument("--uninstall", action="store_true", help="remove the ELEX20 containers")
     parser.add_argument(
-        "--dry-run", action="store_true", help="cria os arquivos, mas só mostra os comandos do Docker sem executá-los"
+        "--delete-data", action="store_true", help="with --uninstall: also delete all data and generated passwords"
     )
+    parser.add_argument("--delete-images", action="store_true", help="with --uninstall: also delete the Docker images")
+    parser.add_argument(
+        "--delete-files", action="store_true", help="with --uninstall: also delete the installed files and .env"
+    )
+    parser.add_argument("--no-tui", action="store_true", help="use plain text prompts instead of the full-screen UI")
+    parser.add_argument("--check-ui", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--version", action="version", version=f"elex-installer {VERSAO}")
     args = parser.parse_args(argv)
+
+    if args.check_ui:
+        return verificar_interface()
+    if not args.uninstall and (args.delete_data or args.delete_images or args.delete_files):
+        parser.error("--delete-data, --delete-images and --delete-files need --uninstall")
 
     extras: dict[str, str] = {}
     for item in args.set:
         chave, separador, valor = item.partition("=")
         if not separador or not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", chave):
-            parser.error(f"--set espera KEY=VALUE, recebi: {item!r}")
+            parser.error(f"--set expects KEY=VALUE, got: {item!r}")
         extras[chave] = valor
 
     origem = raiz_do_projeto()
-    destino = (args.dir or (Path.home() / "ELEX20" if getattr(sys, "frozen", False) else origem)).expanduser().resolve()
-    destino.mkdir(parents=True, exist_ok=True)
+    pausar = getattr(sys, "frozen", False) and platform.system() == "Windows" and not args.non_interactive
+    tela_cheia = not (args.non_interactive or args.no_tui) and sys.stdin.isatty() and sys.stdout.isatty()
+    elex_tui = None
+    if tela_cheia:
+        try:
+            import elex_tui  # noqa: PLC0415
+        except (ImportError, TypeError):
+            print("The Textual library is not available; using plain text prompts.")
 
-    print(f"ELEX20 — instalador {VERSAO} ({platform.system()} {platform.machine()})")
-    instalador = Instalador(origem, destino, args.non_interactive, args.dry_run, extras, args.skip_model)
     try:
-        codigo = instalador.executar()
+        if args.uninstall:
+            codigo, resumo = executar_remocao(args, origem, elex_tui)
+        elif elex_tui:
+            codigo, resumo = elex_tui.executar(
+                origem, args.dir, pasta_padrao(origem), extras, args.skip_model, args.dry_run
+            )
+        else:
+            print(titulo_do_instalador())
+            if args.non_interactive:
+                pasta = (args.dir or pasta_padrao(origem)).expanduser().resolve()
+                respostas = Respostas(destino=pasta, extras=extras, baixar_modelo=not args.skip_model)
+            else:
+                respostas = coletar_respostas(args.dir, origem, extras, args.skip_model)
+            instalador = Instalador(origem, respostas, args.dry_run)
+            codigo = instalador.executar()
+            resumo = instalador.resumo
+        if resumo:
+            imprimir_resumo(resumo)
     except KeyboardInterrupt:
-        print("\nInterrompido.")
+        print("\nInterrupted.")
         codigo = 130
-    if getattr(sys, "frozen", False) and platform.system() == "Windows" and not args.non_interactive:
-        input("\nPressione Enter para fechar...")
+    if pausar:
+        input("\nPress Enter to close...")
     return codigo
 
 

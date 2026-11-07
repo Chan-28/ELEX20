@@ -1,9 +1,11 @@
 # -*- mode: python ; coding: utf-8 -*-
 # Empacota o instalador num executável único (Windows, macOS e Linux) com os arquivos
 # da stack embutidos. Build, a partir da raiz do repositório:
-#   uvx --from "pyinstaller>=6.11" pyinstaller installer/elex_installer.spec --noconfirm
+#   uvx --from "pyinstaller>=6.11" --with "textual==8.2.8" pyinstaller installer/elex_installer.spec --noconfirm
 import sys
 from pathlib import Path
+
+from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 
 pasta_do_spec = Path(SPECPATH)  # noqa: F821 (definido pelo PyInstaller)
 raiz = pasta_do_spec.parent
@@ -27,7 +29,9 @@ def arquivos_embutidos():
 a = Analysis(  # noqa: F821
     [str(pasta_do_spec / "elex_installer.py")],
     pathex=[str(pasta_do_spec)],
-    datas=[*arquivos_embutidos(), (str(pasta_do_spec / "version.txt"), ".")],
+    datas=[*arquivos_embutidos(), (str(pasta_do_spec / "version.txt"), "."), *collect_data_files("textual")],
+    # O Textual e o Rich importam módulos sob demanda, e a análise estática não os enxerga
+    hiddenimports=["elex_tui", *collect_submodules("textual"), *collect_submodules("rich")],
     excludes=["tkinter", "unittest", "pydoc", "test"],
 )
 pyz = PYZ(a.pure)  # noqa: F821

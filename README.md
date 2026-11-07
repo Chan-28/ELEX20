@@ -34,7 +34,7 @@ cd ELEX20
 
 No Windows, use `install.bat` no lugar de `./install.sh`.
 
-O instalador configura tudo e faz algumas perguntas. Todas são opcionais; aperte Enter para pular. Se você vai usar o aparelho, responda **sim** quando ele perguntar sobre o sensor e sobre o arquivo do firmware.
+Abre um assistente em inglês no terminal. Escolha a pasta, ligue só o que for usar e confira tudo na última tela: nada é instalado antes disso. Se você vai usar o aparelho, preencha o nome e a senha do Wi-Fi na tela **Set up the device**.
 
 > [!WARNING]
 > Guarde o arquivo `.env` criado na pasta e não o compartilhe, porque ele contém as suas senhas.
@@ -71,6 +71,8 @@ Para parar e voltar a ligar o servidor:
 docker compose stop
 docker compose start
 ```
+
+Para remover o ELEX20, rode `./install.sh --uninstall`. Seus dados só são apagados se você pedir. Veja [Desinstalar](docs/reference.md#desinstalar).
 
 ## Problemas comuns
 

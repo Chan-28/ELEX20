@@ -2,6 +2,7 @@
 
 import json
 import re
+import shutil
 from pathlib import Path
 
 import elex_installer as inst
@@ -24,7 +25,7 @@ def test_formatar_valor_env(valor, esperado):
 
 
 def test_formatar_valor_env_recusa_quebra_de_linha():
-    with pytest.raises(ValueError, match="quebra de linha"):
+    with pytest.raises(ValueError, match="line break"):
         inst.formatar_valor_env("a\nb")
 
 
@@ -188,8 +189,201 @@ def test_main_recusa_set_mal_formado():
         inst.main(["--set", "SEM_IGUAL", "--dry-run"])
 
 
-def test_versao_vem_do_arquivo_versao_txt():
-    esperado = (RAIZ / "installer" / "version.txt").read_text(encoding="utf-8").strip()
-    assert esperado
-    assert inst.ler_versao() == esperado
-    assert inst.VERSAO == esperado
+def test_versao_de_release_vem_do_arquivo(tmp_path, monkeypatch):
+    (tmp_path / "version.txt").write_text("1.4.2\n", encoding="utf-8")
+    monkeypatch.setattr(inst, "__file__", str(tmp_path / "elex_installer.py"))
+    assert inst.ler_versao() == "1.4.2"
+
+
+def test_versao_de_desenvolvimento_usa_a_ultima_tag(tmp_path, monkeypatch):
+    (tmp_path / "version.txt").write_text("0.0.0-dev\n", encoding="utf-8")
+    monkeypatch.setattr(inst, "__file__", str(tmp_path / "elex_installer.py"))
+    monkeypatch.setattr(inst, "versao_do_git", lambda _: "1.0.0")
+    assert inst.ler_versao() == "1.0.0"
+    monkeypatch.setattr(inst, "versao_do_git", lambda _: None)
+    assert inst.ler_versao() == "dev"
+
+
+@pytest.mark.parametrize(
+    ("sistema", "esperado"), [("Linux", "(Linux)"), ("Darwin", "(macOS)"), ("Windows", "(Windows)")]
+)
+def test_titulo_tem_versao_e_sistema(sistema, esperado):
+    assert inst.titulo_do_instalador("1.4.2", sistema) == f"ELEX20 — installer 1.4.2 {esperado}"
+
+
+@pytest.mark.parametrize("valor", ["192.168.0.10", "", " ", "x" * 33])
+def test_ssid_invalido(valor):
+    assert inst.validar_ssid(valor)
+
+
+def test_ssid_valido():
+    assert inst.validar_ssid("Casa 2.4 GHz") is None
+
+
+@pytest.mark.parametrize("valor", ["abc", "", "0.0.0.0", "127.0.0.1", "192.168.0"])  # noqa: S104 (valor recusado)
+def test_ip_invalido(valor):
+    assert inst.validar_ip(valor)
+
+
+def test_ip_valido():
+    assert inst.validar_ip("192.168.0.10") is None
+
+
+@pytest.mark.parametrize(("valor", "ok"), [("123", True), ("-100, 200", True), ("abc", False), ("", False)])
+def test_ids(valor, ok):
+    assert (inst.validar_ids(valor) is None) is ok
+
+
+def test_senha_wifi():
+    assert inst.validar_senha_wifi("curta")
+    assert inst.validar_senha_wifi("12345678") is None
+
+
+def test_pasta_nao_pode_ser_arquivo(tmp_path):
+    arquivo = tmp_path / "x"
+    arquivo.write_text("", encoding="utf-8")
+    assert inst.validar_pasta(str(arquivo))
+    assert inst.validar_pasta(str(tmp_path / "nova" / "pasta")) is None
+
+
+def test_mascarar_nunca_mostra_o_segredo():
+    assert "s3gr3d0" not in inst.mascarar("s3gr3d0")
+    assert inst.mascarar("", "antigo") == "•••••• (unchanged)"
+    assert inst.mascarar("") == "not set"
+
+
+def test_resumo_nao_traz_senha_real():
+    assert "s3gr3d0" not in str(inst.dados_do_resumo({"GRAFANA_ADMIN_PASSWORD": "s3gr3d0"}, Path("/x")))
+
+
+def test_nao_interativo_roda_em_ingles_e_cria_os_arquivos(tmp_path, capsys):
+    assert inst.main(["-y", "--dry-run", "--skip-model", "--dir", str(tmp_path / "ELEX20")]) == 0
+    saida = capsys.readouterr().out
+    assert saida.startswith("ELEX20 — installer ")
+    assert "Check Docker" in saida
+    assert "ELEX20 installed" in saida
+    assert (tmp_path / "ELEX20" / ".env").is_file()
+
+
+def test_versao_do_textual_e_a_mesma_nos_scripts_e_no_build():
+    pyproject = (RAIZ / "pyproject.toml").read_text(encoding="utf-8")
+    versao = re.search(r'"(textual==[^"]+)"', pyproject).group(1)
+    for arquivo in ("install.sh", "install.bat", ".github/workflows/installer-build.yml"):
+        assert versao in (RAIZ / arquivo).read_text(encoding="utf-8"), arquivo
+
+
+class SaidaMuda(inst.Saida):
+    def __init__(self):
+        self.linhas = []
+
+    def etapa(self, _chave, texto):
+        self.linhas.append(texto)
+
+    def info(self, texto):
+        self.linhas.append(texto)
+
+    def aviso(self, texto):
+        self.linhas.append(texto)
+
+    def erro(self, texto):
+        self.linhas.append(texto)
+
+    def detalhe(self, texto):
+        self.linhas.append(texto)
+
+
+def instalacao_copiada(pasta):
+    inst.copiar_projeto(RAIZ, pasta)
+    (pasta / ".env").write_text("A=1\n", encoding="utf-8")
+    return pasta
+
+
+@pytest.mark.parametrize(
+    ("remocao", "presentes", "ausentes"),
+    [
+        (inst.Remocao(), ["down", "--remove-orphans"], ["--volumes", "--rmi"]),
+        (inst.Remocao(dados=True), ["--volumes"], ["--rmi"]),
+        (inst.Remocao(imagens=True), ["--rmi all"], ["--volumes"]),
+    ],
+)
+def test_desinstalar_so_apaga_volumes_quando_pedido(tmp_path, remocao, presentes, ausentes):
+    pasta = instalacao_copiada(tmp_path / "ELEX20")
+    saida = SaidaMuda()
+    assert inst.Instalador(RAIZ, inst.Respostas(destino=pasta), True, saida).desinstalar(remocao) == 0
+    texto = "\n".join(saida.linhas)
+    for trecho in presentes:
+        assert trecho in texto
+    for trecho in ausentes:
+        assert trecho not in texto
+
+
+def test_simulacao_de_remocao_nao_apaga_arquivos(tmp_path):
+    pasta = instalacao_copiada(tmp_path / "ELEX20")
+    (pasta / "hermes_data").mkdir()
+    remocao = inst.Remocao(dados=True, arquivos=True)
+    assert inst.Instalador(RAIZ, inst.Respostas(destino=pasta), True, SaidaMuda()).desinstalar(remocao) == 0
+    assert (pasta / ".env").is_file()
+    assert (pasta / "hermes_data").is_dir()
+
+
+def test_desinstalar_recusa_pasta_que_nao_e_do_elex20(tmp_path):
+    (tmp_path / "foto.jpg").write_text("x", encoding="utf-8")
+    remocao = inst.Remocao(dados=True, arquivos=True)
+    assert inst.Instalador(RAIZ, inst.Respostas(destino=tmp_path), True, SaidaMuda()).desinstalar(remocao) == 1
+    assert (tmp_path / "foto.jpg").exists()
+
+
+def test_remover_arquivos_preserva_o_que_nao_e_do_instalador(tmp_path):
+    pasta = instalacao_copiada(tmp_path / "ELEX20")
+    (pasta / "meu-arquivo.txt").write_text("x", encoding="utf-8")
+    inst.remover_arquivos(pasta, SaidaMuda())
+    assert sorted(p.name for p in pasta.iterdir()) == ["meu-arquivo.txt"]
+
+
+def test_remover_arquivos_apaga_a_pasta_que_ficou_vazia(tmp_path):
+    pasta = instalacao_copiada(tmp_path / "ELEX20")
+    inst.remover_arquivos(pasta, SaidaMuda())
+    assert not pasta.exists()
+
+
+def test_apagar_arquivos_mantem_o_env_se_os_dados_ficam(tmp_path):
+    pasta = instalacao_copiada(tmp_path / "ELEX20")
+    inst.remover_arquivos(pasta, SaidaMuda(), manter_env=True)
+    assert [p.name for p in pasta.iterdir()] == [".env"]
+
+
+def test_remover_arquivos_nao_toca_no_repositorio(tmp_path):
+    pasta = instalacao_copiada(tmp_path / "ELEX20")
+    (pasta / ".git").mkdir()
+    (pasta / "firmware").mkdir()
+    (pasta / "firmware" / ".env").write_text("WIFI_PASS=x\n", encoding="utf-8")
+    inst.remover_arquivos(pasta, SaidaMuda())
+    assert not (pasta / ".env").exists()
+    assert not (pasta / "firmware" / ".env").exists()
+    assert (pasta / "docker-compose.yaml").is_file()
+    assert (pasta / ".git").is_dir()
+
+
+def test_remover_arquivos_nao_segue_link_para_fora(tmp_path):
+    fora = tmp_path / "fora"
+    fora.mkdir()
+    (fora / "importante.txt").write_text("x", encoding="utf-8")
+    pasta = instalacao_copiada(tmp_path / "ELEX20")
+    shutil.rmtree(pasta / "grafana")
+    (pasta / "grafana").symlink_to(fora, target_is_directory=True)
+    inst.remover_arquivos(pasta, SaidaMuda())
+    assert (fora / "importante.txt").exists()
+
+
+def test_flags_de_apagar_exigem_uninstall():
+    with pytest.raises(SystemExit):
+        inst.main(["--delete-data", "--dry-run", "-y"])
+
+
+def test_uninstall_nao_interativo_sem_flags_mantem_os_dados(tmp_path, capsys):
+    pasta = instalacao_copiada(tmp_path / "ELEX20")
+    assert inst.main(["--uninstall", "-y", "--dry-run", "--dir", str(pasta)]) == 0
+    saida = capsys.readouterr().out
+    assert "--volumes" not in saida
+    assert "ELEX20 uninstalled" in saida
+    assert "Your data stays in Docker volumes." in saida
