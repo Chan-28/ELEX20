@@ -179,30 +179,36 @@ chmod +x elex-installer-linux-x86_64
 
 </details>
 
-### Responda às perguntas
+### Siga o assistente
 
-Tudo é opcional, e você pode apertar Enter para pular:
+O instalador abre um assistente em inglês, em tela cheia, e só muda algo depois da tela de revisão:
 
-- se vai ligar o sensor ESP32 na sua rede (ele descobre o IP do computador);
-- chave do OpenRouter (IA na nuvem; sem ela o Hermes usa o modelo local);
-- bot do Telegram e/ou do Discord (token, o seu ID e o chat que recebe os alertas; veja [Telegram](#telegram));
-- se quer baixar o modelo local de IA (cerca de 2 GB);
-- se quer gerar o `firmware/.env`, quando há a pasta `firmware/`.
+1. **Pasta:** escolha onde instalar, digitando o caminho ou com **Browse…**. O assistente também confere o Docker aqui.
+2. **Serviços:** ligue o que for usar: sensor na rede, OpenRouter, Telegram, Discord e modelo local de IA (cerca de 2 GB). Veja [Telegram](#telegram).
+3. **Aparelho:** nome e senha do Wi-Fi e IP do computador, para gerar o `firmware/.env`. Só aparece se a pasta tiver `firmware/`.
+4. **Revisão:** confira tudo, com os segredos ocultos, e confirme.
+
+Use `Tab` para mudar de campo, `Esc` para voltar e `Ctrl+Q` para sair. O assistente recusa dados inválidos, como um IP no campo do Wi-Fi.
 
 Ao final, o instalador mostra os endereços e os logins. Na primeira vez, o Docker baixa alguns GB de imagens, o que pode levar vários minutos.
 
 > [!WARNING]
 > Guarde o arquivo `.env` da pasta de instalação e não o compartilhe.
 
-Pode rodar o instalador de novo a qualquer momento: ele só completa o que falta. Se o `.env` já existe, ele não repete as perguntas sobre a rede e os bots; altere esses valores direto no arquivo.
+Pode rodar o instalador de novo a qualquer momento: ele carrega o que já existe na pasta e só grava o que você mudar. Deixe um segredo em branco para manter o valor atual.
+
+Só uma instalação cabe em cada computador, porque os nomes dos containers são fixos. Se já houver uma em outra pasta, o assistente aponta para ela.
+
+Sem Python, sem internet para baixar a biblioteca [Textual](https://textual.textualize.io/) ou com `--no-tui`, o instalador usa perguntas em texto simples. No Debian e no Ubuntu, instale `python3-venv` para ter a tela cheia pelo `./install.sh`.
 
 | Opção               | Efeito                                                |
 | ------------------- | ----------------------------------------------------- |
-| `--dir PASTA`       | Define a pasta de instalação                          |
+| `--dir PASTA`       | Define a pasta e pula a escolha                       |
 | `--non-interactive` | Não pergunta nada; usa os padrões e os `--set`        |
 | `--skip-model`      | Não baixa o modelo local do Ollama                    |
 | `--set KEY=VALUE`   | Define uma variável do `.env`                         |
 | `--dry-run`         | Cria os arquivos, mas só mostra os comandos do Docker |
+| `--no-tui`          | Usa perguntas em texto simples                        |
 
 ### Abra os serviços
 
@@ -493,6 +499,33 @@ docker compose pull
 docker compose up -d
 ```
 
+### Desinstalar
+
+Pela tela: rode o instalador e, na primeira tela, escolha **Uninstall ELEX20…**. Ou vá direto:
+
+```bash
+./install.sh --uninstall
+```
+
+Sem nenhuma outra escolha, só os containers saem, e os dados continuam nos volumes do Docker. O resto é opcional:
+
+| Opção na tela                 | Flag              | O que apaga                                                |
+| ----------------------------- | ----------------- | ---------------------------------------------------------- |
+| Delete all data               | `--delete-data`   | Histórico, painéis, conta do n8n, dados do Hermes e senhas |
+| Delete downloaded images      | `--delete-images` | Imagens do Docker, liberando vários GB                     |
+| Delete installed files / .env | `--delete-files`  | Arquivos que o instalador criou e o `.env`                 |
+
+A tela pede que você digite `delete` antes de apagar dados ou arquivos. Em um clone, o repositório fica: só `.env` e `firmware/.env` saem. Em outra pasta, só somem os arquivos criados pelo instalador; o que for seu continua lá. Se os dados ficarem, o `.env` também fica, porque a senha do banco está nele.
+
+Sem interface, as flags valem como confirmação. Por exemplo, para remover tudo:
+
+```bash
+./install.sh --uninstall -y --delete-data --delete-images --delete-files
+```
+
+> [!CAUTION]
+> Dados apagados não podem ser recuperados. Depois disso, o sensor precisa ser gravado de novo, porque as senhas internas mudam.
+
 ### Trocar senhas
 
 Os logins do Grafana e do Hermes ficam no `.env`. Edite e reinicie os serviços afetados:
@@ -679,7 +712,7 @@ Use `uv add` e `uv remove` para mudar dependências; eles atualizam o `uv.lock`,
 Para gerar o executável do instalador localmente:
 
 ```bash
-uvx --from "pyinstaller>=6.11" pyinstaller installer/elex_installer.spec
+uvx --from "pyinstaller>=6.11" --with "textual==8.2.8" pyinstaller installer/elex_installer.spec
 ```
 
 ## Saúde do código

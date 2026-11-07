@@ -58,7 +58,7 @@ jobs:
         env:
           ASSET: ${{ matrix.asset }}
         run: |
-          uvx --from "pyinstaller>=6.11" pyinstaller installer/elex_installer.spec --noconfirm
+          uvx --from "pyinstaller>=6.11" --with "textual==8.2.8" pyinstaller installer/elex_installer.spec --noconfirm
           if [ -f dist/elex-installer.exe ]; then mv dist/elex-installer.exe "dist/${ASSET}"; else mv dist/elex-installer "dist/${ASSET}"; fi
           ls -la dist
 
@@ -69,6 +69,7 @@ jobs:
           VERSION: ${{ inputs.version }}
         run: |
           test "$("./dist/${ASSET}" --version)" = "elex-installer ${VERSION#v}"
+          "./dist/${ASSET}" --check-ui
           "./dist/${ASSET}" --dry-run -y --skip-model --dir "${RUNNER_TEMP}/ELEX20"
           test -f "${RUNNER_TEMP}/ELEX20/.env"
           test -f "${RUNNER_TEMP}/ELEX20/docker-compose.yaml"
