@@ -1,0 +1,15 @@
+apiVersion: 1
+
+# Logs dos containers enviados pelo Alloy (perfil "logs"). O Loki sobe sempre, mesmo
+# sem o perfil; sem o Alloy ele só fica vazio. O Grafana não testa a conexão ao
+# provisionar, então a subida não depende do Loki estar no ar.
+datasources:
+  - name: Loki
+    type: loki
+    uid: loki
+    access: proxy
+    url: http://loki:3100
+    jsonData:
+      maxLines: 1000
+      timeout: 60
+    editable: false

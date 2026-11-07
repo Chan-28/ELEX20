@@ -1,0 +1,146 @@
+apiVersion: 1
+
+# Alertas da stack ELEX20. As consultas SQL usam a datasource "timescaledb"
+# (papel grafana_ro, só leitura); a de reinícios usa o Loki, que só recebe dados com
+# o perfil "logs" (Alloy). "Sensor ativo" = mandou heartbeat nos últimos 7 dias: o
+# firmware publica sound/status a cada 5 s, e um sensor aposentado para de alertar
+# depois de uma semana. Sem contact point provisionado, os alertas aparecem em
+# Alerting > Alert rules e vão para o contact point padrão do Grafana.
+groups:
+  - orgId: 1
+    name: ELEX20
+    folder: ELEX20
+    interval: 1m
+    rules:
+      - uid: elex20-sensor-sem-heartbeat
+        title: Sensor sem heartbeat
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: timescaledb
+            model:
+              refId: A
+              format: table
+              editorMode: code
+              rawQuery: true
+              rawSql: >-
+                SELECT device_id,
+                       EXTRACT(EPOCH FROM now() - max(time))::float8 AS segundos_sem_heartbeat
+                FROM device_status
+                WHERE time > now() - INTERVAL '7 days'
+                GROUP BY device_id
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [300]
+        noDataState: OK
+        execErrState: Error
+        for: 0s
+        annotations:
+          summary: >-
+            Sensor {{ $labels.device_id }} sem heartbeat há
+            {{ humanizeDuration $values.A.Value }}
+          description: >-
+            Nenhuma linha em device_status há mais de 5 min. Confira a energia e o
+            Wi-Fi do sensor; se todos pararam juntos, veja o alerta de ingestão.
+        labels:
+          severity: warning
+        isPaused: false
+
+      - uid: elex20-ingestao-parada
+        title: Ingestão parada
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: timescaledb
+            model:
+              refId: A
+              format: table
+              editorMode: code
+              rawQuery: true
+              # GREATEST ignora NULL; sem sensor ativo nos últimos 7 dias o valor é
+              # NULL e o alerta fica em OK (noDataState)
+              rawSql: >-
+                SELECT EXTRACT(EPOCH FROM now() - GREATEST(
+                         (SELECT max(time) FROM device_status WHERE time > now() - INTERVAL '7 days'),
+                         (SELECT max(time) FROM sound_events  WHERE time > now() - INTERVAL '7 days')
+                       ))::float8 AS segundos_sem_ingestao
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [900]
+        noDataState: OK
+        execErrState: Error
+        for: 0s
+        annotations:
+          summary: >-
+            Nenhuma linha nova em sound_events/device_status há
+            {{ humanizeDuration $values.A.Value }}
+          description: >-
+            Há sensor ativo, mas nada chega ao banco há mais de 15 min. Confira o
+            Mosquitto, o workflow "elex-ingestao-mqtt" no n8n (publicado e ativo) e os
+            logs no Explore (Loki).
+        labels:
+          severity: critical
+        isPaused: false
+
+      - uid: elex20-container-reiniciando
+        title: Container em loop de reinício
+        condition: C
+        data:
+          - refId: A
+            queryType: instant
+            relativeTimeRange:
+              from: 900
+              to: 0
+            datasourceUid: loki
+            model:
+              refId: A
+              queryType: instant
+              editorMode: code
+              # Uma linha "restarting=true" por reinício automático (config.v2.json,
+              # ver grafana/alloy/config.alloy)
+              expr: >-
+                sum by (container) (count_over_time({job="docker_state"} |= "restarting=true" [15m]))
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [2]
+        # Sem o perfil "logs" o Loki fica vazio: sem dados não é problema
+        noDataState: OK
+        execErrState: Error
+        for: 0s
+        annotations:
+          summary: >-
+            Container {{ $labels.container }} reiniciou
+            {{ $values.A.Value }} vezes em 15 min
+          description: >-
+            O Docker está reiniciando o container sem parar. Veja os logs com
+            {service="{{ $labels.container }}"} no Explore (Loki).
+        labels:
+          severity: critical
+        isPaused: false
