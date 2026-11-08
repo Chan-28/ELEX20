@@ -85,6 +85,8 @@ class Estado:
     dry_run: bool
     pasta_fixa: bool = False
     remocao: inst.Remocao | None = None
+    # --ei-model: já preenche o campo do modelo na tela do dispositivo
+    modelo_ei: Path | None = None
     env: dict[str, str] = field(default_factory=dict)
     firmware_env: dict[str, str] = field(default_factory=dict)
     respostas: inst.Respostas | None = None
@@ -462,8 +464,8 @@ class TelaServicos(Passo):
 class TelaDispositivo(Passo):
     NUMERO = "Step 3 of 4"
     TITULO = "Set up the device"
-    DICA = "Saves the Wi-Fi and server settings used when you flash the ESP32-S3."
-    REGRAS = {"ssid": inst.validar_ssid, "host": inst.validar_ip}
+    DICA = "Saves the Wi-Fi and server settings used when you flash the ESP32-S3, and the sound model."
+    REGRAS = {"ssid": inst.validar_ssid, "host": inst.validar_ip, "ei-path": inst.validar_modelo_ei}
 
     def compose(self) -> ComposeResult:
         e = self.estado
@@ -485,12 +487,23 @@ class TelaDispositivo(Passo):
                 campo("Wi-Fi password", "wifi-pass", segredo=True, dica=senha_guardada),
                 campo("This computer's IP address", "host", host),
             )
+            yield secao(
+                "Add an Edge Impulse sound model to the firmware",
+                "ei",
+                e.modelo_ei is not None,
+                campo(
+                    "Model .zip or folder",
+                    "ei-path",
+                    str(e.modelo_ei or ""),
+                    dica="From Edge Impulse: Deployment → Arduino library",
+                ),
+            )
         yield from self.navegacao()
 
     def validar(self) -> bool:
         ok = super().validar()
         if not self.query_one("#fw", Switch).value:
-            return True
+            return ok
         senha = self.query_one("#wifi-pass", Input).value
         erro = None if not senha and self.estado.firmware_env.get("WIFI_PASS") else inst.validar_senha_wifi(senha)
         self.query_one("#wifi-pass-error", Static).update(erro or "")
@@ -507,6 +520,9 @@ class TelaDispositivo(Passo):
             )
             # Sem isso, o broker só escutaria o loopback e a placa nunca conectaria
             respostas.ip_lan = respostas.ip_lan or respostas.firmware.host
+        respostas.modelo_ei = None
+        if self.query_one("#ei", Switch).value:
+            respostas.modelo_ei = Path(self.query_one("#ei-path", Input).value.strip()).expanduser().resolve()
         self.app.push_screen(TelaRevisao())
 
 
@@ -543,6 +559,8 @@ class TelaRevisao(Passo):
             ]
         else:
             linhas.append(("Device configuration", "Skip"))
+        if e.tem_firmware:
+            linhas.append(("Firmware sound model", str(r.modelo_ei) if r.modelo_ei else "Keep the current one"))
         if e.dry_run:
             linhas.append(("Mode", "Dry run: Docker commands are only shown"))
         return linhas
@@ -823,6 +841,7 @@ def executar(
     pular_modelo: bool,
     dry_run: bool,
     remocao: inst.Remocao | None = None,
+    modelo_ei: Path | None = None,
 ) -> tuple[int, dict | None]:
     estado = Estado(
         origem=origem,
@@ -832,6 +851,7 @@ def executar(
         dry_run=dry_run,
         pasta_fixa=pasta is not None,
         remocao=remocao,
+        modelo_ei=modelo_ei,
     )
     return InstaladorApp(estado).run() or (130, None)
 

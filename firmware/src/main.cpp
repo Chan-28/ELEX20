@@ -23,7 +23,11 @@
  *   sound/inference/<DEVICE_ID>  {"label","confidence","ts","device",
  *                                  "direction_deg","sector","doa_confidence"[,"mock"]}
  *   sound/status/<DEVICE_ID>     {"uptime_s","heap","rssi","device","dropped",
- *                                  "offline_dropped",+ ajustes atuais}
+ *                                  "offline_dropped",+ ajustes atuais,
+ *                                  + desempenho: "win_ms_avg","win_ms_max","dsp_ms",
+ *                                  "nn_ms","heap_min","psram_free","stack_min",
+ *                                  "stack_task","wifi_connects","mqtt_connects","temp_c"}
+ *     Tempos em ms, média e máximo dos últimos 5 s; ausentes se nada foi medido.
  *   sound/cmd/<DEVICE_ID>        (assinado) {"key":"threshold","value":0.7}
  *
  * Microfones (cada INMP441 em formato I2S, 32 bits, 16 kHz):
@@ -45,11 +49,15 @@
 #include <atomic>
 #include <driver/gpio.h>
 #include <driver/i2s.h>
+#include <esp_heap_caps.h>
+#include <esp_system.h>
+#include <esp_timer.h>
 #include <freertos/queue.h>
 
 #include "backoff.h"
 #include "doa.h"
 #include "motor_timer.h"
+#include "perf_stats.h"
 #include "settings.h"
 
 #ifndef ESP_ARDUINO_VERSION_MAJOR
@@ -182,6 +190,36 @@ static volatile int writeWin  = 0;     // janela em preenchimento
 static volatile int readyWin  = -1;    // janela completa aguardando inferência
 static volatile bool inferBusy = false;
 static volatile uint32_t droppedWindows = 0;
+
+// ── Desempenho (vai no status a cada 5 s) ────────────────────
+// Medido no loop() (núcleo 1) e lido pela tarefa de rede (núcleo 0): sempre sob perfLock.
+static portMUX_TYPE perfLock = portMUX_INITIALIZER_UNLOCKED;
+static elex::PerfStats windowStats;  // janela inteira: inferência + direção + fila
+static elex::PerfStats dspStats;     // extração de features do Edge Impulse
+static elex::PerfStats nnStats;      // classificação do Edge Impulse
+
+static void perfAdd(elex::PerfStats& s, float ms) {
+    portENTER_CRITICAL(&perfLock);
+    s.add(ms);
+    portEXIT_CRITICAL(&perfLock);
+}
+
+static elex::PerfWindow perfTake(elex::PerfStats& s) {
+    portENTER_CRITICAL(&perfLock);
+    const elex::PerfWindow w = s.take();
+    portEXIT_CRITICAL(&perfLock);
+    return w;
+}
+
+// Tarefas cuja folga de pilha vai no status (o loop() registra a própria ao rodar)
+static TaskHandle_t netTaskHandle = nullptr;
+static TaskHandle_t motorTaskHandle = nullptr;
+static TaskHandle_t captureTaskHandle = nullptr;
+static TaskHandle_t loopTaskHandle = nullptr;
+
+// Reconexões desde o boot; só a tarefa de rede escreve e lê
+static uint32_t wifiConnects = 0;
+static uint32_t mqttConnects = 0;
 
 static int16_t* allocSamples(size_t n) {
     const size_t bytes = n * sizeof(int16_t);
@@ -407,6 +445,33 @@ static bool publishInference(const Detection& d) {
     return mqtt.publish(TOPIC_INFERENCE, payload, false);
 }
 
+// Menor folga de pilha, em bytes, entre as tarefas (no ESP-IDF a função já devolve bytes)
+static uint32_t minStackFree(const char** name) {
+    const struct {
+        TaskHandle_t h;
+        const char* name;
+    } tasks[] = {{netTaskHandle, "net"}, {motorTaskHandle, "motor"}, {captureTaskHandle, "capture"},
+                 {loopTaskHandle, "loop"}};
+    uint32_t best = UINT32_MAX;
+    *name = "";
+    for (const auto& t : tasks) {
+        if (t.h == nullptr) continue;
+        const uint32_t free = uxTaskGetStackHighWaterMark(t.h);
+        if (free < best) {
+            best = free;
+            *name = t.name;
+        }
+    }
+    return best == UINT32_MAX ? 0 : best;
+}
+
+static void putPerf(JsonDocument& doc, const char* avgKey, const char* maxKey, elex::PerfStats& s) {
+    const elex::PerfWindow w = perfTake(s);
+    if (w.count == 0) return;  // sem medição no período: o campo fica de fora (NULL no banco)
+    doc[avgKey] = elex::round1(w.avg_ms);
+    if (maxKey) doc[maxKey] = elex::round1(w.max_ms);
+}
+
 static void publishStatus() {
     JsonDocument doc;
     doc["uptime_s"]        = millis() / 1000;
@@ -420,7 +485,20 @@ static void publishStatus() {
     doc["motor_enabled"]   = settings.motor_enabled;
     doc["port1_skew"]      = settings.port1_skew;
 
-    char payload[320];
+    // Desempenho: tempos do período, memória, pilha, rede e temperatura
+    putPerf(doc, "win_ms_avg", "win_ms_max", windowStats);
+    putPerf(doc, "dsp_ms", nullptr, dspStats);
+    putPerf(doc, "nn_ms", nullptr, nnStats);
+    doc["heap_min"]   = esp_get_minimum_free_heap_size();
+    doc["psram_free"] = heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
+    const char* stackTask = "";
+    doc["stack_min"]      = minStackFree(&stackTask);
+    doc["stack_task"]     = stackTask;
+    doc["wifi_connects"]  = wifiConnects;
+    doc["mqtt_connects"]  = mqttConnects;
+    doc["temp_c"]         = elex::round1(temperatureRead());
+
+    char payload[640];
     const size_t n = serializeJson(doc, payload, sizeof(payload));
     if (n == 0 || n >= sizeof(payload)) return;
     mqtt.publish(TOPIC_STATUS, payload, true);
@@ -442,6 +520,7 @@ static bool wifiService() {
     const bool up = WiFi.status() == WL_CONNECTED;
     if (up && !wasUp) {
         Serial.printf("[WiFi] IP: %s  RSSI: %d dBm\n", WiFi.localIP().toString().c_str(), WiFi.RSSI());
+        wifiConnects++;
         wifiBackoff.connected();
         mqttBackoff.connected();  // o broker pode ter ficado inalcançável só pelo Wi-Fi
     } else if (!up && wasUp) {
@@ -476,6 +555,7 @@ static bool mqttService() {
     mqttBackoff.attempted(millis());  // conta do fim: a tentativa pode levar segundos
     if (up) {
         Serial.println("[MQTT] Conectado.");
+        mqttConnects++;
         mqttBackoff.connected();
     } else {
         Serial.printf("[MQTT] rc=%d — próxima em %lu s\n", mqtt.state(),
@@ -489,7 +569,7 @@ static void netTask(void*) {
     WiFi.setAutoReconnect(false);   // quem reconecta é wifiBackoff, com recuo
     WiFi.mode(WIFI_STA);
     mqtt.setServer(MQTT_HOST, MQTT_PORT);
-    mqtt.setBufferSize(512);
+    mqtt.setBufferSize(768);  // o status com as métricas passa de 400 bytes
     mqtt.setKeepAlive(30);
     mqtt.setSocketTimeout(kMqttSocketTimeoutS);
     mqtt.setCallback(onMqttMessage);
@@ -512,9 +592,10 @@ static void netTask(void*) {
 }
 
 // ── Direção e resposta háptica de uma detecção ───────────────
-static void handleDetection(const AudioWindow& w, const char* label, float confidence, bool mock) {
+static void handleDetection(const AudioWindow& w, const char* modelLabel, float confidence, bool mock) {
     const elex::Settings cfg = settingsSnapshot();
     if (confidence < cfg.threshold) return;
+    const char* label = elex::canonical_label(modelLabel);
     const uint8_t urgency = elex::urgency_for_label(label);
 
     Detection d = {};
@@ -566,13 +647,15 @@ static void runInference(const AudioWindow& w) {
     for (size_t i = 1; i < EI_CLASSIFIER_LABEL_COUNT; i++) {
         if (result.classification[i].value > result.classification[best].value) best = i;
     }
+    perfAdd(dspStats, static_cast<float>(result.timing.dsp));
+    perfAdd(nnStats, static_cast<float>(result.timing.classification));
     handleDetection(w, result.classification[best].label, result.classification[best].value, false);
 }
 #elif defined(ELEX_MOCK_INFERENCE)
 // Simulador — só compilado com -DELEX_MOCK_INFERENCE (env esp32s3_debug).
 // Não vai para o firmware de produção: publicaria rótulos aleatórios no banco.
 static void runInference(const AudioWindow& w) {
-    static const char* sounds[] = {"sirene", "buzina", "impacto", "ferramenta", "musica", "clima"};
+    static const char* sounds[] = {"siren", "horn", "impact", "power_tool", "music", "weather"};
     static uint8_t idx = 0;
     const float conf = 0.75f + (random(0, 25) / 100.f);
     handleDetection(w, sounds[idx++ % 6], conf, true);
@@ -609,14 +692,15 @@ void setup() {
 
     motorsInit();
     i2sInit();
-    xTaskCreatePinnedToCore(motorTask, "motor", 4096, nullptr, 4, nullptr, 1);
-    xTaskCreatePinnedToCore(captureTask, "capture", 6144, nullptr, 5, nullptr, 0);
-    xTaskCreatePinnedToCore(netTask, "net", 8192, nullptr, 1, nullptr, 0);
+    xTaskCreatePinnedToCore(motorTask, "motor", 4096, nullptr, 4, &motorTaskHandle, 1);
+    xTaskCreatePinnedToCore(captureTask, "capture", 6144, nullptr, 5, &captureTaskHandle, 0);
+    xTaskCreatePinnedToCore(netTask, "net", 8192, nullptr, 1, &netTaskHandle, 0);
 }
 
 // ── Loop ──────────────────────────────────────────────────────
 // Só áudio: rede e motores têm tarefas próprias
 void loop() {
+    if (loopTaskHandle == nullptr) loopTaskHandle = xTaskGetCurrentTaskHandle();
     const int ready = readyWin;
     if (ready < 0) {
         delay(1);  // sem janela pronta, libera o núcleo
@@ -625,7 +709,9 @@ void loop() {
 
     // Janela completa: classifica, estima a direção e pede a vibração
     inferBusy = true;
+    const int64_t t0 = esp_timer_get_time();
     runInference(windows[ready]);
+    perfAdd(windowStats, static_cast<float>(esp_timer_get_time() - t0) / 1000.f);
     readyWin  = -1;
     inferBusy = false;
 }

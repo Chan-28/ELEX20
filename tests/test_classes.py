@@ -15,10 +15,10 @@ ESPEC.loader.exec_module(preparar)
 CATEGORIAS = LISTA["categorias"]
 
 
-def test_silencio_fica_inativa_ate_haver_gravacoes():
+def test_silence_fica_inativa_ate_haver_gravacoes():
     ativas = [c["rotulo"] for c in preparar.carregar_categorias()]
     assert len(ativas) == 14
-    assert "silencio" not in ativas
+    assert "silence" not in ativas
 
 
 def test_clipe_mudo_e_detectado(tmp_path):
@@ -54,14 +54,14 @@ def test_genericos_pertencem_a_categoria():
 
 
 def test_ancestrais_nao_tiram_o_clipe_da_categoria_especifica():
-    assert preparar.categoria_fsd({"Siren", "Alarm"}, CATEGORIAS) == "sirene"
-    assert preparar.categoria_fsd({"Vehicle_horn_and_car_horn_and_honking", "Car", "Vehicle"}, CATEGORIAS) == "buzina"
-    assert preparar.categoria_fsd({"Gunshot_and_gunfire", "Explosion"}, CATEGORIAS) == "tiro_explosao"
+    assert preparar.categoria_fsd({"Siren", "Alarm"}, CATEGORIAS) == "siren"
+    assert preparar.categoria_fsd({"Vehicle_horn_and_car_horn_and_honking", "Car", "Vehicle"}, CATEGORIAS) == "horn"
+    assert preparar.categoria_fsd({"Gunshot_and_gunfire", "Explosion"}, CATEGORIAS) == "gunshot_explosion"
 
 
 def test_generico_sozinho_define_a_categoria():
-    assert preparar.categoria_fsd({"Alarm"}, CATEGORIAS) == "alarme"
-    assert preparar.categoria_fsd({"Vehicle"}, CATEGORIAS) == "veiculo"
+    assert preparar.categoria_fsd({"Alarm"}, CATEGORIAS) == "alarm"
+    assert preparar.categoria_fsd({"Vehicle"}, CATEGORIAS) == "vehicle"
 
 
 def test_sons_misturados_ou_de_fora_sao_descartados():
@@ -71,7 +71,7 @@ def test_sons_misturados_ou_de_fora_sao_descartados():
 
 def test_gravacao_do_teste_nao_fica_no_treino():
     def clipe(identificador, particao, grupo):
-        return preparar.Clipe("sirene", "us8k", identificador, Path("x.wav"), particao, "CC0", grupo)
+        return preparar.Clipe("siren", "us8k", identificador, Path("x.wav"), particao, "CC0", grupo)
 
     clipes = [clipe("a", "test", "g1"), clipe("b", "train", "g1"), clipe("c", "train", "g2")]
     assert [c.identificador for c in preparar.separar_grupos_do_teste(clipes)] == ["a", "c"]
@@ -94,28 +94,28 @@ def test_autores_vem_dos_creditos_e_dos_metadados(tmp_path):
 
 
 def test_autor_sorteado_no_teste_sai_do_treino_em_todas_as_bases(monkeypatch):
-    def clipe(identificador, fonte, particao, grupo, rotulo="sirene"):
+    def clipe(identificador, fonte, particao, grupo, rotulo="siren"):
         return preparar.Clipe(rotulo, fonte, identificador, Path("x.wav"), particao, "CC0", grupo)
 
     monkeypatch.setattr(preparar, "LIMITE_TESTE_S", 10.0)
     clipes = [
         clipe("t", "fsd50k", "test", "autor:ana"),
         clipe("a", "urbansound8k", "train", "autor:ana"),
-        clipe("b", "esc50", "train", "autor:ana", rotulo="buzina"),
+        clipe("b", "esc50", "train", "autor:ana", rotulo="horn"),
         clipe("c", "esc50", "train", "autor:bia"),
     ]
-    escolhidos = preparar.selecionar_particoes(clipes, [{"rotulo": "sirene"}, {"rotulo": "buzina"}], lambda _c: 10.0)
+    escolhidos = preparar.selecionar_particoes(clipes, [{"rotulo": "siren"}, {"rotulo": "horn"}], lambda _c: 10.0)
     assert sorted(c.identificador for c, _ in escolhidos) == ["c", "t"]
 
 
 def test_candidato_nao_sorteado_para_o_teste_nao_custa_treino(monkeypatch):
     def clipe(identificador, particao, grupo):
-        return preparar.Clipe("sirene", "fsd50k", identificador, Path("x.wav"), particao, "CC0", grupo)
+        return preparar.Clipe("siren", "fsd50k", identificador, Path("x.wav"), particao, "CC0", grupo)
 
     monkeypatch.setattr(preparar, "LIMITE_TESTE_S", 10.0)
     clipes = [clipe("t1", "test", "autor:ana"), clipe("t2", "test", "autor:bia"),
               clipe("a", "train", "autor:ana"), clipe("b", "train", "autor:bia")]  # fmt: skip
-    escolhidos = preparar.selecionar_particoes(clipes, [{"rotulo": "sirene"}], lambda _c: 10.0)
+    escolhidos = preparar.selecionar_particoes(clipes, [{"rotulo": "siren"}], lambda _c: 10.0)
     no_teste = {c.grupo for c, _ in escolhidos if c.particao == "test"}
     no_treino = {c.grupo for c, _ in escolhidos if c.particao == "train"}
     assert len(no_teste) == len(no_treino) == 1
@@ -131,7 +131,7 @@ def test_licencas_normalizadas():
 
 def test_selecao_respeita_limite_e_mantem_as_duas_fontes():
     clipes = [
-        preparar.Clipe("sirene", fonte, str(i), Path("x.wav"), "train", "CC0", f"{fonte}{i}")
+        preparar.Clipe("siren", fonte, str(i), Path("x.wav"), "train", "CC0", f"{fonte}{i}")
         for fonte in ("fsd50k", "esc50")
         for i in range(50)
     ]
@@ -149,3 +149,22 @@ def test_firmware_e_banco_conhecem_os_rotulos_do_modelo():
     banco = (RAIZ / "timescaledb" / "db-init.sql").read_text(encoding="utf-8")
     seed = re.search(r"INSERT INTO sound_classes.*?VALUES(.*?)ON CONFLICT", banco, re.S).group(1)
     assert {r: int(u) for r, u in re.findall(r"\('(\w+)', (\d)\)", seed)} == esperado
+    sobram = re.search(r"DELETE FROM sound_classes\s+WHERE label NOT IN \((.*?)\);", banco, re.S).group(1)
+    assert set(re.findall(r"'(\w+)'", sobram)) == set(esperado)
+
+
+def test_rotulos_em_ingles_e_legado_em_portugues():
+    for categoria in CATEGORIAS:
+        assert re.fullmatch(r"[a-z]+(_[a-z]+)*", categoria["rotulo"])
+        assert categoria["rotulo_legado"] != categoria["rotulo"] or categoria["rotulo"] == "animal"
+
+
+def test_firmware_e_banco_traduzem_os_rotulos_legados():
+    """Modelo treinado antes da troca devolve o rótulo em português; o firmware publica em inglês."""
+    esperado = {c["rotulo_legado"]: c["rotulo"] for c in CATEGORIAS if c["rotulo_legado"] != c["rotulo"]}
+    firmware = (RAIZ / "firmware" / "lib" / "elex_core" / "settings.cpp").read_text(encoding="utf-8")
+    tabela = re.search(r"kLegacyLabels\[\] = \{(.*?)\n\};", firmware, re.S).group(1)
+    assert dict(re.findall(r'\{"(\w+)", "(\w+)"\}', tabela)) == esperado
+    banco = (RAIZ / "timescaledb" / "db-init.sql").read_text(encoding="utf-8")
+    migracao = re.search(r"INSERT INTO legacy_labels.*?VALUES(.*?);", banco, re.S).group(1)
+    assert dict(re.findall(r"\('(\w+)', '(\w+)'\)", migracao)) == esperado

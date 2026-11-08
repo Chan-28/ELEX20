@@ -10,7 +10,8 @@ O que ele faz, nesta ordem:
   3. sobe a stack com `docker compose up -d` e espera ficar de pé;
   4. baixa o modelo local do Ollama (opcional);
   5. cria as credenciais e ativa os workflows do n8n;
-  6. grava o firmware/.env (opcional).
+  6. grava o firmware/.env (opcional);
+  7. coloca um modelo do Edge Impulse no firmware (opcional, só num checkout com firmware/).
 
 Rodando como executável, ele copia os arquivos embutidos para a pasta escolhida.
 
@@ -35,6 +36,7 @@ import tempfile
 import time
 import urllib.error
 import urllib.request
+import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -348,6 +350,68 @@ def validar_pasta(texto: str) -> str | None:
     return None
 
 
+# ── Modelo do Edge Impulse no firmware ──────────────────────────────────────
+
+PASTA_MODELO_EI = Path("firmware") / "lib" / "ei-model"
+# Onde o nome da biblioteca do modelo aparece (ambiente esp32s3_model e include para o LDF)
+ARQUIVOS_COM_O_MODELO_EI = (Path("firmware") / "platformio.ini", Path("firmware") / "src" / "main.cpp")
+NOME_DO_MODELO_EI = re.compile(r"\b[A-Za-z0-9_]+_inferencing\b")
+
+
+def achar_biblioteca_ei(arquivos: list[str]) -> tuple[str, str] | None:
+    """Raiz e nome da biblioteca exportada (Deployment → Arduino library), a partir dos caminhos.
+
+    A raiz tem library.properties e src/<nome>_inferencing.h; ela pode ser a própria pasta ou
+    a primeira subpasta do .zip.
+    """
+    conjunto = set(arquivos)
+    for arquivo in sorted(arquivos, key=len):
+        achado = re.fullmatch(r"((?:[^/]+/)?)src/([A-Za-z0-9_]+_inferencing)\.h", arquivo)
+        if achado and f"{achado.group(1)}library.properties" in conjunto:
+            return achado.group(1), achado.group(2)
+    return None
+
+
+def listar_modelo_ei(caminho: Path) -> list[str]:
+    if caminho.is_dir():
+        return [p.relative_to(caminho).as_posix() for p in caminho.rglob("*") if p.is_file()]
+    with zipfile.ZipFile(caminho) as arquivo:
+        return [nome for nome in arquivo.namelist() if not nome.endswith("/")]
+
+
+def validar_modelo_ei(texto: str) -> str | None:
+    if not texto.strip():
+        return "Choose the .zip or folder exported from Edge Impulse."
+    caminho = Path(texto.strip()).expanduser()
+    if not caminho.exists():
+        return "This file or folder does not exist."
+    if caminho.is_file() and not zipfile.is_zipfile(caminho):
+        return "Choose the .zip from Deployment → Arduino library, or its extracted folder."
+    try:
+        achado = achar_biblioteca_ei(listar_modelo_ei(caminho))
+    except (OSError, zipfile.BadZipFile):
+        return "Could not read this file."
+    if achado is None:
+        return "This is not an Edge Impulse Arduino library (no library.properties and src/*_inferencing.h)."
+    return None
+
+
+def rotulos_do_modelo_ei(texto_model_variables: str) -> list[str]:
+    """Rótulos do modelo, lidos de src/model-parameters/model_variables.h."""
+    achado = re.search(r"inferencing_categories\w*\[\]\s*=\s*\{(.*?)\}", texto_model_variables, re.S)
+    return re.findall(r'"([^"]*)"', achado.group(1)) if achado else []
+
+
+def rotulos_desconhecidos(rotulos: list[str], categorias: list[dict]) -> list[str]:
+    """Rótulos sem urgência no ELEX20: nem o nome em inglês nem o legado em português."""
+    conhecidos = {c["rotulo"] for c in categorias} | {c.get("rotulo_legado", c["rotulo"]) for c in categorias}
+    return [r for r in rotulos if r not in conhecidos]
+
+
+def trocar_nome_do_modelo_ei(texto: str, nome: str) -> str:
+    return NOME_DO_MODELO_EI.sub(nome, texto)
+
+
 def mascarar(valor: str, atual: str | None = None) -> str:
     """Texto da revisão: um segredo nunca aparece na tela."""
     if valor:
@@ -374,6 +438,8 @@ class Respostas:
     extras: dict[str, str] = field(default_factory=dict)
     baixar_modelo: bool = True
     firmware: Firmware | None = None
+    # .zip ou pasta exportada do Edge Impulse (Deployment → Arduino library)
+    modelo_ei: Path | None = None
 
 
 @dataclass
@@ -594,6 +660,8 @@ class Instalador:
         etapas.append(("n8n", "Configure n8n"))
         if self.respostas.firmware:
             etapas.append(("firmware", "Write device configuration"))
+        if self.respostas.modelo_ei:
+            etapas.append(("ei-model", "Add the sound model to the firmware"))
         return etapas
 
     def etapas_da_remocao(self, remocao: Remocao) -> list[tuple[str, str]]:
@@ -772,6 +840,10 @@ class Instalador:
                 self.compose("exec", "-T", "n8n", "rm", "-f", "/tmp/elex-cred.json", check=False, capturar=True)  # noqa: S108 (caminho no container)
             self.compose(*n8n, "import:workflow", "--separate", "--input=/workflows", capturar=True)
             for wid in WORKFLOWS_N8N:
+                # O n8n 2.x não tenta de novo um gatilho que falhou ao ativar (ex.: broker fora
+                # do ar), e publicar a mesma versão não muda nada. Despublicar antes zera esse
+                # estado; numa instalação nova não há o que despublicar, então o erro é ignorado.
+                self.compose(*n8n, "unpublish:workflow", f"--id={wid}", check=False, capturar=True)
                 self.compose(*n8n, "publish:workflow", f"--id={wid}", capturar=True)
             self.compose("restart", "n8n", capturar=True)
         except subprocess.CalledProcessError as exc:
@@ -795,6 +867,83 @@ class Instalador:
         if os.name == "posix":
             arquivo.chmod(0o600)
         self.saida.info("firmware/.env created.")
+
+    def incluir_modelo_ei(self) -> bool:
+        """Copia a biblioteca do Edge Impulse para firmware/lib/ei-model e aponta o build para ela."""
+        origem = self.respostas.modelo_ei
+        firmware = self.destino / "firmware"
+        if not (firmware / "platformio.ini").is_file():
+            self.saida.erro("No firmware folder here: the model goes into a copy of the repository.")
+            return False
+        try:
+            raiz, nome = achar_biblioteca_ei(listar_modelo_ei(origem)) or (None, None)
+        except (OSError, zipfile.BadZipFile) as erro:
+            self.saida.erro(f"Could not read the model: {erro}")
+            return False
+        if nome is None:
+            self.saida.erro("This is not an Edge Impulse Arduino library.")
+            return False
+        pasta_modelos = self.destino / PASTA_MODELO_EI
+        pasta_modelos.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=pasta_modelos.parent) as temporaria:
+            nova = Path(temporaria) / nome
+            if origem.is_dir():
+                shutil.copytree(origem / raiz, nova)
+            else:
+                with zipfile.ZipFile(origem) as arquivo:
+                    for membro in arquivo.infolist():
+                        if membro.is_dir() or not membro.filename.startswith(raiz):
+                            continue
+                        alvo = (nova / membro.filename[len(raiz) :]).resolve()
+                        if not alvo.is_relative_to(nova.resolve()):
+                            self.saida.erro(f"Unsafe path in the .zip: {membro.filename}")
+                            return False
+                        alvo.parent.mkdir(parents=True, exist_ok=True)
+                        with arquivo.open(membro) as entrada, alvo.open("wb") as saida:
+                            shutil.copyfileobj(entrada, saida)
+            metadados = nova / "src" / "model-parameters" / "model_metadata.h"
+            frequencia = (
+                re.search(r"EI_CLASSIFIER_FREQUENCY\s+(\d+)", metadados.read_text(encoding="utf-8"))
+                if metadados.is_file()
+                else None
+            )
+            if frequencia and int(frequencia.group(1)) != 16000:
+                self.saida.erro(f"The model expects {frequencia.group(1)} Hz audio; ELEX20 records at 16000 Hz.")
+                return False
+            # Só um modelo por vez: o build usa o que estiver aqui
+            for antiga in pasta_modelos.iterdir():
+                if antiga.is_dir():
+                    shutil.rmtree(antiga)
+                else:
+                    antiga.unlink()
+            shutil.move(str(nova), str(pasta_modelos / nome))
+        for relativo in ARQUIVOS_COM_O_MODELO_EI:
+            arquivo = self.destino / relativo
+            if not arquivo.is_file():
+                continue
+            texto = arquivo.read_text(encoding="utf-8")
+            novo = trocar_nome_do_modelo_ei(texto, nome)
+            if novo != texto:
+                arquivo.write_text(novo, encoding="utf-8")
+        self.saida.info(f"Model {nome} added to firmware/lib/ei-model.")
+        self.avisar_rotulos_do_modelo(pasta_modelos / nome)
+        self.saida.info("Flash it with: cd firmware && pio run -e esp32s3_model -t upload")
+        return True
+
+    def avisar_rotulos_do_modelo(self, biblioteca: Path) -> None:
+        variaveis = biblioteca / "src" / "model-parameters" / "model_variables.h"
+        lista = self.destino / "classes" / "sound_classes.json"
+        if not variaveis.is_file() or not lista.is_file():
+            return
+        rotulos = rotulos_do_modelo_ei(variaveis.read_text(encoding="utf-8"))
+        categorias = json.loads(lista.read_text(encoding="utf-8"))["categorias"]
+        self.saida.detalhe(f"Model labels: {', '.join(rotulos) or 'none found'}")
+        desconhecidos = rotulos_desconhecidos(rotulos, categorias)
+        if desconhecidos:
+            self.saida.aviso(
+                f"Labels unknown to ELEX20: {', '.join(desconhecidos)}. They are saved without urgency, "
+                "so they never vibrate or alert. See classes/sound_classes.json."
+            )
 
     def remover_stack(self, remocao: Remocao) -> bool:
         args = ["down", "--remove-orphans"]
@@ -874,7 +1023,10 @@ class Instalador:
         n8n_ok = self._etapa("n8n", self.provisionar_n8n, valores)
         if self.respostas.firmware:
             self._etapa("firmware", self.gerar_env_firmware)
+        modelo_ok = not self.respostas.modelo_ei or self._etapa("ei-model", self.incluir_modelo_ei)
         self.resumo = dados_do_resumo(valores, self.destino)
+        if not modelo_ok:
+            return 1
         return 0 if n8n_ok else 2
 
 
@@ -977,6 +1129,11 @@ def coletar_respostas(destino: Path | None, origem: Path, extras: dict[str, str]
             ),
         )
         respostas.ip_lan = respostas.ip_lan or respostas.firmware.host
+    if (pasta / "firmware" / "platformio.ini").exists() and confirmar(
+        "Add an Edge Impulse sound model to the firmware?", False
+    ):
+        caminho = perguntar("Model .zip or folder (Deployment → Arduino library)", validar=validar_modelo_ei)
+        respostas.modelo_ei = Path(caminho).expanduser().resolve()
     return respostas
 
 
@@ -1043,6 +1200,12 @@ def main(argv: list[str] | None = None) -> int:
         help="set a .env variable (e.g. OPENROUTER_API_KEY=...)",
     )
     parser.add_argument("--skip-model", action="store_true", help="do not download the local Ollama model")
+    parser.add_argument(
+        "--ei-model",
+        type=Path,
+        metavar="PATH",
+        help="add an Edge Impulse Arduino library (.zip or folder) to firmware/lib/ei-model",
+    )
     parser.add_argument("--dry-run", action="store_true", help="create the files, but only show the Docker commands")
     parser.add_argument("--uninstall", action="store_true", help="remove the ELEX20 containers")
     parser.add_argument(
@@ -1061,6 +1224,11 @@ def main(argv: list[str] | None = None) -> int:
         return verificar_interface()
     if not args.uninstall and (args.delete_data or args.delete_images or args.delete_files):
         parser.error("--delete-data, --delete-images and --delete-files need --uninstall")
+    if args.ei_model:
+        erro = validar_modelo_ei(str(args.ei_model))
+        if erro:
+            parser.error(f"--ei-model: {erro}")
+        args.ei_model = args.ei_model.expanduser().resolve()
 
     extras: dict[str, str] = {}
     for item in args.set:
@@ -1084,15 +1252,18 @@ def main(argv: list[str] | None = None) -> int:
             codigo, resumo = executar_remocao(args, origem, elex_tui)
         elif elex_tui:
             codigo, resumo = elex_tui.executar(
-                origem, args.dir, pasta_padrao(origem), extras, args.skip_model, args.dry_run
+                origem, args.dir, pasta_padrao(origem), extras, args.skip_model, args.dry_run, modelo_ei=args.ei_model
             )
         else:
             print(titulo_do_instalador())
             if args.non_interactive:
                 pasta = (args.dir or pasta_padrao(origem)).expanduser().resolve()
-                respostas = Respostas(destino=pasta, extras=extras, baixar_modelo=not args.skip_model)
+                respostas = Respostas(
+                    destino=pasta, extras=extras, baixar_modelo=not args.skip_model, modelo_ei=args.ei_model
+                )
             else:
                 respostas = coletar_respostas(args.dir, origem, extras, args.skip_model)
+                respostas.modelo_ei = respostas.modelo_ei or args.ei_model
             instalador = Instalador(origem, respostas, args.dry_run)
             codigo = instalador.executar()
             resumo = instalador.resumo

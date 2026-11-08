@@ -1,9 +1,10 @@
 {
-  "versao": 1,
-  "descricao": "Fonte única das categorias de som do ELEX20. A urgência vai de 0 (nenhuma) a 3 (alta). A ordem define a prioridade quando um clipe combina com mais de uma categoria.",
+  "versao": 2,
+  "descricao": "Fonte única das categorias de som do ELEX20. Os rótulos são em inglês; rotulo_legado é o nome em português usado por modelos treinados antes da troca. A urgência vai de 0 (nenhuma) a 3 (alta). A ordem define a prioridade quando um clipe combina com mais de uma categoria.",
   "categorias": [
     {
-      "rotulo": "sirene",
+      "rotulo": "siren",
+      "rotulo_legado": "sirene",
       "urgencia": 3,
       "nome": "Sirene",
       "audioset": [
@@ -40,7 +41,8 @@
       }
     },
     {
-      "rotulo": "buzina",
+      "rotulo": "horn",
+      "rotulo_legado": "buzina",
       "urgencia": 3,
       "nome": "Buzina",
       "audioset": [
@@ -65,7 +67,8 @@
       }
     },
     {
-      "rotulo": "alarme",
+      "rotulo": "alarm",
+      "rotulo_legado": "alarme",
       "urgencia": 3,
       "nome": "Alarme",
       "audioset": [
@@ -94,7 +97,8 @@
       }
     },
     {
-      "rotulo": "tiro_explosao",
+      "rotulo": "gunshot_explosion",
+      "rotulo_legado": "tiro_explosao",
       "urgencia": 3,
       "nome": "Tiro ou explosão",
       "audioset": [
@@ -127,7 +131,8 @@
       }
     },
     {
-      "rotulo": "grito",
+      "rotulo": "scream",
+      "rotulo_legado": "grito",
       "urgencia": 3,
       "nome": "Grito ou choro",
       "audioset": [
@@ -156,7 +161,8 @@
       }
     },
     {
-      "rotulo": "impacto",
+      "rotulo": "impact",
+      "rotulo_legado": "impacto",
       "urgencia": 2,
       "nome": "Impacto",
       "audioset": [
@@ -181,7 +187,8 @@
       }
     },
     {
-      "rotulo": "trem",
+      "rotulo": "train",
+      "rotulo_legado": "trem",
       "urgencia": 2,
       "nome": "Trem",
       "audioset": [
@@ -210,7 +217,8 @@
       }
     },
     {
-      "rotulo": "aeronave",
+      "rotulo": "aircraft",
+      "rotulo_legado": "aeronave",
       "urgencia": 0,
       "nome": "Aeronave",
       "audioset": [
@@ -243,7 +251,8 @@
       }
     },
     {
-      "rotulo": "ferramenta",
+      "rotulo": "power_tool",
+      "rotulo_legado": "ferramenta",
       "urgencia": 1,
       "nome": "Ferramenta",
       "audioset": [
@@ -272,7 +281,8 @@
       }
     },
     {
-      "rotulo": "veiculo",
+      "rotulo": "vehicle",
+      "rotulo_legado": "veiculo",
       "urgencia": 1,
       "nome": "Veículo",
       "audioset": [
@@ -347,6 +357,7 @@
     },
     {
       "rotulo": "animal",
+      "rotulo_legado": "animal",
       "urgencia": 0,
       "nome": "Animal",
       "audioset": [
@@ -363,7 +374,8 @@
       }
     },
     {
-      "rotulo": "clima",
+      "rotulo": "weather",
+      "rotulo_legado": "clima",
       "urgencia": 0,
       "nome": "Chuva ou trovão",
       "audioset": [
@@ -388,7 +400,8 @@
       }
     },
     {
-      "rotulo": "fala_multidao",
+      "rotulo": "speech_crowd",
+      "rotulo_legado": "fala_multidao",
       "urgencia": 0,
       "nome": "Fala ou multidão",
       "audioset": [
@@ -417,7 +430,8 @@
       }
     },
     {
-      "rotulo": "musica",
+      "rotulo": "music",
+      "rotulo_legado": "musica",
       "urgencia": 0,
       "nome": "Música",
       "audioset": [
@@ -434,7 +448,8 @@
       }
     },
     {
-      "rotulo": "silencio",
+      "rotulo": "silence",
+      "rotulo_legado": "silencio",
       "ativa": false,
       "motivo_inativa": "aguardando gravações próprias de silêncio e ruído de fundo",
       "urgencia": 0,

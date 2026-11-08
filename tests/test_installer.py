@@ -387,3 +387,23 @@ def test_uninstall_nao_interativo_sem_flags_mantem_os_dados(tmp_path, capsys):
     assert "--volumes" not in saida
     assert "ELEX20 uninstalled" in saida
     assert "Your data stays in Docker volumes." in saida
+
+
+def test_n8n_despublica_antes_de_publicar_para_destravar_gatilho(tmp_path, monkeypatch):
+    """Gatilho que falhou ao ativar só volta se o workflow for despublicado e publicado de novo."""
+    chamadas = []
+
+    def compose(_self, *args, check=True, **_kw):
+        chamadas.append((args, check))
+
+    monkeypatch.setattr(inst.Instalador, "compose", compose)
+    monkeypatch.setattr(inst.Instalador, "ler_segredo", lambda *_a: "x")
+    instalador = inst.Instalador(RAIZ, inst.Respostas(destino=tmp_path), False, SaidaMuda())
+    assert instalador.provisionar_n8n({})
+    comandos = [
+        (a[4], a[5] if len(a) > 5 else None, check) for a, check in chamadas if a[:4] == ("exec", "-T", "n8n", "n8n")
+    ]
+    for wid in inst.WORKFLOWS_N8N:
+        despublicar = comandos.index(("unpublish:workflow", f"--id={wid}", False))
+        assert comandos.index(("publish:workflow", f"--id={wid}", True)) == despublicar + 1
+    assert chamadas[-1][0] == ("restart", "n8n")
