@@ -6,28 +6,36 @@ Toda release precisa de uma seção aqui antes da tag: o workflow de release fal
 
 ## [Não lançado]
 
-### Adicionado
+## [1.3.0] - 2026-11-08
 
-- Wi-Fi institucional (WPA2-Enterprise, como o eduroam) no firmware, com PEAP ou TTLS. Ele entra quando `firmware/.env` define `WIFI_EAP_USER`; `WIFI_PASS` passa a ser a senha desse usuário. O certificado da CA da rede (`WIFI_EAP_CA_FILE`) é opcional, mas o build avisa sem ele, porque aí o sensor não confere o servidor. O instalador mantém essas linhas ao regravar o `firmware/.env`, e a referência explica as restrições comuns dessas redes (portal cativo, isolamento entre clientes, porta 1883 bloqueada).
-
-### Removido
-
-- Arquivos de sessões antigas que não pertenciam ao projeto: `HANDOFF.md`, `docs/superpowers/` (desenho já implementado na v1.0.0), `.archify/` (diagramas gerados por ferramenta, agora ignorados) e `.husky/.huky`.
-- Dependências Python que nenhum código usa: `psycopg2-binary`, `aiohttp`, `pandas`, `colorama`, `python-dotenv`, `typing-extensions`, `uvloop` e `winloop`, e as ferramentas de desenvolvimento `black`, `isort`, `mypy` e `scipy-stubs` (o Ruff já organiza imports e formata).
+Corrige o texto dos alertas do Grafana, que falhava nos três alertas (o executável da v1.2.0 ainda tem esse problema), elimina o heartbeat falso de sensores desligados e permite conectar o sensor a redes Wi-Fi institucionais, como o eduroam.
 
 ### Corrigido
 
-- Heartbeat falso de sensor desligado: o firmware publicava `sound/status` com retain, e a cada reconexão do n8n ao broker (reinício, republicação do workflow) o Mosquitto reentregava o último status de cada sensor, gravado em `device_status` com a hora atual. Isso atrasava o alerta "Sensor sem heartbeat". O status deixa de ser retido, e o firmware apaga ao conectar o status retido por versões anteriores (payload vazio, que o n8n descarta).
-- `.vscode/settings.json` usava o unittest; agora roda os testes com o pytest e formata com o Ruff.
-- A referência mandava gravar o firmware sem modelo (`esp32s3`) e tratava `[EI] Sem modelo` como esperado; agora orienta `esp32s3_model`. O README cita a opção do modelo no instalador e o teste de bancada.
-- Versões alinhadas em 1.2.0 no `pyproject.toml` e no `package.json` (estavam em 0.2.0 e 1.0.0); um teste confere que acompanham o CHANGELOG.
-- `AGENTS.md` atualizado (estrutura, testes e regra de versão na release), nota obsoleta sobre os nomes da v1.0.0 removida da referência e aviso sobre os rótulos antigos no histórico do modelo.
-- Os três alertas do Grafana falhavam ao montar o texto (`$values.A` não existe para consultas). Agora uma expressão de redução `B` alimenta o limiar e a mensagem, por exemplo "Sensor esp32s3-sound-01 sem heartbeat há 7m 9s".
-- O simulador publicava o status com `retain`: a cada reconexão do n8n, o broker reentregava a mensagem e um sensor simulado já parado ganhava um heartbeat novo. Ele deixa de reter, e o `--cleanup` apaga também as mensagens retidas.
+- Os três alertas do Grafana falhavam ao montar o texto (`$values.A` não existe para consultas). Agora uma expressão de redução `B` alimenta o limiar e a mensagem, por exemplo "Sensor esp32s3-sound-01 sem heartbeat há 7m 9s". ([#63](https://github.com/Chan-28/ELEX20/pull/63))
+- Heartbeat falso de sensor desligado: o firmware publicava `sound/status` com retain, e a cada reconexão do n8n ao broker (reinício, republicação do workflow) o Mosquitto reentregava o último status de cada sensor, gravado em `device_status` com a hora atual. Isso atrasava o alerta "Sensor sem heartbeat". O status deixa de ser retido, e o firmware apaga ao conectar o status retido por versões anteriores (payload vazio, que o n8n descarta). ([#64](https://github.com/Chan-28/ELEX20/pull/64))
+- O simulador publicava o status com `retain`: a cada reconexão do n8n, o broker reentregava a mensagem e um sensor simulado já parado ganhava um heartbeat novo. Ele deixa de reter, e o `--cleanup` apaga também as mensagens retidas. ([#63](https://github.com/Chan-28/ELEX20/pull/63))
+- A referência mandava gravar o firmware sem modelo (`esp32s3`) e tratava `[EI] Sem modelo` como esperado; agora orienta `esp32s3_model`. O README cita a opção do modelo no instalador e o teste de bancada. ([#62](https://github.com/Chan-28/ELEX20/pull/62))
+- Versões alinhadas em 1.2.0 no `pyproject.toml` e no `package.json` (estavam em 0.2.0 e 1.0.0); um teste confere que acompanham o CHANGELOG. ([#62](https://github.com/Chan-28/ELEX20/pull/62))
+- `AGENTS.md` atualizado (estrutura, testes e regra de versão na release), nota obsoleta sobre os nomes da v1.0.0 removida da referência e aviso sobre os rótulos antigos no histórico do modelo. ([#62](https://github.com/Chan-28/ELEX20/pull/62))
+- `.vscode/settings.json` usava o unittest; agora roda os testes com o pytest e formata com o Ruff. ([#62](https://github.com/Chan-28/ELEX20/pull/62))
+
+### Adicionado
+
+- Wi-Fi institucional (WPA2-Enterprise, como o eduroam) no firmware, com PEAP ou TTLS. Ele entra quando `firmware/.env` define `WIFI_EAP_USER`; `WIFI_PASS` passa a ser a senha desse usuário. O certificado da CA da rede (`WIFI_EAP_CA_FILE`) é opcional, mas o build avisa sem ele, porque aí o sensor não confere o servidor. O instalador mantém essas linhas ao regravar o `firmware/.env`, e a referência explica as restrições comuns dessas redes (portal cativo, isolamento entre clientes, porta 1883 bloqueada). ([#65](https://github.com/Chan-28/ELEX20/pull/65))
 
 ### Alterado
 
-- Nomes de workflows e jobs do CI padronizados em inglês, e comentários vindos dos modelos do GitHub traduzidos. O workflow "Docker Security & Deploy" passa a se chamar "Docker Security", porque não faz deploy.
+- Nomes de workflows e jobs do CI padronizados em inglês, e comentários vindos dos modelos do GitHub traduzidos. O workflow "Docker Security & Deploy" passa a se chamar "Docker Security", porque não faz deploy. ([#62](https://github.com/Chan-28/ELEX20/pull/62))
+
+### Removido
+
+- Arquivos de sessões antigas que não pertenciam ao projeto: `HANDOFF.md`, `docs/superpowers/` (desenho já implementado na v1.0.0), `.archify/` (diagramas gerados por ferramenta, agora ignorados) e `.husky/.huky`. ([#62](https://github.com/Chan-28/ELEX20/pull/62))
+- Dependências Python que nenhum código usa: `psycopg2-binary`, `aiohttp`, `pandas`, `colorama`, `python-dotenv`, `typing-extensions`, `uvloop` e `winloop`, e as ferramentas de desenvolvimento `black`, `isort`, `mypy` e `scipy-stubs` (o Ruff já organiza imports e formata). ([#62](https://github.com/Chan-28/ELEX20/pull/62))
+
+### Para atualizar
+
+Rode o instalador da v1.3.0 na mesma pasta, ou, num clone, `git pull` e `./install.sh`, para receber os alertas corrigidos. Grave o firmware de novo (`pio run -e esp32s3_model -t upload`) para acabar com o heartbeat falso; o firmware novo apaga sozinho o status retido pelas versões anteriores. Para usar uma rede institucional, veja [Wi-Fi institucional](docs/reference.md#wi-fi-institucional).
 
 ## [1.2.0] - 2026-11-08
 
@@ -79,7 +87,8 @@ Rode o instalador da v1.2.0 na mesma pasta, ou, num clone, `git pull` e `./insta
 
 Primeira release: firmware do ESP32-S3 com estimativa de direção do som e motores, stack em Docker (Mosquitto, n8n, TimescaleDB, Grafana e Hermes) e instalador multiplataforma assinado. ([#37](https://github.com/Chan-28/ELEX20/pull/37))
 
-[Não lançado]: https://github.com/Chan-28/ELEX20/compare/v1.2.0...HEAD
+[Não lançado]: https://github.com/Chan-28/ELEX20/compare/v1.3.0...HEAD
+[1.3.0]: https://github.com/Chan-28/ELEX20/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/Chan-28/ELEX20/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/Chan-28/ELEX20/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/Chan-28/ELEX20/releases/tag/v1.0.0

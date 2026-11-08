@@ -1,6 +1,6 @@
 {
   "name": "elex20",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "description": "Monitoramento de sons urbanos com ESP32-S3, Edge Impulse, MQTT, n8n, TimescaleDB e Grafana.",
   "main": "commitlint.config.cjs",
   "type": "commonjs",
