@@ -161,7 +161,22 @@ CALL refresh_continuous_aggregate('sound_events_hourly', NULL, NULL);
 """
 
 
+# Apaga status retidos de sensores simulados (versões antigas do simulador usavam retain)
+LIMPEZA_RETIDAS = (
+    'for i in $(seq -w 1 50); do mosquitto_pub -h localhost -u device -P "$(cat /run/secrets/mqtt_device/value)" '
+    "-i limpeza-sim -t sound/status/sim-$i -r -n; done"
+)
+
+
 def limpar_banco() -> int:
+    retidas = subprocess.run(  # noqa: S603
+        ["docker", "exec", "mosquitto", "sh", "-c", LIMPEZA_RETIDAS],  # noqa: S607
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if retidas.returncode:
+        print(f"Aviso: não consegui apagar os status retidos no broker: {retidas.stderr.strip()}")
     psql = 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1'
     resultado = subprocess.run(  # noqa: S603
         ["docker", "exec", "-i", "timescaledb", "sh", "-c", psql],  # noqa: S607
@@ -171,7 +186,7 @@ def limpar_banco() -> int:
         check=False,
     )
     if resultado.returncode == 0:
-        print(f"Dados dos sensores {PREFIXO}* apagados.")
+        print(f"Dados dos sensores {PREFIXO}* apagados do banco e do broker.")
     return resultado.returncode
 
 
@@ -213,7 +228,9 @@ def simular(args) -> int:
             uptime = int(agora - inicio) + 60
             if agora >= proximo_status:
                 for d, cliente in clientes.items():
-                    cliente.publish(f"sound/status/{d}", json.dumps(status(rng, d, uptime)), qos=0, retain=True)
+                    # Sem retain: uma mensagem retida volta a cada reconexão do n8n e vira um
+                    # heartbeat novo, com a hora atual, de um sensor que já parou
+                    cliente.publish(f"sound/status/{d}", json.dumps(status(rng, d, uptime)), qos=0)
                     enviados["status"] += 1
                 proximo_status = agora + 5
             for d, cliente in clientes.items():

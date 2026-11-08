@@ -17,6 +17,8 @@ Toda release precisa de uma seção aqui antes da tag: o workflow de release fal
 - A referência mandava gravar o firmware sem modelo (`esp32s3`) e tratava `[EI] Sem modelo` como esperado; agora orienta `esp32s3_model`. O README cita a opção do modelo no instalador e o teste de bancada.
 - Versões alinhadas em 1.2.0 no `pyproject.toml` e no `package.json` (estavam em 0.2.0 e 1.0.0); um teste confere que acompanham o CHANGELOG.
 - `AGENTS.md` atualizado (estrutura, testes e regra de versão na release), nota obsoleta sobre os nomes da v1.0.0 removida da referência e aviso sobre os rótulos antigos no histórico do modelo.
+- Os três alertas do Grafana falhavam ao montar o texto (`$values.A` não existe para consultas). Agora uma expressão de redução `B` alimenta o limiar e a mensagem, por exemplo "Sensor esp32s3-sound-01 sem heartbeat há 7m 9s".
+- O simulador publicava o status com `retain`: a cada reconexão do n8n, o broker reentregava a mensagem e um sensor simulado já parado ganhava um heartbeat novo. Ele deixa de reter, e o `--cleanup` apaga também as mensagens retidas.
 
 ### Alterado
 
