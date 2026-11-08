@@ -28,7 +28,7 @@ jobs:
         run: bash scripts/changelog-section.sh "$TAG" > /dev/null
 
   installers:
-    name: Instaladores
+    name: Installers
     needs: changelog
     uses: $/.github/workflows/installer-build.yml
     with:
@@ -37,7 +37,7 @@ jobs:
       contents: read
 
   release:
-    name: Assinar e publicar
+    name: Sign and publish
     needs: installers
     runs-on: ubuntu-latest
     timeout-minutes: 30

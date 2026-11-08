@@ -1,4 +1,4 @@
-name: Instalador (Windows, macOS e Linux)
+name: Installer (Windows, macOS and Linux)
 
 # Garante, a cada mudança relevante, que o instalador compila e roda nos cinco
 # alvos (Linux x86_64 e ARM, Windows, macOS Intel e Apple Silicon) antes do release.

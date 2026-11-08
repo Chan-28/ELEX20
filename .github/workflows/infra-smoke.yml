@@ -1,4 +1,4 @@
-name: Infra Smoke (banco e MQTT)
+name: Infra Smoke (database and MQTT)
 
 # Valida os controles de segurança da infraestrutura: papéis do banco,
 # restrições de dados e autenticação/ACL do Mosquitto (scripts/infra-smoke.sh).
@@ -27,7 +27,7 @@ permissions:
 
 jobs:
   smoke:
-    name: Banco e MQTT
+    name: Database and MQTT
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:

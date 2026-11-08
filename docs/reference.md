@@ -145,7 +145,7 @@ Baixe o arquivo do seu sistema na página de [Releases](https://github.com/Chan-
 | Linux (ARM: Raspberry Pi 4/5, etc.) | `elex-installer-linux-arm64`        |
 
 > [!NOTE]
-> Os nomes acima valem a partir da próxima release. A v1.0.0 ainda traz `elex-instalador-*` no lugar de `elex-installer-*`. O mesmo arquivo serve para qualquer distribuição Linux; para saber se o seu sistema é x86_64 ou ARM, rode `uname -m`.
+> O mesmo arquivo serve para qualquer distribuição Linux; para saber se o seu sistema é x86_64 ou ARM, rode `uname -m`.
 
 Depois, execute:
 
@@ -352,7 +352,7 @@ Os pinos ficam em `firmware/platformio.ini`. O firmware assume os microfones a 9
 
    Use o IP real da rede, nunca `0.0.0.0`. No Windows, libere também a porta **1883** no Firewall.
 
-3. Prepare as credenciais. Se o instalador já gerou o `firmware/.env`, pule este passo.
+3. Prepare as credenciais e o modelo. Se o instalador já gerou o `firmware/.env` e colocou o modelo (veja [Usar um modelo real](#usar-um-modelo-real)), pule este passo.
 
    ```bash
    cd firmware
@@ -365,25 +365,23 @@ Os pinos ficam em `firmware/platformio.ini`. O firmware assume os microfones a 9
    docker compose exec mosquitto cat /run/secrets/mqtt_device/value
    ```
 
-4. Conecte a placa pela USB e, na pasta `firmware/`, compile, grave e acompanhe o log:
+4. Conecte a placa pela USB e, na pasta `firmware/`, grave o firmware **com o modelo** e acompanhe o log:
 
    ```bash
-   pio run -e esp32s3              # só compila
-   pio run -e esp32s3 -t upload    # compila e grava
-   pio device monitor              # mostra o log
+   pio run -e esp32s3_model -t upload    # compila e grava
+   pio device monitor                    # mostra o log
    ```
 
-   O build falha de propósito se alguma credencial estiver vazia.
+   O build falha de propósito se alguma credencial estiver vazia. Sem modelo, use `esp32s3` só para testar a conexão: esse firmware conecta e manda o estado, mas não reconhece sons nem vibra.
 
 5. Confira o log:
 
    ```text
    [WiFi] IP: 192.168.x.x  RSSI: -55 dBm
    [MQTT] Conectado.
-   [EI] Sem modelo em lib/ei-model/: janelas descartadas (use esp32s3_debug para o mock)
    ```
 
-   A última linha é esperada enquanto não houver modelo: o sensor já aparece como conectado, mas ainda não envia detecções.
+   A linha `[EI] Sem modelo em lib/ei-model/` não pode aparecer: ela indica um firmware gravado sem modelo, que conecta, mas nunca detecta nada. Ao tocar um som de sirene perto do sensor, o log mostra `[INF] siren …`.
 
 ### Usar um modelo real
 

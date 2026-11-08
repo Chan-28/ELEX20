@@ -1,5 +1,6 @@
 """CHANGELOG.md e o script que o workflow de release usa para conferir e montar as notas."""
 
+import json
 import re
 import shutil
 import subprocess
@@ -59,3 +60,13 @@ def test_workflow_de_release_exige_o_changelog():
     workflow = (RAIZ / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
     assert "scripts/changelog-section.sh" in workflow
     assert re.search(r"installers:\n(?:.*\n)*?\s+needs: changelog", workflow)
+
+
+def test_versao_do_projeto_e_a_da_ultima_release():
+    """pyproject.toml, package.json e package-lock.json acompanham a última versão do CHANGELOG."""
+    ultima = re.search(r"^## \[(\d+\.\d+\.\d+)\]", CHANGELOG, re.M).group(1)
+    pyproject = (RAIZ / "pyproject.toml").read_text(encoding="utf-8")
+    assert re.search(r'^version = "([^"]+)"', pyproject, re.M).group(1) == ultima
+    pacote = json.loads((RAIZ / "package.json").read_text(encoding="utf-8"))
+    trava = json.loads((RAIZ / "package-lock.json").read_text(encoding="utf-8"))
+    assert pacote["version"] == trava["version"] == trava["packages"][""]["version"] == ultima
