@@ -2,7 +2,7 @@
 
 # Guia completo do ELEX20
 
-Este guia traz os detalhes que ficam fora do [README](../README.md).
+Este guia traz os detalhes que ficam fora do [README](../README.md). Para um passo a passo, veja o [guia de instalação](install.md); para achar problemas, o [guia de debug](debug.md).
 
 ## Sobre
 

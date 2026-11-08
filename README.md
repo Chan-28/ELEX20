@@ -85,7 +85,10 @@ Para outros casos, veja [Solução de problemas](docs/reference.md#solução-de-
 
 ## Saiba mais
 
-O [guia completo](docs/reference.md) traz a instalação sem o instalador, a configuração, o desenvolvimento e todos os detalhes do projeto.
+- [Guia de instalação](docs/install.md): montar e testar o sensor e instalar o servidor, passo a passo.
+- [Guia de debug](docs/debug.md): onde procurar quando algo não funciona, no hardware e no software.
+- [Guia completo](docs/reference.md): a instalação sem o instalador, a configuração, o desenvolvimento e todos os detalhes do projeto.
+- [Changelog](CHANGELOG.md): o que mudou em cada release.
 
 ## Licença
 
