@@ -81,6 +81,7 @@ Documentação e arquivos `.md/.json/.yaml` não exigem build. O Prettier format
 - Branches seguem `<tipo>/<descricao-em-kebab-case>`, com os tipos do commitlint. Ex.: `fix/dataset-author-split`. `claude/` e `dependabot/` também valem. O hook `pre-push` e o workflow `branch-name.yml` conferem com `scripts/lint-branch-name.sh`.
 - O hook `pre-commit` roda `lint-staged` (ESLint e Prettier). Se falhar, corrija; não use `--no-verify`.
 - PR para `main`. O CI do Python só dispara quando mudam `**.py`, `pyproject.toml` ou `uv.lock`.
+- Release: antes da tag `vX.Y.Z`, mova o que está em `[Não lançado]` no `CHANGELOG.md` para uma seção `## [X.Y.Z] - AAAA-MM-DD` (formato Keep a Changelog) e atualize os links do fim do arquivo. O `release.yml` falha sem essa seção e usa o texto dela como notas da release (`scripts/changelog-section.sh`). A tag dispara o build e a assinatura dos executáveis, que embutem os arquivos do repositório **daquela tag**.
 
 ## Nunca faça
 

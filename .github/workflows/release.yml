@@ -1,6 +1,6 @@
 name: Automated Release & Signing Process
 
-# Fluxo: tag vX.Y.Z → compila o instalador nos 5 alvos → empacota o código-fonte →
+# Fluxo: tag vX.Y.Z → confere a seção da versão no CHANGELOG.md → compila o instalador nos 5 alvos → empacota o código-fonte →
 # assina tudo com cosign (keyless) e confere as assinaturas → cria a release como
 # RASCUNHO com todos os arquivos → só então a publica. Quem baixa nunca vê uma
 # release pela metade.
@@ -13,8 +13,23 @@ permissions:
   contents: read
 
 jobs:
+  # Toda release precisa de uma seção no CHANGELOG.md; sem ela, nada é compilado
+  changelog:
+    name: CHANGELOG
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Check release section
+        env:
+          TAG: ${{ github.ref_name }}
+        run: bash scripts/changelog-section.sh "$TAG" > /dev/null
+
   installers:
     name: Instaladores
+    needs: changelog
     uses: $/.github/workflows/installer-build.yml
     with:
       version: ${{ github.ref_name }}
@@ -88,9 +103,16 @@ jobs:
               --certificate-oidc-issuer https://token.actions.githubusercontent.com "$f"
           done
 
+      # As notas começam pela seção da versão no CHANGELOG.md
       - name: Write release notes
+        env:
+          TAG: ${{ github.ref_name }}
         run: |
-          cat > notes.md <<'EOF'
+          bash scripts/changelog-section.sh "$TAG" > notes.md
+          cat >> notes.md <<'EOF'
+
+          ---
+
           Release automática (código-fonte da tag e instaladores para Windows, macOS e Linux).
 
           **Instalador:** baixe o arquivo `elex-installer-<sistema>` do seu computador, execute-o e
