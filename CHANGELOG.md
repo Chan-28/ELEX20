@@ -6,6 +6,15 @@ Toda release precisa de uma seção aqui antes da tag: o workflow de release fal
 
 ## [Não lançado]
 
+### Removido
+
+- Arquivos de sessões antigas que não pertenciam ao projeto: `HANDOFF.md`, `docs/superpowers/` (desenho já implementado na v1.0.0), `.archify/` (diagramas gerados por ferramenta, agora ignorados) e `.husky/.huky`.
+- Dependências Python que nenhum código usa: `psycopg2-binary`, `aiohttp`, `pandas`, `colorama`, `python-dotenv`, `typing-extensions`, `uvloop` e `winloop`, e as ferramentas de desenvolvimento `black`, `isort`, `mypy` e `scipy-stubs` (o Ruff já organiza imports e formata).
+
+### Corrigido
+
+- `.vscode/settings.json` usava o unittest; agora roda os testes com o pytest e formata com o Ruff.
+
 ## [1.2.0] - 2026-11-08
 
 Corrige o broker MQTT, que travava no reinício (o executável da v1.1.0 ainda tem esse problema), padroniza os rótulos em inglês e acrescenta observabilidade, métricas de desempenho do sensor e ferramentas de debug.
