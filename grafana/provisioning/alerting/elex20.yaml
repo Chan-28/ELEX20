@@ -32,12 +32,23 @@ groups:
                 FROM device_status
                 WHERE time > now() - INTERVAL '7 days'
                 GROUP BY device_id
+          # $values só traz expressões: B (último valor de A, por série) alimenta o
+          # limiar e o texto do alerta
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              refId: B
+              type: reduce
+              expression: A
+              reducer: last
+              settings:
+                mode: dropNN
           - refId: C
             datasourceUid: __expr__
             model:
               refId: C
               type: threshold
-              expression: A
+              expression: B
               conditions:
                 - evaluator:
                     type: gt
@@ -48,7 +59,7 @@ groups:
         annotations:
           summary: >-
             Sensor {{ $labels.device_id }} sem heartbeat há
-            {{ humanizeDuration $values.A.Value }}
+            {{ humanizeDuration $values.B.Value }}
           description: >-
             Nenhuma linha em device_status há mais de 5 min. Confira a energia e o
             Wi-Fi do sensor; se todos pararam juntos, veja o alerta de ingestão.
@@ -77,12 +88,23 @@ groups:
                          (SELECT max(time) FROM device_status WHERE time > now() - INTERVAL '7 days'),
                          (SELECT max(time) FROM sound_events  WHERE time > now() - INTERVAL '7 days')
                        ))::float8 AS segundos_sem_ingestao
+          # $values só traz expressões: B (último valor de A, por série) alimenta o
+          # limiar e o texto do alerta
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              refId: B
+              type: reduce
+              expression: A
+              reducer: last
+              settings:
+                mode: dropNN
           - refId: C
             datasourceUid: __expr__
             model:
               refId: C
               type: threshold
-              expression: A
+              expression: B
               conditions:
                 - evaluator:
                     type: gt
@@ -93,7 +115,7 @@ groups:
         annotations:
           summary: >-
             Nenhuma linha nova em sound_events/device_status há
-            {{ humanizeDuration $values.A.Value }}
+            {{ humanizeDuration $values.B.Value }}
           description: >-
             Há sensor ativo, mas nada chega ao banco há mais de 15 min. Confira o
             Mosquitto, o workflow "elex-ingestao-mqtt" no n8n (publicado e ativo) e os
@@ -120,12 +142,23 @@ groups:
               # ver grafana/alloy/config.alloy)
               expr: >-
                 sum by (container) (count_over_time({job="docker_state"} |= "restarting=true" [15m]))
+          # $values só traz expressões: B (último valor de A, por série) alimenta o
+          # limiar e o texto do alerta
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              refId: B
+              type: reduce
+              expression: A
+              reducer: last
+              settings:
+                mode: dropNN
           - refId: C
             datasourceUid: __expr__
             model:
               refId: C
               type: threshold
-              expression: A
+              expression: B
               conditions:
                 - evaluator:
                     type: gt
@@ -137,7 +170,7 @@ groups:
         annotations:
           summary: >-
             Container {{ $labels.container }} reiniciou
-            {{ $values.A.Value }} vezes em 15 min
+            {{ $values.B.Value }} vezes em 15 min
           description: >-
             O Docker está reiniciando o container sem parar. Veja os logs com
             {service="{{ $labels.container }}"} no Explore (Loki).
