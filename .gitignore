@@ -15,3 +15,6 @@ HANDOFF.md
 
 # Modelo Edge Impulse: exportado à parte, não é versionado
 firmware/lib/ei-model
+
+# Artefatos gerados por ferramentas de diagrama e de sessão
+.archify/
