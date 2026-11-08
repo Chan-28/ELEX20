@@ -1,3 +1,12 @@
+# Logs de todo serviço: o rótulo com o nome do serviço vai em cada linha ("attrs") e vira
+# o label "service" no Loki (grafana/alloy/config.alloy); a rotação limita o disco.
+x-logging: &logging
+  driver: json-file
+  options:
+    labels: com.docker.compose.service
+    max-size: "10m"
+    max-file: "3"
+
 services:
   # Gera os segredos internos (senhas dos papéis do banco, do MQTT e tokens n8n↔Hermes) na
   # primeira subida e os guarda em volumes; cada serviço monta só os que usa. Nada para o
@@ -5,6 +14,7 @@ services:
   secrets-init:
     image: busybox:1.38.0@sha256:a46257e06c82ad85242d0d38077d0a52d9896389ca60a1a59d3463db586e5fa4
     container_name: secrets-init
+    logging: *logging
     user: root
     restart: "no"
     network_mode: none
@@ -30,6 +40,7 @@ services:
   timescaledb:
     image: timescale/timescaledb:2.31.0-pg16@sha256:322ae364eca3321cf2a48f1ef31213b87843413b3cf8feeebf54e999a26bb731
     container_name: timescaledb
+    logging: *logging
     restart: unless-stopped
     # Porta não exposta ao host — acesso apenas pela rede interna 'monitoring'
     environment:
@@ -56,6 +67,7 @@ services:
   db-init:
     image: timescale/timescaledb:2.31.0-pg16@sha256:322ae364eca3321cf2a48f1ef31213b87843413b3cf8feeebf54e999a26bb731
     container_name: db-init
+    logging: *logging
     restart: "no"
     environment:
       - PGHOST=timescaledb
@@ -81,6 +93,7 @@ services:
   n8n:
     image: docker.n8n.io/n8nio/n8n:2.46.3@sha256:1a6e1865c5e917945ede13a05b71381e69bbf52f3a60cbaf22a1809760338091
     container_name: n8n
+    logging: *logging
     restart: unless-stopped
     ports:
       - "127.0.0.1:5678:5678"
@@ -120,6 +133,7 @@ services:
   ollama:
     image: ollama/ollama:0.40.14@sha256:ebaef4f4c5d93660e1f25f8ad085a112f51ccfb0e8458073e71793959dba91c9
     container_name: ollama
+    logging: *logging
     restart: unless-stopped
     # Porta não exposta ao host — acesso apenas pela rede interna
     volumes:
@@ -130,6 +144,7 @@ services:
   lightpanda:
     image: lightpanda/browser:1.0.2@sha256:5d1d724c476957d8c2f8393a51fd089477523b0e5aa9c783c48688785d934fb9
     container_name: lightpanda
+    logging: *logging
     restart: unless-stopped
     # Porta não exposta ao host — acesso apenas pela rede interna
     networks:
@@ -138,6 +153,7 @@ services:
   hermes-init:
     image: busybox:1.38.0@sha256:a46257e06c82ad85242d0d38077d0a52d9896389ca60a1a59d3463db586e5fa4
     container_name: hermes-init
+    logging: *logging
     user: root
     # Copia a configuração para dentro de /opt/data a cada `up` (o arquivo do repositório
     # manda). Montá-la direto sobre /opt/data, que já é um bind mount, falha no Docker Desktop.
@@ -150,6 +166,7 @@ services:
   hermes-agent:
     image: nousresearch/hermes-agent:v0.22.6@sha256:d27689bc6e8581ec884a7227c9101fdaebf6c853cff8859020dac14f21452b4d
     container_name: hermes-agent
+    logging: *logging
     restart: unless-stopped
     # Os segredos vêm de arquivos (volumes do secrets-init) e viram variáveis de ambiente só
     # aqui, para o config.yaml interpolá-las; depois entrega o controle ao entrypoint original.
@@ -216,6 +233,7 @@ services:
   grafana:
     image: grafana/grafana:13.3.0@sha256:488984b716c0862639f91a698adbe2862677a5a07bad42da5f03f3030883b205
     container_name: grafana
+    logging: *logging
     restart: unless-stopped
     ports:
       - "127.0.0.1:3000:3000"
@@ -224,7 +242,7 @@ services:
       - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-password}
       - GF_USERS_ALLOW_SIGN_UP=false
       - GF_SERVER_ROOT_URL=http://localhost:3000
-      - GF_PLUGINS_PREINSTALL=grafana-lokiexplore-app,yesoreyeram-infinity-datasource,grafana-pyroscope-app
+      - GF_PLUGINS_PREINSTALL=grafana-lokiexplore-app,yesoreyeram-infinity-datasource
       - GF_DATABASE_TYPE=postgres
       - GF_DATABASE_HOST=timescaledb:5432
       - GF_DATABASE_NAME=${POSTGRES_DB:-grafana}
@@ -255,6 +273,7 @@ services:
   loki:
     image: grafana/loki:3.7.9@sha256:0db216b630ae1f348a1584c67f3cead8b4c1fc839169a39501db664744158e28
     container_name: loki
+    logging: *logging
     restart: unless-stopped
     # Porta não exposta ao host — acesso apenas pela rede interna
     volumes:
@@ -267,6 +286,7 @@ services:
   alloy:
     image: grafana/alloy:v1.21.3@sha256:8ab871206bd2d8f89277f53abffee5f452a293980788d52f85fa183a87a505a4
     container_name: alloy
+    logging: *logging
     restart: unless-stopped
     # Porta não exposta ao host — acesso apenas pela rede interna
     # Só sobe com COMPOSE_PROFILES=logs (padrão do .env.example): /var/log e
@@ -284,19 +304,10 @@ services:
     depends_on:
       - loki
 
-  pyroscope:
-    image: grafana/pyroscope:2.4.2@sha256:ef9b48976386aa2781e84664dfdba7cc33a1b6793c0cc9d130812173a926ca1f
-    container_name: pyroscope
-    restart: unless-stopped
-    # Porta não exposta ao host — acesso apenas pela rede interna
-    volumes:
-      - pyroscope_data:/var/lib/pyroscope
-    networks:
-      - monitoring
-
   mosquitto:
     image: eclipse-mosquitto:2.1.2-alpine@sha256:860aeb5d63ce509508f6dcfb2bc8a1c1dd2bc60555b562b45ce90e52d8dabb0f
     container_name: mosquitto
+    logging: *logging
     restart: unless-stopped
     # Autenticação + ACL (usuários "device" e "n8n"; senhas geradas pelo secrets-init).
     # A porta 1883 só é publicada no IP de MQTT_BIND (padrão: loopback). Para o ESP32
@@ -342,7 +353,6 @@ volumes:
   ollama_data:
   grafana_data:
   loki_data:
-  pyroscope_data:
   mosquitto_data:
   mosquitto_log:
 

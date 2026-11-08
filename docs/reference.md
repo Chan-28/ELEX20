@@ -459,6 +459,15 @@ A janela tem 975 ms: com `win_ms_max` acima disso, a placa não acompanha o áud
 1. Acesse <http://localhost:3000>.
 2. Entre com `admin` / `password` (ou `GRAFANA_ADMIN_USER` e `GRAFANA_ADMIN_PASSWORD` do `.env`) e troque a senha.
 3. Abra **Dashboards → Sons Urbanos — ELEX20**.
+4. O painel **Estado dos sensores** mostra o último heartbeat, o RSSI e o heap livre de cada sensor.
+5. Em **Alerting → Alert rules**, a pasta **ELEX20** traz três alertas já configurados:
+   - **Sensor sem heartbeat**: um sensor ativo (com heartbeat nos últimos 7 dias) ficou mais de 5 min sem mandar status.
+   - **Ingestão parada**: há sensor ativo, mas nada novo chega a `sound_events` nem a `device_status` há mais de 15 min. Costuma ser o Mosquitto ou o workflow de ingestão do n8n.
+   - **Container em loop de reinício**: um container reiniciou mais de 2 vezes em 15 min. Depende da coleta de logs (Alloy, só no Linux).
+
+   Nenhum canal de notificação vem configurado: os alertas aparecem no Grafana. Para recebê-los por e-mail ou chat, crie um contact point em **Alerting → Contact points**.
+
+6. Para ler os logs dos containers, abra **Explore**, escolha a datasource **Loki** e consulte, por exemplo, `{service="mosquitto"}`. Os logs só existem com a coleta ligada (`COMPOSE_PROFILES=logs`), e segredos aparecem como `<redacted>`.
 
 ### n8n
 
