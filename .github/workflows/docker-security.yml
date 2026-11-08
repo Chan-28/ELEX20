@@ -86,8 +86,6 @@ jobs:
             alias: loki
           - image: "grafana/alloy:v1.21.3"
             alias: alloy
-          - image: "grafana/pyroscope:2.4.2"
-            alias: pyroscope
           - image: "eclipse-mosquitto:2.1.2-alpine"
             alias: mosquitto
           - image: "lightpanda/browser:1.0.2"

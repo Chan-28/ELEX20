@@ -4,9 +4,10 @@ loki.write "loki_receiver" {
   }
 }
 
+// ── Logs dos containers ──────────────────────────────────────────────────────
 local.file_match "docker_logs" {
   path_targets = [{
-    __path__ = "/var/lib/docker/containers/*/*.log",
+    __path__ = "/var/lib/docker/containers/*/*-json.log",
     job      = "containerlogs",
   }]
 }
@@ -17,12 +18,17 @@ loki.source.file "docker_scraper" {
 }
 
 loki.process "clean_docker_json" {
+  // "attrs" vem do logging.options.labels do docker-compose.yaml (x-logging)
   stage.json {
-    expressions = { "output" = "log", "stream" = "stream" }
+    expressions = {
+      "output"  = "log",
+      "stream"  = "stream",
+      "service" = "attrs.\"com.docker.compose.service\"",
+    }
   }
 
   stage.labels {
-    values = { "stream" = "stream" }
+    values = { "stream" = "stream", "service" = "service" }
   }
 
   stage.output {
@@ -39,6 +45,61 @@ loki.process "clean_docker_json" {
   stage.replace {
     expression = "\\b(sk-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9]{20,}|xox[abprs]-[A-Za-z0-9-]{10,}|[0-9]{8,10}:[A-Za-z0-9_-]{30,}|eyJ[A-Za-z0-9_-]{10,}\\.[A-Za-z0-9_-]{10,}\\.[A-Za-z0-9_-]{10,})\\b"
     replace    = "<redacted>"
+  }
+
+  forward_to = [loki.write.loki_receiver.receiver]
+}
+
+// ── Estado dos containers (contador de reinícios) ────────────────────────────
+// O Docker regrava config.v2.json a cada mudança de estado (início, saída,
+// healthcheck). Sem montar o socket do Docker, é dele que sai o RestartCount
+// usado pelo alerta "container em loop de reinício" (grafana/provisioning/alerting).
+// O arquivo traz as variáveis de ambiente (senhas): só nome e contadores seguem.
+local.file_match "docker_state" {
+  path_targets = [{
+    __path__ = "/var/lib/docker/containers/*/config.v2.json",
+    job      = "docker_state",
+  }]
+}
+
+loki.source.file "docker_state" {
+  targets    = local.file_match.docker_state.targets
+  forward_to = [loki.process.docker_state.receiver]
+}
+
+loki.process "docker_state" {
+  stage.json {
+    expressions = {
+      "name"          = "Name",
+      "service"       = "Config.Labels.\"com.docker.compose.service\"",
+      "restart_count" = "RestartCount",
+      "running"       = "State.Running",
+      "restarting"    = "State.Restarting",
+      "exit_code"     = "State.ExitCode",
+    }
+  }
+
+  stage.regex {
+    source     = "name"
+    expression = "^/?(?P<container>.+)$"
+  }
+
+  stage.labels {
+    values = { "container" = "container", "service" = "service" }
+  }
+
+  stage.template {
+    source   = "estado"
+    template = "restart_count={{ .restart_count }} running={{ .running }} restarting={{ .restarting }} exit_code={{ .exit_code }}"
+  }
+
+  stage.output {
+    source = "estado"
+  }
+
+  // Defesa extra: se o JSON não for lido, a linha original (com o ambiente) não sai daqui
+  stage.drop {
+    expression = "\"Env\"|^\\{"
   }
 
   forward_to = [loki.write.loki_receiver.receiver]
