@@ -501,7 +501,9 @@ static void publishStatus() {
     char payload[640];
     const size_t n = serializeJson(doc, payload, sizeof(payload));
     if (n == 0 || n >= sizeof(payload)) return;
-    mqtt.publish(TOPIC_STATUS, payload, true);
+    // Sem retain: o broker reentregaria o último status a cada nova assinatura do n8n,
+    // que o gravaria com a hora atual, como heartbeat de um sensor talvez desligado
+    mqtt.publish(TOPIC_STATUS, payload, false);
 }
 
 // ── Rede ─────────────────────────────────────────────────────
@@ -552,6 +554,8 @@ static bool mqttService() {
         up = mqtt.subscribe(TOPIC_CMD, 1);
         if (!up) mqtt.disconnect();
     }
+    // Apaga o status retido por firmwares antigos (payload vazio com retain); o n8n descarta o vazio
+    if (up) mqtt.publish(TOPIC_STATUS, "", true);
     mqttBackoff.attempted(millis());  // conta do fim: a tentativa pode levar segundos
     if (up) {
         Serial.println("[MQTT] Conectado.");

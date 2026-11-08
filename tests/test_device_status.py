@@ -68,6 +68,8 @@ def test_validador_do_n8n_aceita_metricas_e_descarta_o_que_esta_fora_da_faixa():
     itens = [
         {"json": {"topic": "sound/status/esp32-01", "message": json.dumps(status)}},
         {"json": {"topic": "sound/status/esp32-01", "message": json.dumps({"uptime_s": 1, "win_ms_avg": -3})}},
+        # o firmware apaga o status retido com um payload vazio: não é heartbeat
+        {"json": {"topic": "sound/status/esp32-01", "message": ""}},
     ]
     saida = subprocess.run(  # noqa: S603 (script gerado pelo teste)
         ["node", "-e", f"const ITENS = {json.dumps(itens)};\n{script}"],  # noqa: S607
@@ -83,3 +85,11 @@ def test_validador_do_n8n_aceita_metricas_e_descarta_o_que_esta_fora_da_faixa():
     assert antigo["uptime_s"] == 1
     assert antigo["win_ms_avg"] is None
     assert antigo["heap_min"] is None
+
+
+def test_firmware_nao_retem_o_status():
+    """Um status retido seria reentregue a cada reconexão do n8n e gravado como heartbeat novo."""
+    publicacoes = re.findall(r"mqtt\.publish\(TOPIC_STATUS,\s*(\w+|\"\"),\s*(true|false)\)", FIRMWARE)
+    assert ("payload", "false") in publicacoes
+    # o único publish retido é o vazio, que apaga o status retido por firmwares antigos
+    assert [p for p in publicacoes if p[1] == "true"] == [('""', "true")]
