@@ -863,6 +863,8 @@ class Instalador:
             f"MQTT_HOST={dados.host}\nMQTT_USER=device\n"
             f"MQTT_PASS={self.ler_segredo('mosquitto', 'mqtt_device')}\n"
         )
+        # Wi-Fi institucional (WPA2-Enterprise) é configurado à mão; o assistente não o apaga
+        texto += "".join(f"{chave}={valor}\n" for chave, valor in atual.items() if chave.startswith("WIFI_EAP_"))
         arquivo.write_text(texto, encoding="utf-8")
         if os.name == "posix":
             arquivo.chmod(0o600)

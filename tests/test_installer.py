@@ -407,3 +407,22 @@ def test_n8n_despublica_antes_de_publicar_para_destravar_gatilho(tmp_path, monke
         despublicar = comandos.index(("unpublish:workflow", f"--id={wid}", False))
         assert comandos.index(("publish:workflow", f"--id={wid}", True)) == despublicar + 1
     assert chamadas[-1][0] == ("restart", "n8n")
+
+
+def test_env_do_firmware_mantem_o_wifi_institucional(tmp_path, monkeypatch):
+    """O assistente reescreve o firmware/.env, mas não apaga o WPA2-Enterprise configurado à mão."""
+    monkeypatch.setattr(inst.Instalador, "ler_segredo", lambda *_a: "segredo")
+    arquivo = tmp_path / "firmware" / ".env"
+    arquivo.parent.mkdir()
+    arquivo.write_text(
+        "WIFI_SSID=antiga\nWIFI_PASS=senha-antiga\nWIFI_EAP_USER=aluno@univ.br\nWIFI_EAP_CA_FILE=ca.pem\nOUTRA=x\n",
+        encoding="utf-8",
+    )
+    respostas = inst.Respostas(destino=tmp_path, firmware=inst.Firmware("eduroam", "", "10.0.0.5"))
+    inst.Instalador(RAIZ, respostas, False, SaidaMuda()).gerar_env_firmware()
+    env = inst.ler_env(arquivo.read_text(encoding="utf-8"))
+    assert env["WIFI_SSID"] == "eduroam"
+    assert env["WIFI_PASS"] == "senha-antiga"
+    assert env["WIFI_EAP_USER"] == "aluno@univ.br"
+    assert env["WIFI_EAP_CA_FILE"] == "ca.pem"
+    assert "OUTRA" not in env

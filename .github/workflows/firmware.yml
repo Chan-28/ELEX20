@@ -57,6 +57,24 @@ jobs:
           MQTT_PASS: "CI_DUMMY"
         run: pio run --environment esp32s3
 
+      # Wi-Fi institucional (WPA2-Enterprise) só compila com WIFI_EAP_USER; um certificado
+      # descartável confere o caminho do WIFI_EAP_CA_FILE. Compila em outra pasta para não
+      # trocar o firmware.bin do artefato.
+      - name: Build firmware with WPA2-Enterprise Wi-Fi
+        working-directory: firmware
+        env:
+          WIFI_SSID: "CI_DUMMY"
+          WIFI_PASS: "CI_DUMMY"
+          MQTT_HOST: "127.0.0.1"
+          MQTT_USER: "CI_DUMMY"
+          MQTT_PASS: "CI_DUMMY"
+          WIFI_EAP_USER: "ci@example.org"
+          WIFI_EAP_CA_FILE: ${{ runner.temp }}/ci-ca.pem
+        run: |
+          openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj /CN=ci \
+            -keyout "$RUNNER_TEMP/ci-ca.key" -out "$WIFI_EAP_CA_FILE"
+          PLATFORMIO_BUILD_DIR="$RUNNER_TEMP/pio-eap" pio run --environment esp32s3
+
       # Firmware de bancada (debug/firmware): sem Wi-Fi, não precisa das credenciais
       - name: Build bench firmware
         working-directory: debug/firmware
