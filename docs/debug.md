@@ -112,7 +112,7 @@ Comandos aceitos pelo sensor em `sound/cmd/<DEVICE_ID>` (o Hermes e o n8n valida
 
 ### 1.5 Desempenho da placa
 
-A cada 5 s, o heartbeat em `sound/status/<DEVICE_ID>` traz as métricas, gravadas em `device_status`:
+A cada 5 s, o heartbeat em `sound/status/<DEVICE_ID>` traz as métricas, gravadas em `device_status`. O status não é retido no broker: um sensor desligado para de gerar linhas, mesmo quando o n8n reconecta. Se `device_status` ganhar uma linha de um sensor desligado logo após reiniciar o n8n, sobrou um status retido de firmware antigo; regrave o sensor ou apague o retido com `mosquitto_pub -r -n -t sound/status/<DEVICE_ID>` (usuário `device`).
 
 | Campo                            | Alerta quando                                                   |
 | -------------------------------- | --------------------------------------------------------------- |

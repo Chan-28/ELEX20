@@ -13,6 +13,7 @@ Toda release precisa de uma seção aqui antes da tag: o workflow de release fal
 
 ### Corrigido
 
+- Heartbeat falso de sensor desligado: o firmware publicava `sound/status` com retain, e a cada reconexão do n8n ao broker (reinício, republicação do workflow) o Mosquitto reentregava o último status de cada sensor, gravado em `device_status` com a hora atual. Isso atrasava o alerta "Sensor sem heartbeat". O status deixa de ser retido, e o firmware apaga ao conectar o status retido por versões anteriores (payload vazio, que o n8n descarta).
 - `.vscode/settings.json` usava o unittest; agora roda os testes com o pytest e formata com o Ruff.
 - A referência mandava gravar o firmware sem modelo (`esp32s3`) e tratava `[EI] Sem modelo` como esperado; agora orienta `esp32s3_model`. O README cita a opção do modelo no instalador e o teste de bancada.
 - Versões alinhadas em 1.2.0 no `pyproject.toml` e no `package.json` (estavam em 0.2.0 e 1.0.0); um teste confere que acompanham o CHANGELOG.
