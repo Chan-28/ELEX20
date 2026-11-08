@@ -29,7 +29,7 @@ Para gravar o sensor você precisa do repositório clonado. O executável da pá
 - 4 microfones **INMP441**;
 - 4 motores de vibração, cada um ligado por um **MOSFET**;
 - cabo USB com dados (não só de carga);
-- rede Wi-Fi de **2,4 GHz**, a mesma do computador que vai rodar o servidor.
+- rede Wi-Fi de **2,4 GHz**, a mesma do computador que vai rodar o servidor. Em rede de universidade ou empresa, com usuário e senha pessoais (como o eduroam), veja [Wi-Fi institucional](reference.md#wi-fi-institucional).
 
 No computador:
 

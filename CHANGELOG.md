@@ -6,6 +6,10 @@ Toda release precisa de uma seção aqui antes da tag: o workflow de release fal
 
 ## [Não lançado]
 
+### Adicionado
+
+- Wi-Fi institucional (WPA2-Enterprise, como o eduroam) no firmware, com PEAP ou TTLS. Ele entra quando `firmware/.env` define `WIFI_EAP_USER`; `WIFI_PASS` passa a ser a senha desse usuário. O certificado da CA da rede (`WIFI_EAP_CA_FILE`) é opcional, mas o build avisa sem ele, porque aí o sensor não confere o servidor. O instalador mantém essas linhas ao regravar o `firmware/.env`, e a referência explica as restrições comuns dessas redes (portal cativo, isolamento entre clientes, porta 1883 bloqueada).
+
 ### Removido
 
 - Arquivos de sessões antigas que não pertenciam ao projeto: `HANDOFF.md`, `docs/superpowers/` (desenho já implementado na v1.0.0), `.archify/` (diagramas gerados por ferramenta, agora ignorados) e `.husky/.huky`.

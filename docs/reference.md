@@ -365,6 +365,8 @@ Os pinos ficam em `firmware/platformio.ini`. O firmware assume os microfones a 9
    docker compose exec mosquitto cat /run/secrets/mqtt_device/value
    ```
 
+   Numa rede institucional com login pessoal (WPA2-Enterprise, como o eduroam), veja [Wi-Fi institucional](#wi-fi-institucional).
+
 4. Conecte a placa pela USB e, na pasta `firmware/`, grave o firmware **com o modelo** e acompanhe o log:
 
    ```bash
@@ -382,6 +384,31 @@ Os pinos ficam em `firmware/platformio.ini`. O firmware assume os microfones a 9
    ```
 
    A linha `[EI] Sem modelo em lib/ei-model/` não pode aparecer: ela indica um firmware gravado sem modelo, que conecta, mas nunca detecta nada. Ao tocar um som de sirene perto do sensor, o log mostra `[INF] siren …`.
+
+### Wi-Fi institucional
+
+Redes de universidades e empresas costumam pedir usuário e senha pessoais (WPA2-Enterprise, como o eduroam). O firmware aceita os métodos **PEAP** e **TTLS**. O instalador não pergunta esses dados: preencha-os à mão no `firmware/.env`. Se você rodar o assistente de novo, ele mantém as linhas `WIFI_EAP_*`.
+
+```dotenv
+WIFI_SSID=eduroam
+WIFI_PASS=sua-senha-da-instituicao
+WIFI_EAP_USER=aluno@universidade.br
+WIFI_EAP_IDENTITY=anonymous@universidade.br   # opcional; algumas redes exigem
+WIFI_EAP_METHOD=PEAP                          # ou TTLS
+WIFI_EAP_CA_FILE=ca-instituicao.pem           # relativo a firmware/
+```
+
+- **Certificado:** o `WIFI_EAP_CA_FILE` é o certificado da autoridade (CA) que assinou o servidor da rede, em PEM. Peça-o à TI da instituição; no eduroam ele costuma estar na página de configuração da rede. Sem ele, o build avisa e o sensor não confere o servidor: um ponto de acesso falso com o mesmo nome pode capturar a senha. Os arquivos `.pem` em `firmware/` não são versionados.
+- **Limites:** usuário, identidade e senha têm até 64 bytes. Certificado do cliente (EAP-TLS) não é suportado.
+- **Conta:** a senha fica gravada na placa. Se a instituição permitir, use uma conta própria para dispositivos, e não a sua pessoal.
+
+Mesmo conectado, o sensor só alcança o servidor se a rede deixar. Redes institucionais costumam ter:
+
+- **portal cativo** (página de login no navegador): o ESP32 não passa por ele;
+- **isolamento entre clientes**: o sensor não enxerga o computador do servidor, mesmo na mesma rede;
+- **porta 1883 bloqueada**.
+
+Pergunte à TI se há uma rede para dispositivos IoT. Se não houver, use um roteador próprio ou o roteador do celular, com o servidor na mesma rede. Sem rede, o sensor continua classificando e vibrando.
 
 ### Usar um modelo real
 
@@ -586,6 +613,7 @@ Se aparecer "permission denied", rode `sudo usermod -aG docker $USER` e entre de
 <summary><strong>O sensor não conecta ao MQTT</strong></summary>
 
 - Confira se o log do monitor mostra `[WiFi] IP:`. O ESP32 só usa Wi-Fi de **2,4 GHz**.
+- Em rede institucional (eduroam e parecidas), confira as variáveis `WIFI_EAP_*` e as restrições da rede em [Wi-Fi institucional](#wi-fi-institucional).
 - A falta de rede não reinicia o sensor: ele tenta de novo sozinho, a cada 15 s a 2 min no Wi-Fi e a cada 2 s a 1 min no MQTT.
 - Confira se `MQTT_BIND` no `.env` é o IP atual do computador e igual a `MQTT_HOST` no `firmware/.env`. O IP pode mudar: reserve-o no roteador.
 - Depois de mudar `MQTT_BIND`, rode `docker compose up -d mosquitto`. Depois de mudar `firmware/.env`, grave o firmware de novo.

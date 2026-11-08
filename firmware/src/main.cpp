@@ -145,6 +145,9 @@ static_assert(AUDIO_WINDOW_SAMPLES >= elex::kDoaWindow, "janela menor que a usad
 #ifndef DEVICE_ID
 #  define DEVICE_ID "esp32s3-sound-01"
 #endif
+#ifdef WIFI_EAP_HAS_CA
+#  include "wifi_eap_ca.h"  // gerado por load_env.py a partir de WIFI_EAP_CA_FILE
+#endif
 
 static const char TOPIC_INFERENCE[] = MQTT_TOPIC_INFERENCE "/" DEVICE_ID;
 static const char TOPIC_STATUS[]    = MQTT_TOPIC_STATUS    "/" DEVICE_ID;
@@ -517,6 +520,25 @@ static constexpr uint8_t  kMqttSocketTimeoutS = 5;  // limita a espera pelo CONN
 static elex::Backoff wifiBackoff(15000, 120000);
 static elex::Backoff mqttBackoff(2000, 60000);
 
+// Rede doméstica (WPA2-Personal) ou institucional (WPA2-Enterprise, como o eduroam).
+// O modo institucional entra quando o build define WIFI_EAP_USER (load_env.py); aí
+// WIFI_PASS é a senha desse usuário.
+static void wifiBegin() {
+#ifdef WIFI_EAP_USER
+#  if !CONFIG_ESP_WIFI_ENTERPRISE_SUPPORT
+#    error "Este core do ESP32 foi compilado sem suporte a WPA2-Enterprise"
+#  endif
+#  ifdef WIFI_EAP_HAS_CA
+    const char* ca = kWifiEapCaPem;  // confere o servidor RADIUS da instituição
+#  else
+    const char* ca = nullptr;  // load_env.py avisa: sem CA, o servidor não é conferido
+#  endif
+    WiFi.begin(WIFI_SSID, WIFI_EAP_METHOD, WIFI_EAP_IDENTITY, WIFI_EAP_USER, WIFI_PASS, ca);
+#else
+    WiFi.begin(WIFI_SSID, WIFI_PASS);
+#endif
+}
+
 static bool wifiService() {
     static bool wasUp = false;
     const bool up = WiFi.status() == WL_CONNECTED;
@@ -538,7 +560,7 @@ static bool wifiService() {
         Serial.printf("[WiFi] Conectando a %s (próxima em %lu s)\n", WIFI_SSID,
                       static_cast<unsigned long>(wifiBackoff.wait_ms() / 1000));
         WiFi.disconnect();
-        WiFi.begin(WIFI_SSID, WIFI_PASS);
+        wifiBegin();
     }
     return false;
 }
