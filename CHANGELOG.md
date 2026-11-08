@@ -6,7 +6,7 @@ Toda release precisa de uma seção aqui antes da tag: o workflow de release fal
 
 ## [Não lançado]
 
-## [1.2.0] - 2026-11-07
+## [1.2.0] - 2026-11-08
 
 Corrige o broker MQTT, que travava no reinício (o executável da v1.1.0 ainda tem esse problema), padroniza os rótulos em inglês e acrescenta observabilidade, métricas de desempenho do sensor e ferramentas de debug.
 
