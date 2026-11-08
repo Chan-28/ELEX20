@@ -41,7 +41,9 @@ Abre um assistente em inglês no terminal. Escolha a pasta, ligue só o que for 
 
 ## Gravar o aparelho
 
-O modelo que reconhece os sons não vem neste repositório. Exporte o seu pelo [Edge Impulse](https://edgeimpulse.com/) como **Arduino library** e extraia em `firmware/lib/ei-model/`. Os nomes dos sons precisam seguir [esta lista](docs/reference.md#rótulos-e-urgência).
+Antes, teste os microfones e os motores na bancada, como explica o [guia de instalação](docs/install.md#13-testar-microfones-e-motores).
+
+O modelo que reconhece os sons não vem neste repositório. Exporte o seu pelo [Edge Impulse](https://edgeimpulse.com/) como **Arduino library**, e o instalador o coloca no firmware: ligue **Add an Edge Impulse sound model to the firmware** na etapa do dispositivo ou rode `./install.sh --ei-model modelo.zip`. Os nomes dos sons precisam seguir [esta lista](docs/reference.md#rótulos-e-urgência).
 
 Depois, conecte a placa pela USB e rode:
 

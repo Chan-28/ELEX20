@@ -2,6 +2,9 @@
 
 Registro de como o classificador de 14 categorias do wearable foi avaliado e melhorado até 2026-11-06. Serve para quem for continuar o trabalho sem repetir tentativas nem confiar em números antigos.
 
+> [!NOTE]
+> Os experimentos usam os rótulos da época, em português (`sirene`, `tiro_explosao`…). Desde a v1.2.0 os rótulos são em inglês (`siren`, `gunshot_explosion`…); a correspondência está em `rotulo_legado`, em `classes/sound_classes.json`. Também desde a v1.2.0, o heartbeat do sensor mede na placa o tempo de DSP e de classificação (`dsp_ms` e `nn_ms`), o que permite fechar a medição de latência pendente.
+
 **Estado atual:** nenhum modelo atinge as metas. No teste com limiar congelado, o melhor modelo dá **31% de sensibilidade** a 0,5–0,9 falso alerta/h, medido contra 13,84 h de negativos, com latência na placa ainda não medida.
 
 | Meta                      | Alvo     | Hoje                                            |

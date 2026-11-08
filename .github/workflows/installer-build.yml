@@ -1,4 +1,4 @@
-name: Build do instalador (reutilizável)
+name: Installer build (reusable)
 
 # Compila o instalador num executável em cada sistema e roda a simulação dele
 # (cria a pasta e o .env, sem chamar o Docker). Chamado por installer.yml (a cada
@@ -16,7 +16,7 @@ permissions:
 
 jobs:
   build:
-    name: Executável (${{ matrix.asset }})
+    name: Executable (${{ matrix.asset }})
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 20
     strategy:

@@ -1,6 +1,6 @@
 [project]
 name = "elex20"
-version = "0.2.0"
+version = "1.2.0"
 description = "Monitoramento de sons urbanos — ESP32-S3 + Edge Impulse + TimescaleDB + Grafana"
 readme = "README.md"
 authors = [

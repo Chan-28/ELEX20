@@ -14,6 +14,13 @@ Toda release precisa de uma seção aqui antes da tag: o workflow de release fal
 ### Corrigido
 
 - `.vscode/settings.json` usava o unittest; agora roda os testes com o pytest e formata com o Ruff.
+- A referência mandava gravar o firmware sem modelo (`esp32s3`) e tratava `[EI] Sem modelo` como esperado; agora orienta `esp32s3_model`. O README cita a opção do modelo no instalador e o teste de bancada.
+- Versões alinhadas em 1.2.0 no `pyproject.toml` e no `package.json` (estavam em 0.2.0 e 1.0.0); um teste confere que acompanham o CHANGELOG.
+- `AGENTS.md` atualizado (estrutura, testes e regra de versão na release), nota obsoleta sobre os nomes da v1.0.0 removida da referência e aviso sobre os rótulos antigos no histórico do modelo.
+
+### Alterado
+
+- Nomes de workflows e jobs do CI padronizados em inglês, e comentários vindos dos modelos do GitHub traduzidos. O workflow "Docker Security & Deploy" passa a se chamar "Docker Security", porque não faz deploy.
 
 ## [1.2.0] - 2026-11-08
 
