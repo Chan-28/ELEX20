@@ -235,3 +235,51 @@ def test_modelo_do_edge_impulse_entra_no_firmware(tmp_path):
 
     rodar(cenario, estado)
     assert (estado.pasta / "firmware" / "lib" / "ei-model" / "Meu_Modelo_inferencing" / "library.properties").is_file()
+
+
+def test_segunda_rede_institucional(tmp_path):
+    estado = montar(tmp_path)
+    ca = tmp_path / "ca.pem"
+    ca.write_text("-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n", encoding="utf-8")
+
+    async def cenario(app, piloto):
+        await ate_o_wifi(app, piloto)
+        tela = app.screen
+        tela.query_one("#ssid", Input).value = "Casa"
+        tela.query_one("#wifi-pass", Input).value = "senha-de-casa"
+        tela.query_one("#host", Input).value = "192.168.0.10"
+        tela.query_one("#net2", Switch).value = True
+        tela.query_one("#eap2", Switch).value = True
+        await piloto.pause()
+        tela.query_one("#ssid2", Input).value = "eduroam"
+        tela.query_one("#wifi-pass2", Input).value = "curta"  # vale numa conta institucional
+        tela.query_one("#host2", Input).value = "10.1.0.9"
+        tela.query_one("#eap2-user", Input).value = "aluno@univ.br"
+        tela.query_one("#eap2-ca", Input).value = str(ca)
+        await proximo(app, piloto, tui.TelaRevisao)
+        texto = "".join(str(c) for linha in app.screen.linhas() for c in linha)
+        assert "curta" not in texto
+        assert "eduroam (institutional, aluno@univ.br, server 10.1.0.9)" in texto
+        await proximo(app, piloto, tui.TelaFim)
+
+    rodar(cenario, estado)
+    firmware = inst.ler_env((estado.pasta / "firmware" / ".env").read_text(encoding="utf-8"))
+    assert firmware["WIFI2_SSID"] == "eduroam"
+    assert firmware["WIFI2_EAP_USER"] == "aluno@univ.br"
+    assert firmware["WIFI2_EAP_METHOD"] == "PEAP"
+    assert firmware["WIFI2_EAP_CA_FILE"] == "wifi-ca-2.pem"
+    assert firmware["WIFI2_MQTT_HOST"] == "10.1.0.9"
+    assert "WIFI_EAP_USER" not in firmware
+
+
+def test_rede_desligada_nao_e_validada(tmp_path):
+    async def cenario(app, piloto):
+        await ate_o_wifi(app, piloto)
+        tela = app.screen
+        tela.query_one("#eap1", Switch).value = True
+        await piloto.pause()
+        tela.query_one("#fw", Switch).value = False  # a seção de fora some: nada dentro dela vale
+        await piloto.pause()
+        await proximo(app, piloto, tui.TelaRevisao)
+
+    rodar(cenario, montar(tmp_path))

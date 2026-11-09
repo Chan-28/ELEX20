@@ -37,10 +37,14 @@ import time
 import urllib.error
 import urllib.request
 import zipfile
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 NOMES_DE_SISTEMA = {"Darwin": "macOS"}
+# Wi-Fi do sensor: até 4 redes (WIFI_ e WIFI2_ a WIFI4_), como em firmware/load_env.py
+MAX_REDES_WIFI = 4
+METODOS_EAP = ("PEAP", "TTLS")
+LIMITE_EAP = 64  # bytes de usuário, identidade e senha aceitos pelo Wi-Fi do ESP32
 
 
 def versao_do_git(pasta: Path) -> str | None:
@@ -321,9 +325,51 @@ def validar_ssid(valor: str) -> str | None:
     return None
 
 
-def validar_senha_wifi(valor: str) -> str | None:
+def validar_senha_wifi(valor: str, institucional: bool = False) -> str | None:
+    if institucional:
+        if not valor:
+            return "Enter the password of your institutional account."
+        if len(valor.encode("utf-8")) > LIMITE_EAP:
+            return f"The ESP32 accepts passwords of up to {LIMITE_EAP} bytes."
+        return None
     if not 8 <= len(valor) <= 63:
         return "A Wi-Fi password has 8 to 63 characters."
+    return None
+
+
+def validar_usuario_eap(valor: str) -> str | None:
+    if not valor.strip():
+        return "Enter your full username, such as student@university.edu."
+    if len(valor.strip().encode("utf-8")) > LIMITE_EAP:
+        return f"The ESP32 accepts usernames of up to {LIMITE_EAP} bytes."
+    return None
+
+
+def validar_identidade_eap(valor: str) -> str | None:
+    if len(valor.strip().encode("utf-8")) > LIMITE_EAP:
+        return f"The ESP32 accepts identities of up to {LIMITE_EAP} bytes."
+    return None
+
+
+def validar_metodo_eap(valor: str) -> str | None:
+    if valor.strip() and valor.strip().upper() not in METODOS_EAP:
+        return "Use PEAP or TTLS; your IT team can tell you which."
+    return None
+
+
+def validar_certificado(valor: str) -> str | None:
+    """Certificado da autoridade (CA) da rede institucional, em PEM; vazio é aceito."""
+    if not valor.strip():
+        return None
+    caminho = Path(valor.strip()).expanduser()
+    if not caminho.is_file():
+        return f"File not found: {caminho}"
+    try:
+        texto = caminho.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return "Could not read this file; use the certificate in PEM format (.pem or .crt)."
+    if "-----BEGIN CERTIFICATE-----" not in texto:
+        return "This is not a PEM certificate (it should start with -----BEGIN CERTIFICATE-----)."
     return None
 
 
@@ -423,10 +469,75 @@ def mascarar(valor: str, atual: str | None = None) -> str:
 
 
 @dataclass
-class Firmware:
+class RedeWifi:
+    """Uma rede Wi-Fi do sensor; ele tenta cada uma até conectar."""
+
     ssid: str
-    senha: str
+    senha: str = ""  # vazia: mantém a senha que já está no firmware/.env para este SSID
+    # Wi-Fi institucional (WPA2-Enterprise, como o eduroam): usuário preenchido
+    eap_usuario: str = ""
+    eap_identidade: str = ""
+    eap_metodo: str = ""
+    ca: str = ""  # certificado (PEM); fora de firmware/, é copiado para lá
+    mqtt_host: str = ""  # só nas redes extras: o servidor visto dessa rede
+
+    @property
+    def institucional(self) -> bool:
+        return bool(self.eap_usuario)
+
+
+@dataclass
+class Firmware:
+    redes: list[RedeWifi]  # a primeira vira WIFI_*, as outras WIFI2_ a WIFI4_
     host: str
+
+    @property
+    def ssid(self) -> str:
+        return self.redes[0].ssid
+
+
+def prefixo_wifi(numero: int) -> str:
+    return "WIFI_" if numero == 1 else f"WIFI{numero}_"
+
+
+def redes_do_env(env: dict[str, str]) -> list[RedeWifi]:
+    """Redes configuradas num firmware/.env, na ordem de tentativa."""
+    redes = []
+    for numero in range(1, MAX_REDES_WIFI + 1):
+        p = prefixo_wifi(numero)
+        if not env.get(p + "SSID"):
+            continue
+        redes.append(
+            RedeWifi(
+                ssid=env[p + "SSID"],
+                senha=env.get(p + "PASS", ""),
+                eap_usuario=env.get(p + "EAP_USER", ""),
+                eap_identidade=env.get(p + "EAP_IDENTITY", ""),
+                eap_metodo=env.get(p + "EAP_METHOD", ""),
+                ca=env.get(p + "EAP_CA_FILE", ""),
+                mqtt_host=env.get(f"WIFI{numero}_MQTT_HOST", "") if numero > 1 else "",
+            )
+        )
+    return redes
+
+
+def env_das_redes(redes: list[RedeWifi]) -> str:
+    """Linhas WIFI_* do firmware/.env; campos vazios ficam de fora."""
+    linhas = []
+    for numero, rede in enumerate(redes[:MAX_REDES_WIFI], start=1):
+        p = prefixo_wifi(numero)
+        campos = [("SSID", rede.ssid), ("PASS", rede.senha)]
+        if rede.institucional:
+            campos += [
+                ("EAP_USER", rede.eap_usuario),
+                ("EAP_IDENTITY", rede.eap_identidade),
+                ("EAP_METHOD", rede.eap_metodo.upper()),
+                ("EAP_CA_FILE", rede.ca),
+            ]
+        if numero > 1:
+            campos.append(("MQTT_HOST", rede.mqtt_host))
+        linhas += [f"{p}{chave}={valor}" for chave, valor in campos if valor]
+    return "".join(linha + "\n" for linha in linhas)
 
 
 @dataclass
@@ -858,17 +969,44 @@ class Instalador:
         dados = self.respostas.firmware
         arquivo = self.destino / "firmware" / ".env"
         atual = ler_env(arquivo.read_text(encoding="utf-8")) if arquivo.exists() else {}
-        texto = (
-            f"WIFI_SSID={dados.ssid}\nWIFI_PASS={dados.senha or atual.get('WIFI_PASS', '')}\n"
-            f"MQTT_HOST={dados.host}\nMQTT_USER=device\n"
-            f"MQTT_PASS={self.ler_segredo('mosquitto', 'mqtt_device')}\n"
+        senhas = {rede.ssid: rede.senha for rede in redes_do_env(atual)}
+        redes = []
+        for numero, rede in enumerate(dados.redes[:MAX_REDES_WIFI], start=1):
+            # Senha em branco mantém a que já estava gravada para a mesma rede
+            senha = rede.senha or senhas.get(rede.ssid, "")
+            redes.append(replace(rede, senha=senha, ca=self.instalar_certificado(rede.ca, numero)))
+        texto = env_das_redes(redes) + (
+            f"MQTT_HOST={dados.host}\nMQTT_USER=device\nMQTT_PASS={self.senha_mqtt_do_dispositivo(atual)}\n"
         )
-        # Wi-Fi institucional (WPA2-Enterprise) é configurado à mão; o assistente não o apaga
-        texto += "".join(f"{chave}={valor}\n" for chave, valor in atual.items() if chave.startswith("WIFI_EAP_"))
         arquivo.write_text(texto, encoding="utf-8")
         if os.name == "posix":
             arquivo.chmod(0o600)
-        self.saida.info("firmware/.env created.")
+        nomes = ", ".join(rede.ssid for rede in redes)
+        self.saida.info(f"firmware/.env written with {len(redes)} Wi-Fi network(s): {nomes}.")
+
+    def senha_mqtt_do_dispositivo(self, atual: dict[str, str]) -> str:
+        """Senha do usuário device; sem a stack no ar, fica a que já estava no arquivo."""
+        try:
+            return self.ler_segredo("mosquitto", "mqtt_device") or atual.get("MQTT_PASS", "")
+        except (subprocess.CalledProcessError, OSError):
+            if not atual.get("MQTT_PASS"):
+                self.saida.aviso("Could not read the MQTT password: is the stack running? Fill MQTT_PASS by hand.")
+            return atual.get("MQTT_PASS", "")
+
+    def instalar_certificado(self, caminho: str, numero: int) -> str:
+        """Copia o certificado da rede para firmware/ (onde *.pem não é versionado)."""
+        if not caminho:
+            return ""
+        firmware = (self.destino / "firmware").resolve()
+        origem = Path(caminho).expanduser()
+        if not origem.is_absolute():
+            return caminho  # já relativo a firmware/, como o load_env.py espera
+        origem = origem.resolve()
+        if origem.is_relative_to(firmware):
+            return origem.relative_to(firmware).as_posix()
+        nome = f"wifi-ca-{numero}.pem"
+        shutil.copyfile(origem, firmware / nome)
+        return nome
 
     def incluir_modelo_ei(self) -> bool:
         """Copia a biblioteca do Edge Impulse para firmware/lib/ei-model e aponta o build para ela."""
@@ -1123,13 +1261,7 @@ def coletar_respostas(destino: Path | None, origem: Path, extras: dict[str, str]
         respostas.baixar_modelo = confirmar(f"Download the local AI model {MODELO_OLLAMA} (~2 GB)?", True)
     if (pasta / "firmware" / "platformio.ini").exists() and confirmar("Create firmware/.env for the sensor?", False):
         print("\n== Device")
-        respostas.firmware = Firmware(
-            ssid=perguntar("Wi-Fi network name (SSID, 2.4 GHz only)", validar=validar_ssid),
-            senha=perguntar("Wi-Fi password", segredo=True, validar=validar_senha_wifi),
-            host=perguntar(
-                "This computer's IP address", respostas.ip_lan or detectar_ip_lan() or "", validar=validar_ip
-            ),
-        )
+        respostas.firmware = coletar_firmware(pasta, respostas.ip_lan)
         respostas.ip_lan = respostas.ip_lan or respostas.firmware.host
     if (pasta / "firmware" / "platformio.ini").exists() and confirmar(
         "Add an Edge Impulse sound model to the firmware?", False
@@ -1137,6 +1269,155 @@ def coletar_respostas(destino: Path | None, origem: Path, extras: dict[str, str]
         caminho = perguntar("Model .zip or folder (Deployment → Arduino library)", validar=validar_modelo_ei)
         respostas.modelo_ei = Path(caminho).expanduser().resolve()
     return respostas
+
+
+def env_do_firmware(pasta: Path) -> dict[str, str]:
+    arquivo = pasta / "firmware" / ".env"
+    return ler_env(arquivo.read_text(encoding="utf-8")) if arquivo.exists() else {}
+
+
+def perguntar_rede(numero: int, atual: RedeWifi | None, host: str) -> RedeWifi:
+    """Perguntas de uma rede Wi-Fi; Enter mantém o valor atual."""
+    atual = atual or RedeWifi(ssid="")
+    ssid = perguntar("Wi-Fi network name (SSID, 2.4 GHz only)", atual.ssid, validar=validar_ssid)
+    mesma = ssid == atual.ssid
+    rede = RedeWifi(ssid=ssid)
+    if confirmar(
+        "Is it an institutional network with a personal login (WPA2-Enterprise, like eduroam)?",
+        mesma and atual.institucional,
+    ):
+        rede.eap_usuario = perguntar(
+            "Username (such as student@university.edu)",
+            atual.eap_usuario if mesma else "",
+            validar=validar_usuario_eap,
+        )
+    guardada = mesma and bool(atual.senha)
+    rotulo = "Password of this account" if rede.institucional else "Wi-Fi password"
+    rede.senha = perguntar(
+        rotulo + (" (Enter keeps the current one)" if guardada else ""),
+        segredo=True,
+        validar=lambda v: None if (guardada and not v) else validar_senha_wifi(v, rede.institucional),
+    )
+    if rede.institucional:
+        anterior = atual if mesma else RedeWifi(ssid="")
+        rede.eap_identidade = perguntar(
+            "Outer identity, optional (such as anonymous@university.edu)",
+            anterior.eap_identidade,
+            validar=validar_identidade_eap,
+        )
+        rede.eap_metodo = perguntar(
+            "Method, PEAP or TTLS", anterior.eap_metodo or "PEAP", validar=validar_metodo_eap
+        ).upper()
+        print("   The CA certificate lets the sensor check it is talking to the real network;")
+        print("   ask your IT team for it (on eduroam, it is usually on the network setup page).")
+        rede.ca = perguntar("CA certificate file (.pem), optional", anterior.ca, validar=validar_certificado)
+        if not rede.ca:
+            print("   Without it, a fake access point with the same name could capture the password.")
+    if numero > 1:
+        rede.mqtt_host = perguntar(
+            "This computer's IP address when the sensor is on this network",
+            (atual.mqtt_host if mesma else "") or host,
+            validar=validar_ip,
+        )
+        if rede.mqtt_host == host:
+            rede.mqtt_host = ""
+    return rede
+
+
+def coletar_firmware(pasta: Path, ip_lan: str | None) -> Firmware:
+    """Redes Wi-Fi e servidor do sensor, em texto simples (instalação e --wifi)."""
+    atual = env_do_firmware(pasta)
+    existentes = redes_do_env(atual)
+    print("   The sensor can store up to 4 Wi-Fi networks and tries each one until it connects.")
+    print("\n-- Wi-Fi network 1")
+    principal = perguntar_rede(1, existentes[0] if existentes else None, "")
+    host = perguntar(
+        "This computer's IP address (the MQTT server)",
+        ip_lan or detectar_ip_lan() or atual.get("MQTT_HOST", ""),
+        validar=validar_ip,
+    )
+    redes = [principal]
+    while len(redes) < MAX_REDES_WIFI and confirmar(
+        "Add another Wi-Fi network (such as home and university)?", len(existentes) > len(redes)
+    ):
+        print(f"\n-- Wi-Fi network {len(redes) + 1}")
+        anterior = existentes[len(redes)] if len(existentes) > len(redes) else None
+        redes.append(perguntar_rede(len(redes) + 1, anterior, host))
+    return Firmware(redes=redes, host=host)
+
+
+def ambiente_pio(pasta: Path) -> str:
+    """Firmware com modelo quando há uma biblioteca do Edge Impulse em firmware/lib/ei-model."""
+    modelos = pasta / PASTA_MODELO_EI
+    tem_modelo = modelos.is_dir() and any(p.is_dir() for p in modelos.iterdir())
+    return "esp32s3_model" if tem_modelo else "esp32s3"
+
+
+def configurar_wifi(args, origem: Path) -> int:
+    """--wifi: troca as redes do sensor, acompanha o IP do computador e grava a placa."""
+    print(titulo_do_instalador())
+    pasta = (args.dir or pasta_da_pilha() or origem).expanduser().resolve()
+    if not (pasta / "firmware" / "platformio.ini").is_file():
+        print(f"No firmware folder in {pasta}. Run this from a copy of the repository, or use --dir.")
+        return 1
+    saida = Saida()
+    instalador = Instalador(origem, Respostas(destino=pasta), args.dry_run, saida)
+    atual = env_do_firmware(pasta)
+    ip = detectar_ip_lan()
+    print(f"\n== Wi-Fi of the sensor ({pasta / 'firmware' / '.env'})")
+    for numero, rede in enumerate(redes_do_env(atual), start=1):
+        tipo = "institutional" if rede.institucional else "personal"
+        servidor = rede.mqtt_host or atual.get("MQTT_HOST", "?")
+        print(f"   {numero}. {rede.ssid} ({tipo}), server {servidor}")
+    print(f"   This computer's IP address now: {ip or 'unknown'}")
+
+    if not atual or confirmar("Change the Wi-Fi networks?", not atual):
+        firmware = coletar_firmware(pasta, ip)
+    else:
+        # Só o IP do computador mudou: confere o servidor de cada rede
+        redes = redes_do_env(atual)
+        host = perguntar(
+            f"This computer's IP address on {redes[0].ssid}", atual.get("MQTT_HOST") or ip or "", validar=validar_ip
+        )
+        for rede in redes[1:]:
+            rede.mqtt_host = perguntar(
+                f"This computer's IP address on {rede.ssid}", rede.mqtt_host or host, validar=validar_ip
+            )
+            rede.mqtt_host = "" if rede.mqtt_host == host else rede.mqtt_host
+        firmware = Firmware(redes=redes, host=host)
+    instalador.respostas.firmware = firmware
+    instalador.gerar_env_firmware()
+    # Senhas em branco mantêm as gravadas: só o arquivo final diz se a placa precisa mudar
+    mudou_firmware = env_do_firmware(pasta) != atual
+
+    # O broker só escuta no IP de MQTT_BIND: acompanha o IP atual do computador
+    env_pilha = pasta / ".env"
+    if ip and env_pilha.is_file():
+        valores = ler_env(env_pilha.read_text(encoding="utf-8"))
+        if valores.get("MQTT_BIND") != ip and confirmar(
+            f"Make the MQTT server listen on {ip} (now {valores.get('MQTT_BIND') or 'this computer only'})?", True
+        ):
+            env_pilha.write_text(
+                aplicar_env(env_pilha.read_text(encoding="utf-8"), {"MQTT_BIND": ip}), encoding="utf-8"
+            )
+            try:
+                instalador.compose("up", "-d", "mosquitto")
+                print(f"   MQTT server now listens on {ip}:1883.")
+            except (subprocess.CalledProcessError, OSError):
+                print("   Could not restart it; run: docker compose up -d mosquitto")
+
+    if not mudou_firmware:
+        print("\nThe sensor configuration did not change; no need to flash it again.")
+        return 0
+    comando = ["pio", "run", "-e", ambiente_pio(pasta), "-t", "upload"]
+    if not shutil.which("pio"):
+        print("\nPlatformIO (pio) was not found. Flash the sensor with:")
+        print(f"   cd {pasta / 'firmware'} && {' '.join(comando)}")
+        return 0
+    if args.dry_run or not confirmar("Flash the sensor now? (connect it by USB first)", True):
+        print(f"Flash it later with: cd {pasta / 'firmware'} && {' '.join(comando)}")
+        return 0
+    return subprocess.run(comando, cwd=pasta / "firmware", check=False).returncode  # noqa: S603
 
 
 def coletar_remocao(destino: Path | None, remocao: Remocao) -> tuple[Path, Remocao] | None:
@@ -1208,6 +1489,11 @@ def main(argv: list[str] | None = None) -> int:
         metavar="PATH",
         help="add an Edge Impulse Arduino library (.zip or folder) to firmware/lib/ei-model",
     )
+    parser.add_argument(
+        "--wifi",
+        action="store_true",
+        help="change the sensor's Wi-Fi networks or follow this computer's new IP, then flash the sensor",
+    )
     parser.add_argument("--dry-run", action="store_true", help="create the files, but only show the Docker commands")
     parser.add_argument("--uninstall", action="store_true", help="remove the ELEX20 containers")
     parser.add_argument(
@@ -1250,7 +1536,9 @@ def main(argv: list[str] | None = None) -> int:
             print("The Textual library is not available; using plain text prompts.")
 
     try:
-        if args.uninstall:
+        if args.wifi:
+            codigo, resumo = configurar_wifi(args, origem), None
+        elif args.uninstall:
             codigo, resumo = executar_remocao(args, origem, elex_tui)
         elif elex_tui:
             codigo, resumo = elex_tui.executar(

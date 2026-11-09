@@ -59,6 +59,7 @@
 #include "motor_timer.h"
 #include "perf_stats.h"
 #include "settings.h"
+#include "wifi_rotation.h"
 
 #ifndef ESP_ARDUINO_VERSION_MAJOR
 #  define ESP_ARDUINO_VERSION_MAJOR 2
@@ -124,12 +125,6 @@ static constexpr size_t AUDIO_WINDOW_SAMPLES = (AUDIO_SAMPLE_RATE * AUDIO_WINDOW
 static_assert(AUDIO_WINDOW_SAMPLES >= elex::kDoaWindow, "janela menor que a usada na direção");
 
 // ── Credenciais (via load_env.py / platformio.ini) ───────────
-#ifndef WIFI_SSID
-#  define WIFI_SSID "YOUR_SSID"
-#endif
-#ifndef WIFI_PASS
-#  define WIFI_PASS "YOUR_PASS"
-#endif
 #ifndef MQTT_HOST
 #  define MQTT_HOST "192.168.1.100"
 #endif
@@ -145,9 +140,27 @@ static_assert(AUDIO_WINDOW_SAMPLES >= elex::kDoaWindow, "janela menor que a usad
 #ifndef DEVICE_ID
 #  define DEVICE_ID "esp32s3-sound-01"
 #endif
-#ifdef WIFI_EAP_HAS_CA
-#  include "wifi_eap_ca.h"  // gerado por load_env.py a partir de WIFI_EAP_CA_FILE
+
+// Redes Wi-Fi gravadas no firmware: o sensor tenta cada uma até conectar. eap_user nulo é
+// rede doméstica (WPA2-Personal); preenchido, é institucional (WPA2-Enterprise) e pass é
+// a senha desse usuário. ca_pem nulo não confere o servidor; mqtt_host nulo usa MQTT_HOST.
+struct WifiNetwork {
+    const char*        ssid;
+    const char*        pass;
+    const char*        eap_user;
+    const char*        eap_identity;
+    wpa2_auth_method_t eap_method;
+    const char*        ca_pem;
+    const char*        mqtt_host;
+};
+#ifdef WIFI_NETWORKS_GENERATED
+#  include "wifi_networks.h"  // gerado por load_env.py a partir das variáveis WIFI_*
+#else
+static const WifiNetwork kWifiNetworks[] = {
+    {"YOUR_SSID", "YOUR_PASS", nullptr, nullptr, WPA2_AUTH_PEAP, nullptr, nullptr},
+};
 #endif
+static constexpr size_t kWifiNetworkCount = sizeof(kWifiNetworks) / sizeof(kWifiNetworks[0]);
 
 static const char TOPIC_INFERENCE[] = MQTT_TOPIC_INFERENCE "/" DEVICE_ID;
 static const char TOPIC_STATUS[]    = MQTT_TOPIC_STATUS    "/" DEVICE_ID;
@@ -520,32 +533,40 @@ static constexpr uint8_t  kMqttSocketTimeoutS = 5;  // limita a espera pelo CONN
 static elex::Backoff wifiBackoff(15000, 120000);
 static elex::Backoff mqttBackoff(2000, 60000);
 
-// Rede doméstica (WPA2-Personal) ou institucional (WPA2-Enterprise, como o eduroam).
-// O modo institucional entra quando o build define WIFI_EAP_USER (load_env.py); aí
-// WIFI_PASS é a senha desse usuário.
-static void wifiBegin() {
-#ifdef WIFI_EAP_USER
+// Uma rodada tenta cada rede por kWifiAttemptMs; o recuo vale entre rodadas.
+static constexpr uint32_t kWifiAttemptMs = 15000;
+static const char* mqttHost = MQTT_HOST;  // muda com a rede (mqtt_host)
+static elex::WifiRotation wifiRotation(kWifiNetworkCount);
+
+static void wifiBegin(const WifiNetwork& net) {
+    if (net.eap_user) {
+#ifdef WIFI_HAS_EAP
 #  if !CONFIG_ESP_WIFI_ENTERPRISE_SUPPORT
 #    error "Este core do ESP32 foi compilado sem suporte a WPA2-Enterprise"
 #  endif
-#  ifdef WIFI_EAP_HAS_CA
-    const char* ca = kWifiEapCaPem;  // confere o servidor RADIUS da instituição
-#  else
-    const char* ca = nullptr;  // load_env.py avisa: sem CA, o servidor não é conferido
-#  endif
-    WiFi.begin(WIFI_SSID, WIFI_EAP_METHOD, WIFI_EAP_IDENTITY, WIFI_EAP_USER, WIFI_PASS, ca);
-#else
-    WiFi.begin(WIFI_SSID, WIFI_PASS);
+        // Sem ca_pem, load_env.py avisa: o servidor RADIUS não é conferido
+        WiFi.begin(net.ssid, net.eap_method, net.eap_identity, net.eap_user, net.pass, net.ca_pem);
 #endif
+        return;
+    }
+    WiFi.begin(net.ssid, net.pass);
 }
 
 static bool wifiService() {
     static bool wasUp = false;
+    static bool tried = false;
+    static uint32_t lastTryMs = 0;
     const bool up = WiFi.status() == WL_CONNECTED;
     if (up && !wasUp) {
-        Serial.printf("[WiFi] IP: %s  RSSI: %d dBm\n", WiFi.localIP().toString().c_str(), WiFi.RSSI());
+        const WifiNetwork& net = kWifiNetworks[wifiRotation.current()];
+        Serial.printf("[WiFi] %s  IP: %s  RSSI: %d dBm\n", net.ssid, WiFi.localIP().toString().c_str(),
+                      WiFi.RSSI());
         wifiConnects++;
+        wifiRotation.connected();
         wifiBackoff.connected();
+        mqtt.disconnect();
+        mqttHost = net.mqtt_host ? net.mqtt_host : MQTT_HOST;
+        mqtt.setServer(mqttHost, MQTT_PORT);
         mqttBackoff.connected();  // o broker pode ter ficado inalcançável só pelo Wi-Fi
     } else if (!up && wasUp) {
         Serial.println("[WiFi] Conexão perdida; o sensor segue sem rede");
@@ -554,14 +575,29 @@ static bool wifiService() {
     wasUp = up;
     if (up) return true;
 
+    // Cada tentativa tem ao menos kWifiAttemptMs para associar: WiFi.begin() não espera
     const uint32_t now = millis();
-    if (wifiBackoff.due(now)) {
+    if (tried && now - lastTryMs < kWifiAttemptMs) return false;
+    if (wifiRotation.in_round()) {
+        // segue a rodada: a rede anterior não conectou a tempo
+    } else if (wifiBackoff.due(now)) {
         wifiBackoff.attempted(now);
-        Serial.printf("[WiFi] Conectando a %s (próxima em %lu s)\n", WIFI_SSID,
-                      static_cast<unsigned long>(wifiBackoff.wait_ms() / 1000));
-        WiFi.disconnect();
-        wifiBegin();
+        wifiRotation.start_round();
+    } else {
+        return false;
     }
+    const WifiNetwork& net = kWifiNetworks[wifiRotation.next()];
+    if (wifiRotation.in_round()) {
+        Serial.printf("[WiFi] Conectando a %s (próxima rede em %lu s)\n", net.ssid,
+                      static_cast<unsigned long>(kWifiAttemptMs / 1000));
+    } else {
+        Serial.printf("[WiFi] Conectando a %s (próxima rodada em %lu s)\n", net.ssid,
+                      static_cast<unsigned long>(wifiBackoff.wait_ms() / 1000));
+    }
+    tried = true;
+    lastTryMs = now;
+    WiFi.disconnect();
+    wifiBegin(net);
     return false;
 }
 
@@ -569,7 +605,7 @@ static bool mqttService() {
     if (mqtt.connected()) return true;
     if (!mqttBackoff.due(millis())) return false;
 
-    Serial.printf("[MQTT] Conectando a %s:%d ...\n", MQTT_HOST, MQTT_PORT);
+    Serial.printf("[MQTT] Conectando a %s:%d ...\n", mqttHost, MQTT_PORT);
     bool up = mqtt.connect(DEVICE_ID, MQTT_USER, MQTT_PASS);
     if (up) {
         // A sessão é limpa: sem assinar de novo, os comandos parariam de chegar
@@ -594,7 +630,7 @@ static void netTask(void*) {
     WiFi.persistent(false);         // credenciais vêm do build; não grava a flash a cada tentativa
     WiFi.setAutoReconnect(false);   // quem reconecta é wifiBackoff, com recuo
     WiFi.mode(WIFI_STA);
-    mqtt.setServer(MQTT_HOST, MQTT_PORT);
+    mqtt.setServer(mqttHost, MQTT_PORT);
     mqtt.setBufferSize(768);  // o status com as métricas passa de 400 bytes
     mqtt.setKeepAlive(30);
     mqtt.setSocketTimeout(kMqttSocketTimeoutS);
