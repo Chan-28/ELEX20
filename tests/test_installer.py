@@ -409,20 +409,125 @@ def test_n8n_despublica_antes_de_publicar_para_destravar_gatilho(tmp_path, monke
     assert chamadas[-1][0] == ("restart", "n8n")
 
 
-def test_env_do_firmware_mantem_o_wifi_institucional(tmp_path, monkeypatch):
-    """O assistente reescreve o firmware/.env, mas não apaga o WPA2-Enterprise configurado à mão."""
+PEM_FALSO = "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n"
+
+
+def test_env_do_firmware_grava_varias_redes(tmp_path, monkeypatch):
+    """Senha em branco mantém a da mesma rede; o certificado vai para firmware/."""
     monkeypatch.setattr(inst.Instalador, "ler_segredo", lambda *_a: "segredo")
     arquivo = tmp_path / "firmware" / ".env"
     arquivo.parent.mkdir()
-    arquivo.write_text(
-        "WIFI_SSID=antiga\nWIFI_PASS=senha-antiga\nWIFI_EAP_USER=aluno@univ.br\nWIFI_EAP_CA_FILE=ca.pem\nOUTRA=x\n",
-        encoding="utf-8",
-    )
-    respostas = inst.Respostas(destino=tmp_path, firmware=inst.Firmware("eduroam", "", "10.0.0.5"))
+    arquivo.write_text("WIFI_SSID=Casa\nWIFI_PASS=senha-de-casa\nOUTRA=x\n", encoding="utf-8")
+    ca = tmp_path / "baixado.pem"
+    ca.write_text(PEM_FALSO, encoding="utf-8")
+    redes = [
+        inst.RedeWifi("Casa"),
+        inst.RedeWifi(
+            "eduroam", "minha-senha", eap_usuario="aluno@univ.br", eap_metodo="ttls", ca=str(ca), mqtt_host="10.1.0.9"
+        ),
+    ]
+    respostas = inst.Respostas(destino=tmp_path, firmware=inst.Firmware(redes, "192.168.0.5"))
     inst.Instalador(RAIZ, respostas, False, SaidaMuda()).gerar_env_firmware()
     env = inst.ler_env(arquivo.read_text(encoding="utf-8"))
-    assert env["WIFI_SSID"] == "eduroam"
-    assert env["WIFI_PASS"] == "senha-antiga"
-    assert env["WIFI_EAP_USER"] == "aluno@univ.br"
-    assert env["WIFI_EAP_CA_FILE"] == "ca.pem"
-    assert "OUTRA" not in env
+    assert env == {
+        "WIFI_SSID": "Casa",
+        "WIFI_PASS": "senha-de-casa",
+        "WIFI2_SSID": "eduroam",
+        "WIFI2_PASS": "minha-senha",
+        "WIFI2_EAP_USER": "aluno@univ.br",
+        "WIFI2_EAP_METHOD": "TTLS",
+        "WIFI2_EAP_CA_FILE": "wifi-ca-2.pem",
+        "WIFI2_MQTT_HOST": "10.1.0.9",
+        "MQTT_HOST": "192.168.0.5",
+        "MQTT_USER": "device",
+        "MQTT_PASS": "segredo",
+    }
+    assert (tmp_path / "firmware" / "wifi-ca-2.pem").read_text(encoding="utf-8") == PEM_FALSO
+    assert inst.redes_do_env(env)[1].institucional
+
+
+def test_env_do_firmware_sem_a_stack_mantem_a_senha_do_mqtt(tmp_path, monkeypatch):
+    def falha(*_a):
+        raise inst.subprocess.CalledProcessError(1, "docker")
+
+    monkeypatch.setattr(inst.Instalador, "ler_segredo", falha)
+    arquivo = tmp_path / "firmware" / ".env"
+    arquivo.parent.mkdir()
+    arquivo.write_text("WIFI_SSID=Casa\nWIFI_PASS=12345678\nMQTT_PASS=antiga\n", encoding="utf-8")
+    respostas = inst.Respostas(destino=tmp_path, firmware=inst.Firmware([inst.RedeWifi("Casa")], "10.0.0.5"))
+    inst.Instalador(RAIZ, respostas, False, SaidaMuda()).gerar_env_firmware()
+    assert inst.ler_env(arquivo.read_text(encoding="utf-8"))["MQTT_PASS"] == "antiga"
+
+
+@pytest.mark.parametrize(
+    ("senha", "institucional", "ok"),
+    [
+        ("1234567", False, False),
+        ("12345678", False, True),
+        ("curta", True, True),
+        ("", True, False),
+        ("x" * 65, True, False),
+    ],
+)
+def test_senha_do_wifi_institucional_segue_o_limite_do_eap(senha, institucional, ok):
+    assert (inst.validar_senha_wifi(senha, institucional) is None) is ok
+
+
+def test_certificado_precisa_ser_pem(tmp_path):
+    bom, ruim = tmp_path / "ca.pem", tmp_path / "ca.der"
+    bom.write_text(PEM_FALSO, encoding="utf-8")
+    ruim.write_bytes(b"\x30\x82\x01")
+    assert inst.validar_certificado("") is None
+    assert inst.validar_certificado(str(bom)) is None
+    assert inst.validar_certificado(str(ruim))
+    assert inst.validar_certificado(str(tmp_path / "nao-existe.pem"))
+
+
+def test_limites_do_wifi_batem_com_o_firmware():
+    load_env = (RAIZ / "firmware" / "load_env.py").read_text(encoding="utf-8")
+    assert f"MAX_REDES = {inst.MAX_REDES_WIFI}" in load_env
+    assert f"LIMITE_EAP = {inst.LIMITE_EAP}" in load_env
+    for metodo in inst.METODOS_EAP:
+        assert f'"{metodo}"' in load_env
+
+
+def test_wifi_so_atualiza_o_ip_do_computador(tmp_path, monkeypatch):
+    """--wifi depois de mudar de rede: o broker e o firmware seguem o IP novo."""
+    pasta = tmp_path / "ELEX20"
+    (pasta / "firmware").mkdir(parents=True)
+    (pasta / "firmware" / "platformio.ini").write_text("", encoding="utf-8")
+    (pasta / "firmware" / ".env").write_text(
+        "WIFI_SSID=Casa\nWIFI_PASS=12345678\nMQTT_HOST=192.168.0.5\nMQTT_USER=device\nMQTT_PASS=s\n",
+        encoding="utf-8",
+    )
+    (pasta / ".env").write_text("MQTT_BIND=192.168.0.5\n", encoding="utf-8")
+    comandos = []
+    monkeypatch.setattr(inst, "detectar_ip_lan", lambda: "10.0.0.7")
+    monkeypatch.setattr(inst, "confirmar", lambda texto, _padrao=True: "Change the Wi-Fi" not in texto)
+    monkeypatch.setattr(inst.Instalador, "ler_segredo", lambda *_a: "s")
+    monkeypatch.setattr(inst.Instalador, "compose", lambda _self, *a, **_k: comandos.append(a))
+    monkeypatch.setattr(inst.shutil, "which", lambda _nome: None)
+    args = inst.argparse.Namespace(dir=pasta, dry_run=False)
+    # O padrão da pergunta é o MQTT_HOST atual; quem muda de rede digita o IP novo
+    monkeypatch.setattr(inst, "perguntar", lambda t, padrao="", **_k: "10.0.0.7" if "IP address" in t else padrao)
+    assert inst.configurar_wifi(args, RAIZ) == 0
+    assert inst.env_do_firmware(pasta)["MQTT_HOST"] == "10.0.0.7"
+    assert inst.ler_env((pasta / ".env").read_text(encoding="utf-8"))["MQTT_BIND"] == "10.0.0.7"
+    assert ("up", "-d", "mosquitto") in comandos
+
+
+def test_wifi_sem_mudanca_nao_regrava_a_placa(tmp_path, monkeypatch, capsys):
+    pasta = tmp_path / "ELEX20"
+    (pasta / "firmware").mkdir(parents=True)
+    (pasta / "firmware" / "platformio.ini").write_text("", encoding="utf-8")
+    (pasta / "firmware" / ".env").write_text(
+        "WIFI_SSID=Casa\nWIFI_PASS=12345678\nMQTT_HOST=10.0.0.7\nMQTT_USER=device\nMQTT_PASS=s\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(inst, "detectar_ip_lan", lambda: "10.0.0.7")
+    monkeypatch.setattr(inst, "perguntar", lambda _t, padrao="", **_k: padrao)
+    monkeypatch.setattr(inst, "confirmar", lambda _t, padrao=True: padrao)
+    monkeypatch.setattr(inst.Instalador, "ler_segredo", lambda *_a: "s")
+    args = inst.argparse.Namespace(dir=pasta, dry_run=False)
+    assert inst.configurar_wifi(args, RAIZ) == 0
+    assert "no need to flash" in capsys.readouterr().out

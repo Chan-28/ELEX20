@@ -6,6 +6,16 @@ Toda release precisa de uma seção aqui antes da tag: o workflow de release fal
 
 ## [Não lançado]
 
+### Adicionado
+
+- O sensor guarda até quatro redes Wi-Fi e tenta cada uma até conectar, começando pela última que funcionou: o mesmo firmware serve em casa e na universidade. As extras usam o prefixo `WIFI2_` a `WIFI4_` no `firmware/.env`, e cada uma pode ser institucional e ter o próprio IP do servidor (`WIFI2_MQTT_HOST`). Cada rede tem 15 s para conectar; o recuo de 15 s a 2 min vale entre as rodadas.
+- O instalador pergunta o Wi-Fi institucional (usuário, identidade, PEAP ou TTLS e o certificado, que ele copia para `firmware/`) e uma segunda rede, na tela cheia e no modo texto.
+- `./install.sh --wifi` (ou `install.bat --wifi`): troca as redes do sensor ou só confere o IP do servidor depois de mudar de rede, faz o broker escutar no IP atual (`MQTT_BIND`), reinicia o Mosquitto e grava a placa pela USB.
+
+### Alterado
+
+- O `firmware/load_env.py` gera o cabeçalho `wifi_networks.h` no lugar das macros `WIFI_SSID`, `WIFI_PASS` e `WIFI_EAP_*`, e recusa senha de rede doméstica com menos de 8 caracteres.
+
 ## [1.3.0] - 2026-11-08
 
 Corrige o texto dos alertas do Grafana, que falhava nos três alertas (o executável da v1.2.0 ainda tem esse problema), elimina o heartbeat falso de sensores desligados e permite conectar o sensor a redes Wi-Fi institucionais, como o eduroam.

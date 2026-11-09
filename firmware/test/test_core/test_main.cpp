@@ -10,6 +10,7 @@
 #include "motor_timer.h"
 #include "perf_stats.h"
 #include "settings.h"
+#include "wifi_rotation.h"
 
 using namespace elex;
 
@@ -369,6 +370,49 @@ void test_motor_atravessa_virada_do_millis() {
     TEST_ASSERT_TRUE(t.start(inicio + 900, 600));
 }
 
+void test_rede_unica_tenta_sempre_a_mesma() {
+    WifiRotation r(1);
+    for (int i = 0; i < 3; i++) {
+        r.start_round();
+        TEST_ASSERT_EQUAL(0, r.next());
+        TEST_ASSERT_FALSE(r.in_round());
+    }
+}
+
+void test_redes_rodada_passa_por_todas() {
+    WifiRotation r(3);
+    r.start_round();
+    TEST_ASSERT_EQUAL(0, r.next());
+    TEST_ASSERT_TRUE(r.in_round());
+    TEST_ASSERT_EQUAL(1, r.next());
+    TEST_ASSERT_TRUE(r.in_round());
+    TEST_ASSERT_EQUAL(2, r.next());
+    TEST_ASSERT_FALSE(r.in_round());
+    r.start_round();
+    TEST_ASSERT_EQUAL(0, r.next());
+}
+
+void test_redes_recomeca_pela_ultima_que_conectou() {
+    WifiRotation r(3);
+    r.start_round();
+    r.next();
+    r.next();  // a segunda rede conecta
+    r.connected();
+    TEST_ASSERT_FALSE(r.in_round());
+    r.start_round();
+    TEST_ASSERT_EQUAL(1, r.next());
+    TEST_ASSERT_EQUAL(2, r.next());
+    TEST_ASSERT_EQUAL(0, r.next());
+    TEST_ASSERT_FALSE(r.in_round());
+}
+
+void test_redes_zero_vira_uma() {
+    WifiRotation r(0);
+    TEST_ASSERT_EQUAL(1, r.count());
+    r.start_round();
+    TEST_ASSERT_EQUAL(0, r.next());
+}
+
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_oito_setores_sem_ruido);
@@ -398,5 +442,9 @@ int main(int, char**) {
     RUN_TEST(test_motor_respeita_descanso);
     RUN_TEST(test_motor_primeira_vibracao_em_qualquer_momento);
     RUN_TEST(test_motor_atravessa_virada_do_millis);
+    RUN_TEST(test_rede_unica_tenta_sempre_a_mesma);
+    RUN_TEST(test_redes_rodada_passa_por_todas);
+    RUN_TEST(test_redes_recomeca_pela_ultima_que_conectou);
+    RUN_TEST(test_redes_zero_vira_uma);
     return UNITY_END();
 }
