@@ -6,6 +6,10 @@ Toda release precisa de uma seção aqui antes da tag: o workflow de release fal
 
 ## [Não lançado]
 
+### Corrigido
+
+- O painel "Últimos eventos" do Grafana não mostrava a direção do som, que o banco já gravava. Agora exibe a direção (N a NO), o ângulo, a confiança da direção e a urgência.
+
 ## [1.3.0] - 2026-11-08
 
 Corrige o texto dos alertas do Grafana, que falhava nos três alertas (o executável da v1.2.0 ainda tem esse problema), elimina o heartbeat falso de sensores desligados e permite conectar o sensor a redes Wi-Fi institucionais, como o eduroam.
