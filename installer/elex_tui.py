@@ -18,6 +18,7 @@ from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.screen import ModalScreen, Screen
+from textual.widget import Widget
 from textual.widgets import (
     Button,
     DataTable,
@@ -128,6 +129,11 @@ def secao(titulo: str, ident: str, ligada: bool, *campos: Vertical) -> Vertical:
     )
 
 
+def visivel(widget: Widget) -> bool:
+    """Campo dentro de uma seção desligada (em qualquer nível) não conta."""
+    return all(no.display for no in widget.ancestors_with_self if isinstance(no, Widget))
+
+
 class Passo(Screen):
     """Moldura comum: título do instalador, etapa, conteúdo e navegação."""
 
@@ -164,7 +170,7 @@ class Passo(Screen):
         primeiro = None
         for ident, regra in self.REGRAS.items():
             entrada = self.query_one(f"#{ident}", Input)
-            ativo = entrada.parent.parent.display if entrada.parent.parent.id else True
+            ativo = visivel(entrada)
             erro = regra(entrada.value) if ativo else None
             self.query_one(f"#{ident}-error", Static).update(erro or "")
             if erro and primeiro is None:
@@ -461,31 +467,98 @@ class TelaServicos(Passo):
         self.app.push_screen(TelaDispositivo() if self.estado.tem_firmware else TelaRevisao())
 
 
+def campos_da_rede(n: int, rede: inst.RedeWifi, host: str = "") -> list[Vertical]:
+    """Campos de uma rede Wi-Fi do sensor; n é 1 ou 2 (as demais ficam como estão no arquivo)."""
+    sufixo = "" if n == 1 else str(n)
+    guardada = "Leave blank to keep the current value" if rede.senha else ""
+    campos = [
+        campo(
+            "Wi-Fi network name (2.4 GHz only)",
+            f"ssid{sufixo}",
+            rede.ssid,
+            dica="The name you see in the Wi-Fi list, not an IP address",
+        ),
+        campo("Wi-Fi password (or your account password)", f"wifi-pass{sufixo}", segredo=True, dica=guardada),
+    ]
+    if n > 1:
+        campos.append(
+            campo(
+                "This computer's IP address on this network",
+                f"host{sufixo}",
+                rede.mqtt_host or host,
+                dica="Same as above if the server stays on one network",
+            )
+        )
+    campos.append(
+        secao(
+            "Institutional network with a personal login (WPA2-Enterprise, like eduroam)",
+            f"eap{n}",
+            rede.institucional,
+            campo("Username", f"eap{n}-user", rede.eap_usuario, dica="student@university.edu"),
+            campo(
+                "Outer identity (optional)",
+                f"eap{n}-identity",
+                rede.eap_identidade,
+                dica="anonymous@university.edu, if your IT team asks for it",
+            ),
+            campo("Method", f"eap{n}-method", rede.eap_metodo or "PEAP", dica="PEAP or TTLS"),
+            campo(
+                "CA certificate file (.pem)",
+                f"eap{n}-ca",
+                rede.ca,
+                dica="From your IT team; without it a fake access point could capture the password",
+            ),
+        )
+    )
+    return campos
+
+
 class TelaDispositivo(Passo):
     NUMERO = "Step 3 of 4"
     TITULO = "Set up the device"
-    DICA = "Saves the Wi-Fi and server settings used when you flash the ESP32-S3, and the sound model."
-    REGRAS = {"ssid": inst.validar_ssid, "host": inst.validar_ip, "ei-path": inst.validar_modelo_ei}
+    DICA = (
+        "Saves the Wi-Fi and server settings used when you flash the ESP32-S3, and the sound model. "
+        "The sensor tries each Wi-Fi network until one connects."
+    )
+    REGRAS = {
+        "ssid": inst.validar_ssid,
+        "host": inst.validar_ip,
+        "eap1-user": inst.validar_usuario_eap,
+        "eap1-identity": inst.validar_identidade_eap,
+        "eap1-method": inst.validar_metodo_eap,
+        "eap1-ca": inst.validar_certificado,
+        "ssid2": inst.validar_ssid,
+        "host2": inst.validar_ip,
+        "eap2-user": inst.validar_usuario_eap,
+        "eap2-identity": inst.validar_identidade_eap,
+        "eap2-method": inst.validar_metodo_eap,
+        "eap2-ca": inst.validar_certificado,
+        "ei-path": inst.validar_modelo_ei,
+    }
+
+    @property
+    def redes_atuais(self) -> list[inst.RedeWifi]:
+        return inst.redes_do_env(self.estado.firmware_env)
 
     def compose(self) -> ComposeResult:
         e = self.estado
         atual = e.firmware_env
         host = e.respostas.ip_lan or atual.get("MQTT_HOST") or inst.detectar_ip_lan() or ""
-        senha_guardada = "Leave blank to keep the current value" if atual.get("WIFI_PASS") else ""
+        redes = self.redes_atuais + [inst.RedeWifi(ssid=""), inst.RedeWifi(ssid="")]
         yield from self.cabecalho()
         with VerticalScroll(id="body"):
             yield secao(
                 "Create the device configuration (firmware/.env)",
                 "fw",
                 True,
-                campo(
-                    "Wi-Fi network name (2.4 GHz only)",
-                    "ssid",
-                    atual.get("WIFI_SSID", ""),
-                    dica="The name you see in the Wi-Fi list, not an IP address",
-                ),
-                campo("Wi-Fi password", "wifi-pass", segredo=True, dica=senha_guardada),
+                *campos_da_rede(1, redes[0]),
                 campo("This computer's IP address", "host", host),
+            )
+            yield secao(
+                "Add a second Wi-Fi network (such as home and university)",
+                "net2",
+                bool(redes[1].ssid),
+                *campos_da_rede(2, redes[1], host),
             )
             yield secao(
                 "Add an Edge Impulse sound model to the firmware",
@@ -502,24 +575,48 @@ class TelaDispositivo(Passo):
 
     def validar(self) -> bool:
         ok = super().validar()
-        if not self.query_one("#fw", Switch).value:
-            return ok
-        senha = self.query_one("#wifi-pass", Input).value
-        erro = None if not senha and self.estado.firmware_env.get("WIFI_PASS") else inst.validar_senha_wifi(senha)
-        self.query_one("#wifi-pass-error", Static).update(erro or "")
-        return ok and not erro
+        atuais = {rede.ssid: rede.senha for rede in self.redes_atuais}
+        for n, sufixo in ((1, ""), (2, "2")):
+            entrada = self.query_one(f"#wifi-pass{sufixo}", Input)
+            if not visivel(entrada):
+                continue
+            ssid = self.query_one(f"#ssid{sufixo}", Input).value.strip()
+            institucional = visivel(self.query_one(f"#eap{n}-user", Input))
+            guardada = not entrada.value and atuais.get(ssid)
+            erro = None if guardada else inst.validar_senha_wifi(entrada.value, institucional)
+            self.query_one(f"#wifi-pass{sufixo}-error", Static).update(erro or "")
+            ok = ok and not erro
+        return ok
+
+    def rede(self, n: int, host: str) -> inst.RedeWifi:
+        sufixo = "" if n == 1 else str(n)
+
+        def valor(ident: str) -> str:
+            return self.query_one(f"#{ident}", Input).value.strip()
+
+        rede = inst.RedeWifi(ssid=valor(f"ssid{sufixo}"), senha=self.query_one(f"#wifi-pass{sufixo}", Input).value)
+        if self.query_one(f"#eap{n}", Switch).value:
+            rede.eap_usuario = valor(f"eap{n}-user")
+            rede.eap_identidade = valor(f"eap{n}-identity")
+            rede.eap_metodo = valor(f"eap{n}-method").upper()
+            rede.ca = valor(f"eap{n}-ca")
+        if n > 1 and valor(f"host{sufixo}") != host:
+            rede.mqtt_host = valor(f"host{sufixo}")
+        return rede
 
     def avancar(self) -> None:
         respostas = self.estado.respostas
         respostas.firmware = None
         if self.query_one("#fw", Switch).value:
-            respostas.firmware = inst.Firmware(
-                ssid=self.query_one("#ssid", Input).value.strip(),
-                senha=self.query_one("#wifi-pass", Input).value,
-                host=self.query_one("#host", Input).value.strip(),
-            )
+            host = self.query_one("#host", Input).value.strip()
+            redes = [self.rede(1, host)]
+            if self.query_one("#net2", Switch).value:
+                redes.append(self.rede(2, host))
+            # A terceira e a quarta rede só se configuram no arquivo ou com --wifi; ficam como estão
+            redes += self.redes_atuais[2:]
+            respostas.firmware = inst.Firmware(redes=redes, host=host)
             # Sem isso, o broker só escutaria o loopback e a placa nunca conectaria
-            respostas.ip_lan = respostas.ip_lan or respostas.firmware.host
+            respostas.ip_lan = respostas.ip_lan or host
         respostas.modelo_ei = None
         if self.query_one("#ei", Switch).value:
             respostas.modelo_ei = Path(self.query_one("#ei-path", Input).value.strip()).expanduser().resolve()
@@ -552,11 +649,15 @@ class TelaRevisao(Passo):
             ("Local AI model", f"Download {inst.MODELO_OLLAMA}" if r.baixar_modelo else "Skip"),
         ]
         if r.firmware:
-            linhas += [
-                ("Device Wi-Fi network", r.firmware.ssid),
-                ("Device Wi-Fi password", inst.mascarar(r.firmware.senha, e.firmware_env.get("WIFI_PASS"))),
-                ("Device server address", r.firmware.host),
-            ]
+            atuais = {rede.ssid: rede.senha for rede in inst.redes_do_env(e.firmware_env)}
+            for n, rede in enumerate(r.firmware.redes, start=1):
+                tipo = f"institutional, {rede.eap_usuario}" if rede.institucional else "personal"
+                servidor = f", server {rede.mqtt_host}" if rede.mqtt_host else ""
+                linhas += [
+                    (f"Device Wi-Fi network {n}", f"{rede.ssid} ({tipo}{servidor})"),
+                    (f"Device Wi-Fi password {n}", inst.mascarar(rede.senha, atuais.get(rede.ssid))),
+                ]
+            linhas.append(("Device server address", r.firmware.host))
         else:
             linhas.append(("Device configuration", "Skip"))
         if e.tem_firmware:

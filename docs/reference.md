@@ -387,7 +387,7 @@ Os pinos ficam em `firmware/platformio.ini`. O firmware assume os microfones a 9
 
 ### Wi-Fi institucional
 
-Redes de universidades e empresas costumam pedir usuário e senha pessoais (WPA2-Enterprise, como o eduroam). O firmware aceita os métodos **PEAP** e **TTLS**. O instalador não pergunta esses dados: preencha-os à mão no `firmware/.env`. Se você rodar o assistente de novo, ele mantém as linhas `WIFI_EAP_*`.
+Redes de universidades e empresas costumam pedir usuário e senha pessoais (WPA2-Enterprise, como o eduroam). O firmware aceita os métodos **PEAP** e **TTLS**. O instalador pergunta esses dados: ligue **Institutional network with a personal login** na tela do dispositivo, ou rode `./install.sh --wifi` (veja [Mudar de rede](#mudar-de-rede)). Ele copia o certificado para `firmware/`. À mão, o `firmware/.env` fica assim:
 
 ```dotenv
 WIFI_SSID=eduroam
@@ -409,6 +409,43 @@ Mesmo conectado, o sensor só alcança o servidor se a rede deixar. Redes instit
 - **porta 1883 bloqueada**.
 
 Pergunte à TI se há uma rede para dispositivos IoT. Se não houver, use um roteador próprio ou o roteador do celular, com o servidor na mesma rede. Sem rede, o sensor continua classificando e vibrando.
+
+### Várias redes
+
+O sensor guarda até quatro redes e tenta cada uma até conectar, começando pela última que funcionou. Assim, o mesmo firmware serve em casa e na universidade, sem gravar de novo. A primeira rede usa `WIFI_*`; as outras usam o prefixo `WIFI2_` a `WIFI4_`, com os mesmos campos:
+
+```dotenv
+WIFI_SSID=MinhaCasa
+WIFI_PASS=senha-de-casa
+MQTT_HOST=192.168.0.10               # o servidor visto da primeira rede
+
+WIFI2_SSID=eduroam
+WIFI2_PASS=sua-senha-da-instituicao
+WIFI2_EAP_USER=aluno@universidade.br
+WIFI2_EAP_CA_FILE=wifi-ca-2.pem
+WIFI2_MQTT_HOST=10.20.30.40          # opcional: o servidor visto dessa rede
+```
+
+Cada rede tem 15 s para conectar. Se nenhuma conectar, a próxima rodada espera de 15 s a 2 min. O log mostra qual rede entrou (`[WiFi] eduroam  IP: ...`). O assistente configura duas redes; `./install.sh --wifi` configura as quatro.
+
+O IP do servidor muda de uma rede para outra. Se o computador do servidor vai junto com o sensor, informe em cada rede o IP que ele tem lá (`WIFIn_MQTT_HOST`); o `MQTT_BIND` do `.env` precisa ser o IP da rede em que o computador está agora (o `--wifi` cuida disso).
+
+### Mudar de rede
+
+Rode, na pasta do repositório:
+
+```bash
+./install.sh --wifi
+```
+
+No Windows, `install.bat --wifi`. Ele mostra as redes gravadas e o IP atual do computador e:
+
+1. pergunta se você quer trocar as redes (nome, senha e, se for institucional, usuário, método e certificado). Se não, só confere o IP do servidor em cada rede;
+2. reescreve o `firmware/.env`, mantendo as senhas que você deixar em branco;
+3. faz o broker escutar no IP atual (`MQTT_BIND`) e reinicia o Mosquitto;
+4. grava a placa pela USB (`pio run -t upload`, com o modelo se houver um em `firmware/lib/ei-model/`), se algo mudou e o PlatformIO estiver instalado.
+
+Quando o computador só mudou de rede e o sensor já conhece essa rede, basta o passo 3: rode `--wifi`, responda que não quer trocar as redes, e nada é gravado na placa se os IPs forem os mesmos.
 
 ### Usar um modelo real
 
@@ -614,6 +651,7 @@ Se aparecer "permission denied", rode `sudo usermod -aG docker $USER` e entre de
 
 - Confira se o log do monitor mostra `[WiFi] IP:`. O ESP32 só usa Wi-Fi de **2,4 GHz**.
 - Em rede institucional (eduroam e parecidas), confira as variáveis `WIFI_EAP_*` e as restrições da rede em [Wi-Fi institucional](#wi-fi-institucional).
+- Mudou de rede? Rode `./install.sh --wifi`: ele atualiza o IP do servidor e grava a placa ([Mudar de rede](#mudar-de-rede)).
 - A falta de rede não reinicia o sensor: ele tenta de novo sozinho, a cada 15 s a 2 min no Wi-Fi e a cada 2 s a 1 min no MQTT.
 - Confira se `MQTT_BIND` no `.env` é o IP atual do computador e igual a `MQTT_HOST` no `firmware/.env`. O IP pode mudar: reserve-o no roteador.
 - Depois de mudar `MQTT_BIND`, rode `docker compose up -d mosquitto`. Depois de mudar `firmware/.env`, grave o firmware de novo.
