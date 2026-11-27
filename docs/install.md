@@ -175,7 +175,7 @@ O assistente é em inglês e só muda algo depois da tela de revisão. Use `Tab`
 
 1. **Choose where to install:** a pasta de instalação. Deixe a do projeto.
 2. **Choose what to set up:** ligue **Connect a sensor through this network** e confirme o IP deste computador. Ligue **Telegram bot** se quiser alertas no celular ([como criar o bot](reference.md#telegram)). O modelo local de IA (cerca de 2 GB) é opcional.
-3. **Set up the device:** em **Create the device configuration**, o nome e a senha do Wi-Fi (só 2,4 GHz) e o IP deste computador. Ligue **Add an Edge Impulse sound model to the firmware** e informe o `.zip` do modelo.
+3. **Set up the device:** em **Create the device configuration**, o nome e a senha do Wi-Fi (só 2,4 GHz) e o IP deste computador. Numa rede com login pessoal, como o eduroam, ligue **Institutional network with a personal login** e preencha o usuário e o certificado ([Wi-Fi institucional](reference.md#wi-fi-institucional)). Para o sensor funcionar em dois lugares, como casa e universidade, ligue **Add a second Wi-Fi network** ([Várias redes](reference.md#várias-redes)). Ligue **Add an Edge Impulse sound model to the firmware** e informe o `.zip` do modelo.
 4. **Review and install:** confira e confirme.
 
 Na primeira vez, o Docker baixa alguns GB, o que leva vários minutos. No final, aparecem os endereços e os logins.
@@ -218,13 +218,14 @@ uv run python debug/simulate_sensor.py --cleanup
 
 ### 2.6 Dia a dia
 
-| Para                   | Rode, na pasta de instalação                               |
-| ---------------------- | ---------------------------------------------------------- |
-| Parar o servidor       | `docker compose stop`                                      |
-| Ligar de novo          | `docker compose start`                                     |
-| Atualizar              | `git pull` e rode o instalador de novo                     |
-| Mudar uma configuração | rode o instalador de novo; ele mantém o que você não mudar |
-| Desinstalar            | `./install.sh --uninstall`                                 |
+| Para                    | Rode, na pasta de instalação                                        |
+| ----------------------- | ------------------------------------------------------------------- |
+| Parar o servidor        | `docker compose stop`                                               |
+| Ligar de novo           | `docker compose start`                                              |
+| Atualizar               | `git pull` e rode o instalador de novo                              |
+| Mudar uma configuração  | rode o instalador de novo; ele mantém o que você não mudar          |
+| Trocar a rede do sensor | `./install.sh --wifi` ([Mudar de rede](reference.md#mudar-de-rede)) |
+| Desinstalar             | `./install.sh --uninstall`                                          |
 
 A desinstalação remove os containers e mantém o histórico, a menos que você peça para apagar os dados.
 
