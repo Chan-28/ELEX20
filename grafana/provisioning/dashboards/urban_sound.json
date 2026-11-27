@@ -79,6 +79,24 @@
         },
         "overrides": [
           {
+            "matcher": { "id": "byName", "options": "sector" },
+            "properties": [{ "id": "displayName", "value": "direção" }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "direction_deg" },
+            "properties": [
+              { "id": "displayName", "value": "ângulo" },
+              { "id": "unit", "value": "suffix:°" }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "doa_confidence" },
+            "properties": [
+              { "id": "displayName", "value": "confiança da direção" },
+              { "id": "unit", "value": "percentunit" }
+            ]
+          },
+          {
             "matcher": { "id": "byName", "options": "confidence" },
             "properties": [
               { "id": "unit", "value": "percentunit" },
@@ -109,7 +127,7 @@
         {
           "datasource": { "type": "postgres", "uid": "timescaledb" },
           "format": "table",
-          "rawSql": "SELECT time, device_id, label, confidence, location FROM sound_events WHERE $__timeFilter(time) ORDER BY time DESC LIMIT 50",
+          "rawSql": "SELECT time, device_id, label, confidence, urgency, sector, direction_deg, doa_confidence, location FROM sound_events WHERE $__timeFilter(time) ORDER BY time DESC LIMIT 50",
           "refId": "A"
         }
       ],

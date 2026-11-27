@@ -51,3 +51,12 @@ def test_painel_de_sensores_le_a_view_concedida_ao_grafana_ro():
     assert any("device_last_status" in sql for sql in sqls)
     grants = (RAIZ / "timescaledb" / "db-init.sql").read_text(encoding="utf-8")
     assert re.search(r"GRANT SELECT ON [^;]*device_last_status[^;]* TO grafana_ro", grants)
+
+
+def test_ultimos_eventos_mostram_a_direcao():
+    """Marco 3: a direção estimada pelo ESP32 (8 setores) aparece no painel."""
+    painel = json.loads((PROVISIONAMENTO / "dashboards" / "urban_sound.json").read_text(encoding="utf-8"))
+    tabela = next(p for p in painel["panels"] if p.get("title") == "Últimos eventos")
+    sql = tabela["targets"][0]["rawSql"]
+    for coluna in ("sector", "direction_deg", "doa_confidence", "urgency"):
+        assert coluna in sql

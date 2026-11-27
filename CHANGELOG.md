@@ -16,6 +16,10 @@ Toda release precisa de uma seção aqui antes da tag: o workflow de release fal
 
 - O `firmware/load_env.py` gera o cabeçalho `wifi_networks.h` no lugar das macros `WIFI_SSID`, `WIFI_PASS` e `WIFI_EAP_*`, e recusa senha de rede doméstica com menos de 8 caracteres.
 
+### Corrigido
+
+- O painel "Últimos eventos" do Grafana não mostrava a direção do som, que o banco já gravava. Agora exibe a direção (N a NO), o ângulo, a confiança da direção e a urgência.
+
 ## [1.3.0] - 2026-11-08
 
 Corrige o texto dos alertas do Grafana, que falhava nos três alertas (o executável da v1.2.0 ainda tem esse problema), elimina o heartbeat falso de sensores desligados e permite conectar o sensor a redes Wi-Fi institucionais, como o eduroam.
