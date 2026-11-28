@@ -142,7 +142,7 @@ services:
       - monitoring
 
   lightpanda:
-    image: lightpanda/browser:1.0.2@sha256:5d1d724c476957d8c2f8393a51fd089477523b0e5aa9c783c48688785d934fb9
+    image: lightpanda/browser:1.0.4@sha256:a9d899882899802bc3a6b82622a7ca394f8e1b828452869a0965d2e5097e6116
     container_name: lightpanda
     logging: *logging
     restart: unless-stopped
